@@ -5,6 +5,10 @@ import os
 import re
 import sys
 
+for _s in (sys.stdout, sys.stderr):              # Windows 主控台預設 cp950 → 中文亂碼
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

@@ -12,10 +12,14 @@ pixelcanvas/scenery.py  高階「景物配方」：Scene + sky/sun/cirrus/cumulu
                         mist/haze_band/river_course/water_mask/water_surface/river_bank/pine_mask/scatter_trees/
                         rim_light/ground_edge/birds/god_rays/finish
 scenes/                 每張圖一個檔：render(width, height, seed, log) -> Canvas；_template.py 是範本
+                        範例：mountains_sunset（高階配方）/ night_sky / still_life / city_dusk / sea_sunset（低階 API）
+skills/pixelcanvas/     給 AI 的 skill：SKILL.md + references/（api / techniques 技巧與配色 / review 檢查清單）
 tools/render.py         渲染（--scale 0.5 草稿 / 全尺寸 / --crop 裁切）
-tools/look.py           看圖輔助：stats / crop / grid（九宮格）/ compare（並排）/ diff（差異熱圖）
+tools/look.py           看圖輔助：stats / report（文字報告）/ crop / grid（九宮格）/ compare（並排）/ diff（差異熱圖）
 tools/new_scene.py      從範本建立新場景
-tests/                  pytest（python -m pytest -q，< 2 秒）
+tools/install_skill.py  把 skill 安裝到 ~/.claude/skills（或 --tool codex / --dest 其他工具）
+tests/                  pytest（python -m pytest -q，< 2 秒；也會執行 techniques.md 的範例程式、渲染所有場景）
+AGENTS.md               給其他 AI 助理的入口（指向 skill）
 outputs/                渲染輸出（不進 git）；gallery/ 放定稿
 ```
 
@@ -23,9 +27,11 @@ outputs/                渲染輸出（不進 git）；gallery/ 放定稿
 
 1. **先想構圖再寫碼**：眼平線在哪（`set_horizon`）、光源在哪（`set_sun` + `light_dir`）、遠中近各有什麼、
    焦點是什麼。把這些寫成場景檔開頭的註解。
-2. `python tools/new_scene.py <name>` → 編輯 `scenes/<name>.py`。先用配方組出大結構，再用低階 API 補特殊物件。
+2. `python tools/new_scene.py <name>` → 編輯 `scenes/<name>.py`；或複製最接近的範例場景來改。先用配方組出大結構，
+   再用低階 API 補特殊物件（技巧見 `skills/pixelcanvas/references/techniques.md`）。
 3. **草稿**：`python tools/render.py <name> --scale 0.5`（960x540，幾秒）。
-4. **看圖**：用 Read 看 `outputs/<name>_x0.5_preview.jpg`。逐項檢查下面的清單，寫下 2~4 個最嚴重的問題。
+4. **看圖**：用 Read 看 `outputs/<name>_x0.5_preview.jpg`，搭配 `tools/look.py report` 的數字（過曝、最亮區位置、
+   九宮格亮度）。逐項檢查下面的清單，寫下 2~4 個最嚴重的問題。
 5. **修正**：一次只改 2~4 個參數，重跑草稿、再看。改前改後可用 `tools/look.py compare A B` 並排。
 6. **全尺寸**：`python tools/render.py <name> --crop x0 y0 x1 y1 ...`，用 Read 看 preview 與裁切圖，
    或 `tools/look.py grid` 看九宮格，檢查細節（紋理是否像毛皮、邊緣是否太硬、閃光是否太密）。
@@ -34,6 +40,8 @@ outputs/                渲染輸出（不進 git）；gallery/ 放定稿
 經驗上一張圖要 4~7 輪；第一版通常過曝、雲像大理石、近景太平。這是正常的，不要跳過看圖。
 
 ## 看圖檢查清單
+
+（完整版 + 症狀 → 修法對照表：`skills/pixelcanvas/references/review.md`）
 
 - **曝光**：有沒有大片死白（太陽光暈、天空）或死黑（前景）？`cv.stats()` 的「>1 比例」> 3% 通常就太亮。
   太陽要像「一顆亮點 + 光暈」，不是一大坨白；周圍天空要比太陽暗。
@@ -56,6 +64,7 @@ outputs/                渲染輸出（不進 git）；gallery/ 放定稿
 - 效能：1920x1080 一次 6 階 fbm2d 約 1 秒；整張圖 20~30 秒；草稿 1/4 時間。避免 Python 逐像素迴圈，
   用向量化；大量小物件（樹）用 Pillow 畫到超取樣遮罩（`shape_mask`）。
 - 新配方寫進 `pixelcanvas/scenery.py`（通用）或場景檔（一次性），遵守「先遮罩 / 密度場，再顏色」的寫法。
+- 改了 API 或新增技巧，記得同步 `skills/pixelcanvas/references/`（api.md / techniques.md），並跑測試。
 
 ## 使用者會怎麼要求
 

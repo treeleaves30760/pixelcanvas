@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""pixelcanvas 的快速測試（pytest -q，約 10 秒）。也可直接 python tests/test_pixelcanvas.py。"""
+"""pixelcanvas 的快速測試（pytest -q，約 1 秒）。也可直接 python tests/test_pixelcanvas.py。"""
 import os
 import sys
 

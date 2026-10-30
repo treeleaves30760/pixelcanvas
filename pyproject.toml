@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pixelcanvas"
-version = "0.1.0"
-description = "讓 Claude 用像素級運算畫圖 / 修圖的工具箱（numpy + Pillow）"
+version = "0.2.0"
+description = "讓 AI（不需圖像生成模型）用像素級運算畫圖 / 修圖的工具箱（numpy + Pillow）"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["numpy>=1.22", "Pillow>=9.1"]

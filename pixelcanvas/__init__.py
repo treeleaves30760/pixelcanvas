@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-pixelcanvas — 讓 Claude 用「像素級運算」畫圖 / 修圖的工具箱（numpy + Pillow）
+pixelcanvas — 讓 AI 用「像素級運算」畫圖 / 修圖的工具箱（numpy + Pillow）
 ================================================================================
 
 兩層 API：
@@ -37,5 +37,5 @@ from .brush import *       # noqa: F401,F403
 from .filters import *     # noqa: F401,F403
 from .canvas import Canvas
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["Canvas", "__version__"] + color.__all__ + noise.__all__ + masks.__all__ + brush.__all__ + filters.__all__
