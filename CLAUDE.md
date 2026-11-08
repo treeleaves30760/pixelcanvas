@@ -8,7 +8,8 @@
 
 ```
 pixelcanvas/            套件（低階 API）：Canvas 畫布、noise 噪聲、masks 遮罩 / 曲線、brush 筆刷、filters 濾鏡、color 顏色、
-                        text 文字排版（字型、換行、自動縮放、描邊 / 陰影 / 光暈）、sdf 距離場形狀、vision 看圖用檢視
+                        text 文字排版（字型、換行、自動縮放、描邊 / 陰影 / 光暈）、sdf 距離場形狀、vision 看圖用檢視、
+                        layers 可編輯圖層（每個 log 步驟一層 → PSD / ORA / PNG）、stylize 媒材（油畫 / 水彩 / 素描 / 動畫）
 pixelcanvas/scenery.py  高階「景物配方」：Scene + sky/sun/cirrus/cumulus/ridge/mountain/mountain_layer/valley_floor/
                         mist/haze_band/river_course/water_mask/water_surface/river_bank/pine_mask/scatter_trees/
                         rim_light/ground_edge/birds/god_rays/finish
@@ -17,11 +18,12 @@ scenes/                 每張圖一個檔：render(width, height, seed, log) ->
                         neon_poster（文字 + SDF + 版面）/ aurora_lake（極光 + 湖面倒影 + 標題橫幅，README 首圖）；_template_poster.py 是設計範本
 skills/pixelcanvas/     給 AI 的 skill（英文）：SKILL.md + references/（api / techniques 技巧與配色 / typography 文字與版面 /
                         review 看圖流程與檢查清單）
-tools/render.py         渲染（--scale 0.5 草稿 / 全尺寸 / --crop 裁切 / --check 診斷圖 / --stages 逐步驟快照 /
+tools/render.py         渲染（--scale 0.5 草稿 / 全尺寸 / --crop 裁切 / --check 診斷圖 / --stages 逐步驟快照 / --layers 圖層檔 /
                         --set 改常數 / --sweep、--seeds 變體對照表）
 tools/look.py           看圖輔助：check（四合一診斷圖）/ guides（座標格線）/ zoom（放大）/ values（明度圖）/ edges /
                         sheet（對照表）/ critique（自動警告）/ probe（取色）/ stats / report（文字報告）/ crop / grid /
                         compare / diff
+tools/layers.py         圖層組：info / sheet（每層對照表）/ compose（隱藏某層重新合成）/ export（PSD / ORA）
 tools/fonts.py          列出字型、輸出字型樣張（--sheet）
 tools/new_scene.py      從範本建立新場景（--poster 用設計範本）
 tools/install_skill.py  把 skill 安裝到 ~/.claude/skills（或 --tool codex / --dest 其他工具）
@@ -46,6 +48,8 @@ README.md / README-zh.md 英文 / 中文說明
 6. **全尺寸**：`python tools/render.py <name> --crop x0 y0 x1 y1 ...`，用 Read 看 preview 與裁切圖，
    或 `tools/look.py grid` 看九宮格，檢查細節（紋理是否像毛皮、邊緣是否太硬、閃光是否太密）。
 7. 滿意後把 PNG + preview 複製到 `gallery/`，交付給使用者。全程保持 seed 固定，結果才可重現。
+   使用者之後要自己修改時加 `--layers`（輸出 PSD / ORA / 分層 PNG）；每個 `log("步驟")` 就是一層，
+   所以會被單獨修改的物件（太陽、標題、logo…）要各自一個 log 步驟，後製放最後的 `log("post")`。
 
 經驗上一張圖要 4~7 輪；第一版通常過曝、雲像大理石、近景太平。這是正常的，不要跳過看圖。
 

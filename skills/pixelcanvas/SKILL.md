@@ -37,6 +37,13 @@ Answer before coding — this is also the checklist you will compare the render 
 - **Far / middle / near** content, or for designs the **text hierarchy** (title → subtitle → info) and margins.
 - **Palette**: 3~5 colours + haze colour (tables in [techniques.md](references/techniques.md)).
 - **Exact text** to render, copied verbatim from the request.
+- **Prompt checklist** — when drawing from a prompt, split it into checkable items before coding: every entity
+  (with its count), every attribute (colour, shape, size, material, state), every relation (left of, on top of,
+  holding, inside), the **medium / style** ("photo", "oil painting", "watercolour", "pencil sketch", "anime",
+  "3D render", "flat icon") and any quoted text. Each item must be visible in the final picture to a stranger who
+  never read the prompt. Unusual attributes keep every *other* canonical cue of the object (circular leaves are
+  still flat, many, clustered on twigs with veins — not yellow balls that read as fruit; a square apple keeps its
+  stem, leaf and apple colouring).
 
 ## 2. Create the scene, render a draft
 
@@ -50,7 +57,10 @@ python tools/render.py my_scene --scale 0.5 --check
 
 A scene file provides `render(width, height, seed, log) -> Canvas` and `DEFAULT_SIZE`. Keep tunable numbers as
 UPPER_CASE module constants — then `--set` / `--sweep` can change them without editing. Call `log("step name")`
-at each drawing step — that is what `--stages` snapshots. **Start from the closest example**:
+**before** each drawing step — that is what `--stages` snapshots, and **each step becomes one editable layer**
+(`--layers`, §5). So give every object a human may want to move, recolour or hide its own step with a clear name
+(`log("sun")`, `log("clouds")`, `log("title")`, `log("logo")`), keep post-processing in a last `log("post")` step,
+and draw each object through `cv.paint` / `cv.text` / `cv.paste` with its mask (that mask becomes the layer's alpha). **Start from the closest example**:
 
 | To draw | Start from | Shows |
 |---|---|---|
@@ -62,6 +72,17 @@ at each drawing step — that is what `--stages` snapshots. **Start from the clo
 | sea, lakes, water | `scenes/sea_sunset.py` | perspective world coords, mirrored reflection, Fresnel, glitter |
 | posters, cards, thumbnails, logos, UI, text | `scenes/neon_poster.py` | `cv.text` (fit, outline, glow, CJK), `pixelcanvas.sdf` shapes, layout |
 | editing a photo | `Canvas.load("photo.jpg")` | filters + masks, techniques.md "Photo editing" |
+
+**Medium is a requirement, not a mood.** If the prompt names one, finish with `pixelcanvas.stylize` in its own
+`log("medium")` step (techniques.md §13), then check that the picture would be called that medium:
+
+| Prompt says | Last step |
+|---|---|
+| painting, oil, acrylic, impressionist, brushstrokes, "in the style of <painter>" | `cv.apply(stylize.oil_paint, brush=6 * S)` + `stylize.canvas_texture` |
+| watercolour, ink wash | `cv.apply(stylize.watercolor)` |
+| pencil, sketch, charcoal, drawing, line art | `cv.apply(stylize.pencil_sketch)` |
+| anime, manga, cartoon, comic, cel-shaded | flat colour + `cv.apply(stylize.cel_shade, outline=2 * S)` |
+| photo, photograph, realistic | no filter: soft lighting, cast shadows, depth of field, `finish()` / bloom + grain |
 
 References: [api.md](references/api.md) (all functions) · [techniques.md](references/techniques.md)
 (how to draw X + palettes) · [typography.md](references/typography.md) (text, SDF shapes, layout rules) ·
@@ -86,8 +107,9 @@ References: [api.md](references/api.md) (all functions) · [techniques.md](refer
 texture, dominant colours, brightest-region centroid, clipping, vertical & horizontal profiles, strongest boundaries
 per column, ASCII luminance map); add `look.py critique IMG`, and `crop` + `report` for regions.
 
-Either way, go through the [review.md](references/review.md) checklist and **write down the 2~4 worst problems with
-coordinates** before changing anything. Typical first round: blown highlights (> 3%), layers not separated,
+Either way, go through the [review.md](references/review.md) checklist **and tick the prompt checklist item by item**
+(is each entity there, countable, the right colour / shape, in the right relation; does the picture read as the
+requested medium?), then **write down the 2~4 worst problems with coordinates** before changing anything. Typical first round: blown highlights (> 3%), layers not separated,
 marble-like clouds, flat foreground, jagged edges, text crowding the edge.
 
 ## 4. Fix → re-render
@@ -105,6 +127,29 @@ python tools/look.py grid outputs/my_scene.png               # 3x3 full-resoluti
 ```
 Check fine detail (fur-like texture, hard edges, glitter density, text edges), then copy PNG + preview to
 `gallery/` and report: the preview path, what you changed and why. No long description of the image.
+
+**Editable layers** (deliver these whenever a human will touch the picture up, or when asked for layers / PSD):
+```bash
+python tools/render.py my_scene --layers      # + outputs/my_scene.psd (Photoshop / Photopea / GIMP / Affinity),
+                                              #   .ora (Krita / GIMP), my_scene_layers/ (PNG per layer + layers.json)
+python tools/layers.py sheet outputs/my_scene_layers     # look at every layer on a checkerboard → check the split
+python tools/layers.py compose outputs/my_scene_layers --hide post --out raw.png   # re-composite (after edits)
+```
+One layer per `log()` step, bottom → top. Painted objects are solid where their mask was (move the mountain and the
+sky is still behind it); glows and haze are see-through. The final `post` step is folded into every layer (a fitted
+colour LUT + a smooth vignette gain), so grading never leaves a ghost copy of objects; only what that can't express
+(grain, global bloom halos) stays in a thin `post (residual)` layer. The stack re-composites to the final image.
+
+When the picture is meant to be edited (or layers are requested):
+- **One step per requested layer, named exactly as asked**, in the requested order; nothing drawn outside them except
+  `post`. If two things a person would edit separately share a step, split it.
+- **Draw every layer complete, including what is hidden behind layers above it**: the whole background under the
+  product, the whole title under the player, the road under the car. Never cut holes for objects in front.
+- **An object's own light stays with it**: its glow (`cv.glow`), rim light and contact shadow go in its step — unless
+  the request lists them as separate effect layers, then give each its own step. Avoid a global `bloom` in `post`
+  (it can't fold into layers); grading, `soft_clip`, `vignette` and light `grain` are fine.
+- **Check by hiding**: `python tools/layers.py compose outputs/x_layers --hide <object> --out hidden.png` for each
+  object → the scene behind must be complete, with no hole and no faint copy of the object.
 
 ## Drawing principles (break these and it won't look good)
 

@@ -108,6 +108,36 @@ All take pixel grids `X, Y` and return float32 (H, W) distances in px (negative 
 `contact_sheet(images, labels, cols, tile_width)`, `stage(cv, label)` (mark a drawing step for `render.py --stages`;
 no-op otherwise). Inputs: path / PIL / Canvas / array; outputs: PIL images.
 
+## Media (pixelcanvas.stylize) — techniques.md §13
+
+Array in → array out, use with `cv.apply(fn, ...)`: `oil_paint(img, brush=6, strength=1, impasto=0.35, seed)`,
+`watercolor(img, wash=6, transparency=0.35, edge=0.8, granulation=1, bleed=6, paper=1, deckle=0.05, seed)`,
+`pencil_sketch(img, line=1, hatching=0.8, colored=0, seed)`, `cel_shade(img, levels=3, softness=0.04, outline=2)`,
+`canvas_texture(img, strength=0.06, weave=3)`; building blocks `kuwahara(img, radius)`,
+`flow_field(img, sigma)` → (vx, vy, coherence), `lic(tex, vx, vy, length, steps)`; `MEDIA` maps prompt words to
+the filter.
+
+## Editable layers (pixelcanvas.layers) — what `render.py --layers` uses
+
+Each `log("step")` / `rec.mark("step")` starts a layer; layer alpha = coverage of normal-mode `paint` / `text` /
+`paste` masks during the step, raised to the minimum needed to reproduce the result exactly (glows / post stay
+see-through). Layers are straight-alpha uint8 RGBA cropped to `bbox`; compositing them bottom → top = final image.
+
+```python
+from pixelcanvas import Canvas, layers
+cv = Canvas(640, 360); rec = layers.LayerRecorder(cv)
+rec.mark("sky");  cv.gradient([(0, '#0b1a3a'), (1, '#f6c28f')])
+rec.mark("sun");  cv.glow(400, 200, 60, '#fff0c0')
+rec.mark("post"); cv.soft_clip(0.8)
+stack = rec.finish()                       # [Layer(name, rgba, bbox, size, visible, opacity, kind)], bottom → top
+layers.save_all(stack, "out/pic", final=cv.buf)   # pic.psd, pic.ora, pic_layers/ (PNGs + layers.json)
+```
+`layers.enable(target_size)` / `mark(name)` / `take(cv)` (module-level recorder following the first canvas of that
+size), `composite(stack, hidden={...})`, `save_psd`, `save_ora`, `save_pngs`, `load_pngs(folder)` (read an edited
+stack back), `reconcile(stack, final)`, `push_post(stack, final)` (fold a trailing post step into every layer:
+fitted colour LUT + smooth gain, leftovers → thin "post (residual)" layer; `LayerRecorder(post="layer")` keeps the
+old separate post layer). Layer `kind`: `base` / `paint` (has painted coverage) / `effect` / `post`.
+
 ## High-level recipes (pixelcanvas.scenery) — landscapes
 
 `Scene(width, height, seed, log=None)`: `sc.cv` canvas, `sc.X/Y/U/V` grids, `sc.S` scale (H/1080),
@@ -146,7 +176,8 @@ no-op otherwise). Inputs: path / PIL / Canvas / array; outputs: PIL images.
 
 ```bash
 python tools/render.py <scene> [--scale 0.5] [--seed N] [--size WxH] [--out p.png] [--crop x0 y0 x1 y1]...
-                       [--check] [--stages] [--set NAME=EXPR]... [--sweep NAME EXPR EXPR...] [--seeds N N...]
+                       [--check] [--stages] [--layers] [--set NAME=EXPR]... [--sweep NAME EXPR EXPR...] [--seeds N N...]
+python tools/layers.py info|sheet|compose|export <out>_layers [--hide NAME...] [--only NAME...]
 python tools/render.py --list
 python tools/new_scene.py <name> [--poster]
 python tools/look.py check|guides|zoom|values|edges|sheet|compare|diff|crop|grid|critique|probe|stats|report ...

@@ -8,6 +8,7 @@ from PIL import Image
 from .color import F32, rgb, as_color, mix, clamp01, grid
 from . import filters as _f
 from . import vision as _vision
+from . import layers as _layers
 
 _RES = getattr(Image, "Resampling", Image)
 
@@ -21,6 +22,7 @@ class Canvas:
         self.buf = np.empty((int(height), int(width), 3), F32)
         self.buf[:] = rgb(color)
         _vision._track(self)
+        _layers._track(self)
 
     # ---- 建立 / 輸出 ----
     @classmethod
@@ -105,6 +107,8 @@ class Canvas:
     def paint(self, color, mask=None, mode="normal", opacity=1.0):
         """用 color（單色或整張 (H, W, 3) 顏色圖）依 mask 透明度、以 mode 混合塗上畫布。"""
         a = float(opacity) if mask is None else np.asarray(mask, F32) * float(opacity)
+        if mode == "normal":
+            _layers._note(self, a)
         self.buf = _f.blend(self.buf, color, a, mode)
         return self
 
@@ -153,6 +157,8 @@ class Canvas:
             return self
         sub = src[y0 - y:y1 - y, x0 - x:x1 - x]
         a = float(opacity) if mask is None else np.asarray(mask, F32)[y0 - y:y1 - y, x0 - x:x1 - x] * float(opacity)
+        if mode == "normal":
+            _layers._note(self, a, (x0, y0, x1, y1))
         self.buf[y0:y1, x0:x1] = _f.blend(self.buf[y0:y1, x0:x1], sub, a, mode)
         return self
 
