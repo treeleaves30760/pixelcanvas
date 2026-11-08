@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-檢視工具（迭代時配合看圖使用）。
+Inspection tools for the render → look → fix loop.
 
-  python tools/look.py stats   圖.png                      尺寸、亮度統計、過曝 / 死黑比例
-  python tools/look.py crop    圖.png X0 Y0 X1 Y1 [-o 輸出]  全解析度局部裁切
-  python tools/look.py grid    圖.png [-o 前綴]             切成 3x3 九塊全解析度小圖（逐塊檢查細節）
-  python tools/look.py compare A.png B.png [-o 輸出]        左右並排（改前 / 改後）
-  python tools/look.py diff    A.png B.png [-o 輸出]        差異熱圖（看改動影響到哪裡）
-  python tools/look.py report  圖.png [--cols 64]            純文字報告：九宮格色彩 / 亮度 / 質感、主色、
-                                                            最亮點、ASCII 亮度圖（給「看不到圖」的模型用）
+Coordinates: values all ≤ 1 are fractions of the image (U across, V down); larger values are pixels.
+
+Views for a vision model (each writes an image next to the input, or to -o):
+  python tools/look.py check    IMG                         ONE image, 4 views: guides | values | edges | thumbnail
+  python tools/look.py guides   IMG [--step 0.1]            labelled coordinate grid + rule of thirds
+  python tools/look.py zoom     IMG U0 V0 U1 V1 [--width N] enlarge a region (labels stay in full-image coords)
+  python tools/look.py values   IMG [--levels 4]            squint test: blurred, posterised value map
+  python tools/look.py edges    IMG                         edge-strength map (silhouettes, layer separation)
+  python tools/look.py sheet    IMG... [--labels a,b,...]   labelled contact sheet (iterations, variants)
+  python tools/look.py compare  A B [-o OUT]                side by side (before / after)
+  python tools/look.py diff     A B [-o OUT]                difference heat map + numbers
+  python tools/look.py crop     IMG X0 Y0 X1 Y1 [-o OUT]    full-resolution crop (pixels)
+  python tools/look.py grid     IMG [-o PREFIX]             3x3 full-resolution tiles
+
+Numbers (text output, also for models without vision):
+  python tools/look.py critique IMG                         automatic warnings: exposure, tonal range, horizon,
+                                                            focal point, saturation, balance, flat areas
+  python tools/look.py probe    IMG U,V [U,V ...]           exact colour at points (hex, luma, hue)
+  python tools/look.py stats    IMG                         size, luminance percentiles, clipping
+  python tools/look.py report   IMG [--cols 64]             full text report: 3x3 colours / luma / texture,
+                                                            dominant colours, profiles, edges, ASCII luma map
 """
 from __future__ import annotations
 
@@ -19,6 +33,9 @@ import sys
 
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pixelcanvas import vision  # noqa: E402
 
 for _s in (sys.stdout, sys.stderr):              # Windows 主控台預設 cp950 → 中文亂碼
     if hasattr(_s, "reconfigure"):
@@ -204,6 +221,149 @@ def cmd_report(a):
     print("+" + "-" * cols + "+")
 
 
+# ----------------------------------------------------------------------------- vision-model helpers
+
+def _save(im, path):
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    im.save(path, quality=90)
+    print("saved", path)
+
+
+def cmd_guides(a):
+    _save(vision.guides(a.image, step=a.step, max_width=a.width), _out(a.image, "guides", a.out))
+
+
+def cmd_zoom(a):
+    box = (a.u0, a.v0, a.u1, a.v1)
+    tag = "_".join(f"{v:g}" for v in box)
+    _save(vision.zoom(a.image, box, out_width=a.width, grid=not a.no_grid), _out(a.image, f"zoom_{tag}", a.out))
+
+
+def cmd_values(a):
+    im, frac = vision.value_map(a.image, a.levels)
+    print("value masses (dark → light): " + "  ".join(f"{f * 100:.0f}%" for f in frac))
+    print("strong images usually have one dominant mass (>40%), a secondary one, and a small extreme accent "
+          "(<10%) at the focal point.")
+    _save(im, _out(a.image, f"values{a.levels}", a.out))
+
+
+def cmd_edges(a):
+    _save(vision.edge_map(a.image), _out(a.image, "edges", a.out))
+
+
+def cmd_check(a):
+    """One image with four diagnostic views, for a single quick look."""
+    src = vision.to_pil(a.image)
+    tw = 96
+    thumb = src.resize((tw, max(1, round(src.height * tw / src.width))), RES.BOX)
+    thumb = thumb.resize((640, max(1, round(src.height * 640 / src.width))), RES.NEAREST)
+    views = [vision.guides(src, max_width=960), vision.value_map(src, 4)[0], vision.edge_map(src), thumb]
+    labels = ["guides (fractions; thirds in magenta)", "values: 4-level squint test",
+              "edges: silhouettes & detail", f"thumbnail test: does it still read at {tw} px wide?"]
+    _save(vision.contact_sheet(views, labels, cols=2, tile_width=640, title=os.path.basename(a.image)),
+          _out(a.image, "check", a.out))
+    for sev, msg in critique(a.image):
+        print(f"[{sev}] {msg}")
+
+
+def cmd_sheet(a):
+    labels = a.labels.split(",") if a.labels else [os.path.basename(p) for p in a.images]
+    out = a.out or os.path.join(os.path.dirname(a.images[0]) or ".", "sheet.jpg")
+    _save(vision.contact_sheet(a.images, labels, cols=a.cols, tile_width=a.tile, title=a.title), out)
+
+
+def _point(spec, w, h):
+    u, v = (float(t) for t in spec.split(","))
+    if u <= 1 and v <= 1:
+        return min(int(u * w), w - 1), min(int(v * h), h - 1)
+    return min(int(u), w - 1), min(int(v), h - 1)
+
+
+def cmd_probe(a):
+    im = np.asarray(Image.open(a.image).convert("RGB"), np.float32) / 255
+    h, w = im.shape[:2]
+    r = max(0, a.radius)
+    for spec in a.points:
+        x, y = _point(spec, w, h)
+        c = im[max(0, y - r):y + r + 1, max(0, x - r):x + r + 1].reshape(-1, 3).mean(0)
+        hh, sat = _hue(c)
+        hue = "grey" if hh is None else f"hue {hh:3.0f}° sat {sat:.2f}"
+        print(f"({x / w:.3f}, {y / h:.3f}) px({x},{y})  {_hex(c)}  rgb{tuple(int(round(v * 255)) for v in c)}  "
+              f"luma {float(c @ np.array([0.299, 0.587, 0.114])):.2f}  {hue}")
+
+
+def critique(path):
+    """Heuristic warnings → [(severity, message)]. Cheap, objective checks that are easy to miss by eye."""
+    pil = Image.open(path).convert("RGB")
+    if pil.width > 960:
+        pil = pil.resize((960, max(1, round(pil.height * 960 / pil.width))), RES.BOX)
+    im = np.asarray(pil, np.float32) / 255
+    h, w = im.shape[:2]
+    lum = im @ np.array([0.299, 0.587, 0.114], np.float32)
+    out = []
+    over, crush = np.mean(lum > 0.98), np.mean(lum < 0.02)
+    if over > 0.03:
+        out.append(("HIGH", f"{over * 100:.1f}% blown highlights (>3%): lower glow/light strength, soft_clip / finish(knee=0.75)"))
+    if crush > 0.08:
+        out.append(("MED", f"{crush * 100:.1f}% crushed blacks: lift shadows (levels gamma 1.1) or add rim / bounce light"))
+    p5, p95, std = np.percentile(lum, 5), np.percentile(lum, 95), lum.std()
+    accent = np.percentile(lum, 99.5) - np.percentile(lum, 50)
+    if p95 - p5 < 0.25 and accent < 0.3:
+        out.append(("HIGH", f"narrow tonal range (p5..p95 = {p5:.2f}..{p95:.2f}) and no bright accent: looks flat / grey; "
+                            "darken the darkest mass and brighten the focal point"))
+    elif p95 - p5 < 0.25:
+        out.append(("LOW", f"narrow tonal range (p5..p95 = {p5:.2f}..{p95:.2f}) with a bright accent: fine for a low-key / "
+                           "high-key image, otherwise widen it"))
+    elif std > 0.33:
+        out.append(("LOW", f"very high contrast (std {std:.2f}): make sure it is intended"))
+    rows = np.convolve(lum.mean(1), np.ones(5) / 5, mode="same")
+    dif = np.abs(np.diff(rows[3:-3]))
+    if dif.size and dif.max() > 0.04:
+        yb = (np.argmax(dif) + 3.5) / h
+        if 0.46 < yb < 0.54:
+            out.append(("MED", f"strongest horizontal boundary at V={yb:.2f} (dead centre): move the horizon towards 1/3 or 2/3"))
+    ys, xs = np.nonzero(lum >= np.percentile(lum, 99.5))
+    cx, cy = xs.mean() / w, ys.mean() / h
+    spread = max(xs.std() / w, ys.std() / h)
+    if spread > 0.22:
+        out.append(("MED", f"brightest pixels are scattered (spread {spread:.2f}): no single focal highlight — fine for "
+                           "stars / city lights, otherwise strengthen one area"))
+    else:
+        if abs(cx - 0.5) < 0.04 and abs(cy - 0.5) < 0.04:
+            out.append(("LOW", f"focal highlight at the exact centre ({cx:.2f}, {cy:.2f}): static; thirds are livelier"))
+        if min(cx, cy, 1 - cx, 1 - cy) < 0.05:
+            out.append(("MED", f"brightest area touches the frame edge at ({cx:.2f}, {cy:.2f}): it pulls the eye out"))
+    mx, mn = im.max(-1), im.min(-1)
+    sat = (mx - mn) / np.maximum(mx, 1e-6)
+    hot = np.mean((sat > 0.85) & (mx > 0.5))
+    if hot > 0.25:
+        out.append(("MED", f"{hot * 100:.0f}% of the image is near-max saturation: garish; keep strong colour for the "
+                           "focal point and desaturate large areas"))
+    if sat.mean() < 0.06:
+        out.append(("LOW", "almost monochrome (mean saturation < 0.06): intended?"))
+    lw, rw = lum[:, : w // 2].mean(), lum[:, w // 2:].mean()
+    if abs(lw - rw) > 0.25:
+        out.append(("LOW", f"left/right brightness very unbalanced ({lw:.2f} vs {rw:.2f}): add a counterweight"))
+    flat = []
+    for r in range(3):
+        for c in range(3):
+            blk = lum[r * h // 3:(r + 1) * h // 3, c * w // 3:(c + 1) * w // 3]
+            if np.abs(np.diff(blk, axis=0)).mean() + np.abs(np.diff(blk, axis=1)).mean() < 0.004:
+                flat.append(f"r{r}c{c}")
+    if len(flat) >= 6:
+        out.append(("LOW", f"{len(flat)}/9 cells have almost no detail ({', '.join(flat)}): plastic look; add subtle "
+                           "texture, grain or secondary shapes"))
+    return sorted(out, key=lambda t: ["HIGH", "MED", "LOW"].index(t[0]))
+
+
+def cmd_critique(a):
+    issues = critique(a.image)
+    if not issues:
+        print("no automatic warnings (heuristics only — still review the image against the checklist).")
+    for sev, msg in issues:
+        print(f"[{sev}] {msg}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -214,6 +374,22 @@ def main():
     p = sub.add_parser("compare"); p.add_argument("a"); p.add_argument("b"); p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_compare)
     p = sub.add_parser("diff"); p.add_argument("a"); p.add_argument("b"); p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_diff)
     p = sub.add_parser("report"); p.add_argument("image"); p.add_argument("--cols", type=int, default=64); p.set_defaults(fn=cmd_report)
+    p = sub.add_parser("guides"); p.add_argument("image"); p.add_argument("--step", type=float, default=0.1)
+    p.add_argument("--width", type=int, default=1280); p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_guides)
+    p = sub.add_parser("zoom"); p.add_argument("image")
+    [p.add_argument(k, type=float) for k in ("u0", "v0", "u1", "v1")]
+    p.add_argument("--width", type=int, default=1024); p.add_argument("--no-grid", action="store_true")
+    p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_zoom)
+    p = sub.add_parser("values"); p.add_argument("image"); p.add_argument("--levels", type=int, default=4)
+    p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_values)
+    p = sub.add_parser("edges"); p.add_argument("image"); p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_edges)
+    p = sub.add_parser("check"); p.add_argument("image"); p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_check)
+    p = sub.add_parser("sheet"); p.add_argument("images", nargs="+"); p.add_argument("--labels")
+    p.add_argument("--cols", type=int); p.add_argument("--tile", type=int, default=480); p.add_argument("--title")
+    p.add_argument("-o", "--out"); p.set_defaults(fn=cmd_sheet)
+    p = sub.add_parser("probe"); p.add_argument("image"); p.add_argument("points", nargs="+")
+    p.add_argument("--radius", type=int, default=2); p.set_defaults(fn=cmd_probe)
+    p = sub.add_parser("critique"); p.add_argument("image"); p.set_defaults(fn=cmd_critique)
     a = ap.parse_args()
     a.fn(a)
     return 0

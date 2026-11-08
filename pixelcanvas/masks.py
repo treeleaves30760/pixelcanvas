@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from .color import F32, grid, smoothstep
 from .filters import gaussian_blur
 
 _RES = getattr(Image, "Resampling", Image)
 
-__all__ = ["shape_mask", "polygon_mask", "circle_mask", "rect_mask", "band_mask", "text_mask", "feather"]
+__all__ = ["shape_mask", "polygon_mask", "circle_mask", "rect_mask", "band_mask", "line_mask", "bezier_points", "feather"]
 
 
 def shape_mask(h, w, draw_fn, aa=3):
@@ -55,15 +55,32 @@ def band_mask(h, w, y0, y1, soft=0.0):
     return (smoothstep(y0 - s, y0 + s, Y) * (1 - smoothstep(y1 - s, y1 + s, Y))).astype(F32)
 
 
-def text_mask(h, w, text, xy, size=40, font_path=None, aa=2, anchor="la"):
-    """文字遮罩。沒有字型檔時用 Pillow 內建字型（支援大小）。"""
+def line_mask(h, w, points, width=2.0, aa=3, closed=False):
+    """Anti-aliased polyline / curve stroke of constant ``width`` px with round joints and caps.
+    ``points = [(x, y), ...]`` (e.g. from ``bezier_points``)."""
+    pts = [(float(x), float(y)) for x, y in points]
+    if closed:
+        pts = pts + pts[:1]
+
     def _draw(d, s):
-        try:
-            font = ImageFont.truetype(font_path, int(size * s)) if font_path else ImageFont.load_default(int(size * s))
-        except Exception:
-            font = ImageFont.load_default()
-        d.text((xy[0] * s, xy[1] * s), text, fill=255, font=font, anchor=anchor)
+        sp = [(x * s, y * s) for x, y in pts]
+        wd = max(1, int(round(width * s)))
+        d.line(sp, fill=255, width=wd, joint="curve")
+        r = width * s / 2
+        for x, y in (sp if len(sp) < 3 else (sp[0], sp[-1])):      # round caps
+            d.ellipse([x - r, y - r, x + r, y + r], fill=255)
     return shape_mask(h, w, _draw, aa)
+
+
+def bezier_points(*ctrl, n=64):
+    """Sample a quadratic (3 control points) or cubic (4) Bézier curve → list of n (x, y).
+    Pass more points for a higher-order curve. Use with ``line_mask`` / ``polygon_mask`` / ``stroke``."""
+    P = np.asarray(ctrl, np.float64)                          # (k, 2)
+    t = np.linspace(0.0, 1.0, int(n))[:, None, None]          # (n, 1, 1)
+    P = np.broadcast_to(P, (len(t),) + P.shape)
+    while P.shape[1] > 1:                                     # de Casteljau
+        P = P[:, :-1] * (1 - t) + P[:, 1:] * t
+    return [(float(x), float(y)) for x, y in P[:, 0]]
 
 
 def feather(mask, sigma):

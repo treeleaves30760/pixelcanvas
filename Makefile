@@ -1,9 +1,15 @@
 SCENE ?= mountains_sunset
 
-.PHONY: draft render report test list new install-skill
+.PHONY: draft check stages render report test list new install-skill
 
 draft:            ## 草稿（半解析度）
 	python tools/render.py $(SCENE) --scale 0.5
+
+check:            ## 草稿 + 診斷圖（guides | values | edges | thumbnail）+ 自動警告
+	python tools/render.py $(SCENE) --scale 0.5 --check
+
+stages:           ## 草稿 + 逐步驟快照
+	python tools/render.py $(SCENE) --scale 0.5 --stages
 
 render:           ## 全尺寸
 	python tools/render.py $(SCENE)
