@@ -1,115 +1,131 @@
 ---
 name: pixelcanvas
 description: >-
-  Draw good-looking images with pure code (numpy + Pillow) when you cannot generate images natively —
-  landscapes, skies, night scenes, sea, cities, still lifes, posters, wallpapers — and edit photos.
-  Iterative loop: write a scene script → render a draft → inspect it (view the preview, or read a text
-  report if you have no vision) → fix 2-4 parameters → re-render. Use whenever the user asks to draw,
-  paint, render, illustrate or "generate a picture/wallpaper", or to retouch an image, and no image model
-  is available. 觸發詞：畫一張、幫我畫、產生圖片、桌布、插畫、風景圖、修圖、調色。
+  Draw good-looking images with pure code (numpy + Pillow) when you cannot generate images natively — landscapes,
+  skies, night scenes, sea, cities, still lifes, posters, cards, thumbnails, banners, badges/icons, labelled
+  diagrams, wallpapers — with exact, correctly spelled text in any language (incl. Chinese/Japanese), and retouch
+  photos. Iterative loop built for vision models: write a scene script → render a draft → inspect it with labelled
+  views (coordinate guides, zoom, value map, edges, stage-by-stage sheet, parameter sweeps; text reports for
+  models without vision) → fix 2-4 things → re-render. Use whenever the user asks to draw, paint, render,
+  illustrate, design a poster/graphic, or "generate a picture/wallpaper", or to retouch an image, and no image
+  model is available. 觸發詞：畫一張、幫我畫、產生圖片、海報、桌布、插畫、風景圖、設計圖、修圖、調色。
 ---
 
-# pixelcanvas：用程式 + 數學畫圖
+# pixelcanvas: drawing with code + maths + looking
 
-沒有素材、沒有生成模型：每一個像素都是噪聲、遮罩、混合算出來的。你（模型）負責
-**構圖 → 寫程式 → 渲染 → 檢查 → 修正**，一張好圖通常要 4~7 輪；第一版幾乎一定過曝、太平、太乾淨。
-**不要寫完一次就交出去。**
+No assets, no image model: every pixel comes from noise, masks, signed distances, text rasterisation and blending.
+You do **plan → code → render → look → fix**. A good image takes 4~7 rounds; the first version is almost always
+over-exposed, flat or too clean. **Never hand over the first render.**
 
-## 0. 準備
+## 0. Setup
 
-1. 找專案根目錄（有 `pixelcanvas/`、`tools/render.py`、`scenes/` 的資料夾）：目前目錄 → 環境變數
-   `PIXELCANVAS_HOME` → 本檔底部「本機安裝位置」。都沒有就安裝：
+1. Find the project root (folder with `pixelcanvas/`, `tools/render.py`, `scenes/`): current directory → env var
+   `PIXELCANVAS_HOME` → "Local install location" at the bottom of this file. If none, install:
    ```bash
    git clone https://github.com/treeleaves30760/pixelcanvas.git && cd pixelcanvas
-   pip install -r requirements.txt          # numpy、Pillow（scipy 可選，模糊 / 取樣更快）
+   pip install -r requirements.txt          # numpy, Pillow (scipy optional: faster blur / sampling)
    ```
-2. 之後所有指令都在專案根目錄執行。`python -m pytest -q` 應在 2 秒內全過。
+2. Run every command from the project root. `python -m pytest -q` should pass in a few seconds.
 
-## 1. 先構圖（寫在場景檔開頭的註解）
+## 1. Plan first (write it as the scene file's docstring)
 
-動筆前回答五件事，寫成 docstring：
-- **畫幅**：預設 1920x1080；直幅 / 手機桌布 1080x1920。
-- **眼平線**在哪（V 比例，0 = 頂、1 = 底）：天空為主 → 0.6~0.75；地面為主 → 0.35~0.5。
-- **光源**位置與方向（太陽 / 月亮 / 窗戶），決定所有受光面、影子、rim light 的方向。
-- **遠 / 中 / 近**各有什麼；**焦點**放在三分線附近，前景只框住畫面、不搶戲。
-- **調色盤**：3~5 個主色 + 霧色（見 [references/techniques.md](references/techniques.md) 的配色表）。
+Answer before coding — this is also the checklist you will compare the render against:
+- **Format**: 1920x1080 landscape by default; 1080x1350 poster; 1080x1920 phone; 1280x720 thumbnail.
+- **Focal point** and where it sits (U, V fractions, near a third); what is biggest / brightest / most saturated.
+- **Eye level / horizon** (V fraction): sky-dominant 0.6~0.75; ground-dominant 0.35~0.5.
+- **Light**: position and direction — decides every lit side, shadow and rim light.
+- **Far / middle / near** content, or for designs the **text hierarchy** (title → subtitle → info) and margins.
+- **Palette**: 3~5 colours + haze colour (tables in [techniques.md](references/techniques.md)).
+- **Exact text** to render, copied verbatim from the request.
 
-## 2. 建場景、渲染草稿
+## 2. Create the scene, render a draft
 
 ```bash
-python tools/new_scene.py my_scene            # 從範本建立 scenes/my_scene.py
-python tools/render.py my_scene --scale 0.5   # 草稿 960x540，幾秒 → outputs/my_scene_x0.5_preview.jpg
+python tools/new_scene.py my_scene             # landscape template (scenery recipes) → scenes/my_scene.py
+python tools/new_scene.py my_poster --poster   # design template (text, SDF shapes, layout)
+python tools/render.py my_scene --scale 0.5 --check
+#   → outputs/my_scene_x0.5_preview.jpg   the draft
+#   → outputs/my_scene_x0.5_check.jpg     guides | values | edges | thumbnail, + automatic warnings printed
 ```
 
-場景檔只要提供 `render(width, height, seed, log) -> Canvas` 和 `DEFAULT_SIZE`。
-**挑最接近的範例複製來改**，比從零寫可靠：
+A scene file provides `render(width, height, seed, log) -> Canvas` and `DEFAULT_SIZE`. Keep tunable numbers as
+UPPER_CASE module constants — then `--set` / `--sweep` can change them without editing. Call `log("step name")`
+at each drawing step — that is what `--stages` snapshots. **Start from the closest example**:
 
-| 要畫的東西 | 從這個開始 | 示範的技巧 |
+| To draw | Start from | Shows |
 |---|---|---|
-| 山、河、森林、雲、夕陽 | `scenes/mountains_sunset.py` | 高階配方 `pixelcanvas.scenery`（Scene + sky/sun/cumulus/mountain_layer/water_surface/god_rays/finish） |
-| 星空、夜景、月亮 | `scenes/night_sky.py` | 散點冪次分布、domain warp 銀河、1D 稜線剪影 |
-| 物體、靜物、產品圖 | `scenes/still_life.py` | 法線 → 漫射 / 鏡面 / 落影 / AO |
-| 城市、建築、幾何 | `scenes/city_dusk.py` | 高度剖面、格點圖樣（窗戶）、分層霧色 |
-| 海、湖、水面 | `scenes/sea_sunset.py` | 透視反推世界座標、鏡射倒影、菲涅耳、波面閃光 |
-| 修照片 | `Canvas.load("photo.jpg")` | 濾鏡與遮罩，見 techniques.md「修圖」 |
+| mountains, rivers, forests, clouds, sunsets | `scenes/mountains_sunset.py` | high-level recipes `pixelcanvas.scenery` |
+| stars, night, moon | `scenes/night_sky.py` | power-law scatter, domain-warped galaxy, 1D silhouettes |
+| aurora, glowing night skies, a wide banner with a title | `scenes/aurora_lake.py` | ray curtains (stretched fBm), lake mirror, pine frame, title over a calmed sky |
+| objects, still life, product shots | `scenes/still_life.py` | normals → diffuse / specular / cast shadow / AO |
+| cities, buildings, geometry | `scenes/city_dusk.py` | height profiles, grid patterns (windows), layered haze |
+| sea, lakes, water | `scenes/sea_sunset.py` | perspective world coords, mirrored reflection, Fresnel, glitter |
+| posters, cards, thumbnails, logos, UI, text | `scenes/neon_poster.py` | `cv.text` (fit, outline, glow, CJK), `pixelcanvas.sdf` shapes, layout |
+| editing a photo | `Canvas.load("photo.jpg")` | filters + masks, techniques.md "Photo editing" |
 
-API 速查：[references/api.md](references/api.md)。技巧與配色：[references/techniques.md](references/techniques.md)。
+References: [api.md](references/api.md) (all functions) · [techniques.md](references/techniques.md)
+(how to draw X + palettes) · [typography.md](references/typography.md) (text, SDF shapes, layout rules) ·
+[review.md](references/review.md) (how to look, checklist, symptom → fix).
 
-## 3. 檢查（最重要的一步）
+## 3. Look (the most important step)
 
-**有視覺能力**（能讀圖片）：直接打開 `outputs/<name>_x0.5_preview.jpg`。
+**With vision** — follow the protocol in [review.md](references/review.md#protocol-for-vision-models):
 
-**沒有視覺能力**：用文字報告「看」圖，它會給出九宮格平均色 / 亮度 / 對比 / 質感、主色佔比、
-最亮區位置、過曝 / 死黑比例、ASCII 亮度圖：
+| Question | Tool (writes an image to look at) |
+|---|---|
+| Overall impression + objective warnings | the preview, then `python tools/look.py critique IMG` (also printed by `--check`) |
+| Where exactly is X? | `look.py guides IMG` — labelled fraction grid + thirds. Read coordinates, don't guess |
+| Are details / edges / text clean? | `look.py zoom IMG u0 v0 u1 v1` — enlarged crop, labels in full-image coords |
+| Does the composition read? | `look.py values IMG` — 4-level squint test; `look.py edges IMG` |
+| Which step broke it? | `render.py my_scene --scale 0.5 --stages` → `_stages.jpg`, the canvas after every step |
+| Which value is best? | `render.py my_scene --sweep SUN_X 0.4 0.55 0.7` or `--seeds 1 2 3 4` → one labelled sheet |
+| Exact colour / contrast? | `look.py probe IMG 0.5,0.3 0.5,0.8` |
+| Before vs after | `look.py sheet a.png b.png c.png --labels v1,v2,v3` or `look.py diff A B` |
+
+**Without vision** — `python tools/look.py report IMG` turns the image into text (3x3 colours / luma / contrast /
+texture, dominant colours, brightest-region centroid, clipping, vertical & horizontal profiles, strongest boundaries
+per column, ASCII luminance map); add `look.py critique IMG`, and `crop` + `report` for regions.
+
+Either way, go through the [review.md](references/review.md) checklist and **write down the 2~4 worst problems with
+coordinates** before changing anything. Typical first round: blown highlights (> 3%), layers not separated,
+marble-like clouds, flat foreground, jagged edges, text crowding the edge.
+
+## 4. Fix → re-render
+
+- Change only 2~4 things per round; keep the seed fixed so renders are comparable.
+- Try without editing: `--set NAME=EXPR` (e.g. `--set "LAYERS[0]['fog']=0.6"`); compare options with `--sweep`.
+- Back to step 3 until the checklist passes.
+
+## 5. Full size, details, deliver
+
 ```bash
-python tools/look.py report outputs/my_scene_x0.5.png
+python tools/render.py my_scene --check                      # 1920x1080 (or --size 2560x1440)
+python tools/look.py zoom outputs/my_scene.png 0.4 0.3 0.6 0.5   # inspect texture, edges, text at full res
+python tools/look.py grid outputs/my_scene.png               # 3x3 full-resolution tiles
 ```
-報告還有**垂直剖面**（每段亮度 / 色相 → 地平線、天地分界在哪）、**水平剖面**、**各欄最強的上下分界**
-（地平線 / 稜線 / 物體頂端的 V 位置與明暗差 Δ；Δ < 0.05 代表兩層幾乎分不開）、每格的**色相角度**（判斷「粉紫」「暖橙」）。
-把報告和你的構圖意圖逐條對照（例：「太陽應在 (0.6, 0.55)」→ 看最亮區重心；「近景要暗」→ 看 r2 列亮度；
-「山要和天空分開」→ 看那幾欄在山稜高度的 Δ）。
+Check fine detail (fur-like texture, hard edges, glitter density, text edges), then copy PNG + preview to
+`gallery/` and report: the preview path, what you changed and why. No long description of the image.
 
-要看某個區域（例如只看雪地、不含樹）：先裁切再報告——
-```bash
-python tools/look.py crop outputs/my_scene_x0.5.png 300 380 660 470 -o outputs/tmp_snow.jpg
-python tools/look.py report outputs/tmp_snow.jpg
-```
-（座標是該張圖的像素；草稿是 960x540。`outputs/` 是暫存區，crop / tile 檔可以隨時刪。）
+## Drawing principles (break these and it won't look good)
 
-兩種情況都照 [references/review.md](references/review.md) 的清單檢查，**寫下 2~4 個最嚴重的問題**，
-再到下一步。常見第一輪問題：過曝（死白 > 3%）、層與層分不開、雲像大理石、近景太平、邊緣鋸齒。
+1. **Mask / density first, colour second**: compute "where is it, how thick" (float32 (H, W) 0~1), then choose lit /
+   shadow / haze colours, then `cv.paint(color, mask)`. Colour can be a full (H, W, 3) map.
+2. **Far to near**: sky → far → middle → water (reflections sample the current image, so after banks and mountains)
+   → foreground → light → text / UI → post-processing.
+3. **One light**: every lit side faces the same light vector; low sun → lit cloud bottoms, rim light on silhouettes.
+4. **Atmospheric perspective**: farther = paler, closer to haze colour, lower contrast; near = dark, high contrast.
+5. **HDR, then compress**: light sources may exceed 1; finish with `bloom` + `soft_clip` (or `finish()`).
+   Surfaces that need texture (moon, clouds, text you want readable) should stay ≤ 1.
+6. **Resolution independent**: positions as fractions; pixel constants at 1080p × `S = H / 1080` (or `sc.px()`),
+   so drafts and full size match.
+7. **Anti-aliasing**: silhouettes `clamp01(Y - ridge + 0.5)`; shapes `sdf.fill(d)`; complex shapes `shape_mask`
+   (supersampled); text `cv.text` / `text_mask` (supersampled). Never hard thresholds like `d < 0`.
+8. **Texture scale**: noise scale too small → fur / noise; too large → plastic. Round things (forest, clouds) plain /
+   billow fBm; rock ridged. Different seeds for neighbouring things.
+9. **Vectorise**: no per-pixel Python loops; many small objects via `np.add.at` or one Pillow `shape_mask`.
+10. **Text is exact**: render the user's words verbatim; omit `font=` for automatic CJK support; fit with `box=`;
+    keep ≥ 30% calm space and one margin; verify spelling and edges with `look.py zoom`.
 
-## 4. 修正 → 重渲染
+## Local install location
 
-- 一次只改 2~4 個參數，seed 固定（結果才可比較）。
-- 改前改後比較：`python tools/look.py compare A.png B.png`（並排）或 `diff A.png B.png`（差異熱圖 + 數字）。
-- 回到第 3 步，直到清單全過。
-
-## 5. 全尺寸、細節、交付
-
-```bash
-python tools/render.py my_scene                              # 1920x1080（或 --size 2560x1440）
-python tools/render.py my_scene --crop 700 300 1500 750      # 全解析度局部裁切，看紋理與邊緣
-python tools/look.py grid outputs/my_scene.png               # 3x3 九塊全解析度小圖
-```
-檢查細節（紋理像不像毛皮、邊緣是否太硬、閃光是否太密），滿意後把 PNG + preview 複製到 `gallery/`，
-回報時附上 preview 路徑、說明改了什麼和為什麼。不必長篇描述圖的內容。
-
-## 繪圖心法（違反這些就不會好看）
-
-1. **先遮罩 / 密度場，再顏色**：先算「哪裡有東西、多厚」（float32 (H, W) 0~1），再決定受光色 / 陰影色 / 霧色，
-   最後 `cv.paint(color, mask)`。顏色可以是整張 (H, W, 3) 顏色圖。
-2. **由遠到近畫**：天空 → 遠景 → 中景 → 水面（倒影取樣「目前畫面」，所以要在岸與山之後）→ 前景 → 光線 → 後製。
-3. **光源一致**：所有物件的亮面朝同一個光向量；低角度太陽 → 雲底受光、剪影邊緣加 rim light。
-4. **大氣透視**：越遠越淡、越接近霧色、對比越低；近景顏色深、對比高。每層之間要分得開。
-5. **HDR 再壓回**：光源可以 > 1，最後 `bloom` + `soft_clip`（或 `finish()`）。但要保留紋理的表面（月面、雲）別 > 1。
-6. **解析度無關**：位置用比例（0~1），像素常數以 1080p 為基準乘上 `S = H / 1080`（或 `sc.px()`），
-   草稿和全尺寸才會長一樣。
-7. **抗鋸齒**：剪影用 `clamp01(Y - ridge + 0.5)`；圓用 `smoothstep` 帶 1~2px 過渡；複雜形狀用 `shape_mask`（超取樣）。
-8. **質感尺度**：噪聲 scale 太小 → 毛皮感 / 雜訊；太大 → 塑膠感。圓潤物（森林、雲）用 plain / billow fBm，
-   岩石稜線用 ridged。相鄰物件用不同 seed，避免重複感。
-9. **全部向量化**：不要逐像素 Python 迴圈；大量小物件（樹、星星）用 `np.add.at` 撒點或 Pillow 畫到超取樣遮罩。
-
-## 本機安裝位置
-
-（由 `tools/install_skill.py` 自動填入；若此處空白，依第 0 步尋找或 clone 專案。）
+(Filled in by `tools/install_skill.py`; if empty, find or clone the project as in step 0.)

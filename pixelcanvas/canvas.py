@@ -7,6 +7,7 @@ from PIL import Image
 
 from .color import F32, rgb, as_color, mix, clamp01, grid
 from . import filters as _f
+from . import vision as _vision
 
 _RES = getattr(Image, "Resampling", Image)
 
@@ -19,6 +20,7 @@ class Canvas:
     def __init__(self, width, height, color=(0.0, 0.0, 0.0)):
         self.buf = np.empty((int(height), int(width), 3), F32)
         self.buf[:] = rgb(color)
+        _vision._track(self)
 
     # ---- 建立 / 輸出 ----
     @classmethod
@@ -113,6 +115,19 @@ class Canvas:
         """線性漸層：``stops = [(0~1 位置, 顏色), ...]``，axis = 'y'（上→下）或 'x'（左→右）。"""
         U, V = self.uv()
         return self.paint(mix(stops, V if axis == "y" else U), mask, mode, opacity)
+
+    def linear(self, p0, p1, stops, mask=None, mode="normal", opacity=1.0):
+        """Linear gradient in any direction: position 0 at point ``p0`` (x, y) → 1 at ``p1``."""
+        X, Y = self.xy()
+        dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+        t = ((X - p0[0]) * dx + (Y - p0[1]) * dy) / max(dx * dx + dy * dy, 1e-9)
+        return self.paint(mix(stops, t), mask, mode, opacity)
+
+    def text(self, text, xy=None, size=None, color="#ffffff", **kw):
+        """Draw styled text (see ``pixelcanvas.text.draw_text``). Returns self; the bbox is in ``cv.last_bbox``."""
+        from .text import draw_text
+        self.last_bbox = draw_text(self, text, xy, size, color, **kw)
+        return self
 
     def radial(self, cx, cy, r, stops, mask=None, mode="normal", opacity=1.0):
         """放射狀漸層：stops 位置 0（中心）~1（半徑 r 處）。"""

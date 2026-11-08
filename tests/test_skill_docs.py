@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""確保 skill 文件與範例不會壞掉：techniques.md 的每段程式都能跑、每個場景都能渲染、工具能用。
+"""確保 skill 文件與範例不會壞掉：techniques.md / typography.md 的每段程式都能跑、每個場景都能渲染、工具能用。
 
 techniques.md 的約定：第一個 ```python 區塊是共用開頭，其餘每段都在「執行過開頭」的乾淨環境裡跑。
 """
@@ -25,6 +25,7 @@ def _blocks(name):
 
 
 TECH = _blocks("techniques.md")
+TYPO = _blocks("typography.md")
 SCENES = sorted(f[:-3] for f in os.listdir(os.path.join(ROOT, "scenes")) if f.endswith(".py") and not f.startswith("_"))
 
 
@@ -37,6 +38,16 @@ def test_technique_snippet_runs(i, tmp_path, monkeypatch):
     exec(TECH[i], g)
     buf = g["cv"].buf
     assert np.isfinite(buf).all() and buf.std() > 0.005          # 有畫出東西
+
+
+@pytest.mark.parametrize("i", range(1, len(TYPO)))
+def test_typography_snippet_runs(i, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    g = {}
+    exec(TYPO[0].replace("W, H = 1920, 1080", "W, H = 384, 216"), g)
+    exec(TYPO[i], g)
+    buf = g["cv"].buf
+    assert np.isfinite(buf).all() and buf.std() > 0.005
 
 
 @pytest.mark.parametrize("name", SCENES)

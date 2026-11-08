@@ -29,13 +29,14 @@ pixelcanvas — 讓 AI 用「像素級運算」畫圖 / 修圖的工具箱（num
 >>> cv.put(10, 10, '#ff0000')                               # 單一像素
 >>> cv.soft_clip(0.8).save('demo.png', preview='demo_small.jpg')
 """
-from . import color, noise, masks, brush, filters
+from . import color, noise, masks, brush, filters, text, sdf, vision
 from .color import *       # noqa: F401,F403
 from .noise import *       # noqa: F401,F403
 from .masks import *       # noqa: F401,F403
 from .brush import *       # noqa: F401,F403
 from .filters import *     # noqa: F401,F403
+from .text import *        # noqa: F401,F403
 from .canvas import Canvas
 
-__version__ = "0.2.0"
-__all__ = ["Canvas", "__version__"] + color.__all__ + noise.__all__ + masks.__all__ + brush.__all__ + filters.__all__
+__version__ = "0.3.0"
+__all__ = ["Canvas", "__version__"] + color.__all__ + noise.__all__ + masks.__all__ + brush.__all__ + filters.__all__ + text.__all__ + ["sdf", "vision"]
