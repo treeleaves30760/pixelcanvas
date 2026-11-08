@@ -75,6 +75,14 @@ VLM 很會判斷整體好不好看，但有三個弱點：讀不準位置、看�
 
 ![zoom](docs/zoom_neon_poster.jpg)
 
+## 可編輯圖層（PSD / OpenRaster）
+
+`python tools/render.py 場景 --layers` 會另外輸出可讓人修改的圖層檔：`場景.psd`（Photoshop、Photopea、GIMP、
+Affinity）、`場景.ora`（Krita、GIMP）與 `場景_layers/`（每層一張 PNG + `layers.json`）。場景裡每個 `log("步驟")`
+就是一個圖層（天空、每一層山、河、樹、標題、後製…）。有畫上去的物件在它的遮罩範圍內是不透明的，所以移動或隱藏它，
+後面的東西仍然完整；光暈是半透明圖層，最後的調色會併入每一層，隱藏物件時不會留下殘影。全部疊回去與最終渲染完全一致（誤差 ±2/255）。
+`tools/layers.py sheet|compose|export` 可看每一層、隱藏某些層重新合成，或把改過的 PNG 重新打包成 PSD。
+
 ## 文字、排版與向量形狀
 
 圖像模型常把字寫錯。本專案用真正的字型點陣化文字，所以文字一定跟使用者要求的一樣，中文、日文也沒問題：
@@ -153,13 +161,16 @@ pixelcanvas/              套件
   filters.py              blend（8 種混合模式）/ 模糊 / 取樣 / 放射模糊 / 體積光 / bloom / 暗角 / 顆粒 / levels ...
   canvas.py               Canvas：建立 / 載入 / 像素 / 上色 / 漸層 / 光暈 / 文字 / 貼圖 / 取樣 / 後製 / 存檔
   vision.py               看圖用的檢視：格線 / 放大 / 明度圖 / 邊緣 / 對照表 / 渲染步驟快照
+  layers.py               可編輯圖層：每個繪圖步驟一層 → PSD / ORA / PNG 圖層組、重新合成
+  stylize.py              媒材：油畫 / 水彩 / 鉛筆素描 / 動畫賽璐璐 / 畫布紋理
   scenery.py              風景配方：Scene、天空、太陽、雲、山、霧、河、水面、樹、體積光、後製
 scenes/                   每張圖一個檔：mountains_sunset、night_sky、still_life、city_dusk、sea_sunset、neon_poster、
                           aurora_lake
                           _template.py（風景）/ _template_poster.py（設計）
 skills/pixelcanvas/       Agent Skill（SKILL.md + references/）
 tools/
-  render.py               渲染（--scale / --size / --seed / --crop / --check / --stages / --set / --sweep / --seeds）
+  render.py               渲染（--scale / --size / --seed / --crop / --check / --stages / --layers / --set / --sweep / --seeds）
+  layers.py               圖層組：info / sheet（每層對照表）/ compose（隱藏、重新合成修改）/ export（PSD、ORA）
   look.py                 看圖：check / guides / zoom / values / edges / sheet / compare / diff / crop / grid /
                           critique / probe / stats / report
   fonts.py                列出字型、輸出字型樣張

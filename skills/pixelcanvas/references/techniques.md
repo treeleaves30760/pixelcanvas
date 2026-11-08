@@ -233,6 +233,28 @@ cv.paint(snow, smoothstep(top - 0.5, top + 0.5, Y))
 - Shadows of trees / rocks on snow: stretch them opposite the light vector, color them blue-violet (not black); add a narrow, dark ring of AO at tree bases.
 - Don't use the same large blotchy noise as the sky on snow (it reads as water reflections or cloud shadows).
 
+## 13. Media: painting, watercolour, sketch, anime (`pixelcanvas.stylize`)
+
+Draw the subject normally (clear shapes, lighting), then convert the finished image to the medium as the last step.
+The filters are array in → array out; pixel sizes × `S`.
+```python
+from pixelcanvas import stylize
+cv.gradient([(0, "#5a86c8"), (0.6, "#cfe0f0"), (1, "#6d9a4a")])
+cv.paint("#c83a2a", sdf.fill(sdf.sd_circle(X, Y, 0.5 * W, 0.55 * H, 0.18 * H)))      # the subject
+cv.paint("#2c5a22", clamp01(Y - (0.8 * H + 20 * S * np.sin(X / (90 * S))) + 0.5))
+cv.apply(stylize.oil_paint, brush=6 * S, seed=1)     # Kuwahara colour blocks + LIC strokes along edges + impasto
+cv.apply(stylize.canvas_texture, strength=0.06)      # "on canvas"
+# alternatives: stylize.watercolor(img) / stylize.pencil_sketch(img) / stylize.cel_shade(img, levels=3, outline=2*S)
+```
+- `oil_paint(brush=…)`: 4~6 px × S = careful painting, 8~14 px × S = loose impressionism. Strokes follow edges
+  (structure-tensor flow), so silhouettes survive; very small details (text, thin lines) do not — draw them after.
+- `watercolor()`: transparent desaturated washes, pigment pooling at wash borders, granulation, white deckled border.
+- `pencil_sketch(colored=0~1)`: dodge-blend contours + hatching in the darks; `colored` for coloured pencil.
+- `cel_shade(levels, outline)`: flat bands + ink outlines. For anime also draw simple shapes and big flat areas first;
+  the filter cannot invent line art from noisy textures.
+- The building blocks are public: `kuwahara(img, r)`, `flow_field(img, sigma)` → (vx, vy, coherence),
+  `lic(tex, vx, vy, length)` for any directional texture (hair, fur, wood grain, wind-blown grass).
+
 ---
 
 ## Palette table (palette starting points, (V fraction, color))

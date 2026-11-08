@@ -12,6 +12,8 @@ Render a scene (scenes/<name>.py).
 Iterating faster (all write labelled images you can look at):
 
   --check                       also write <out>_check.jpg (guides | values | edges | thumbnail) + warnings
+  --layers                      also write editable layers, one per log("step"): <out>.psd (Photoshop /
+                                Photopea / GIMP), <out>.ora (Krita / GIMP), <out>_layers/ (PNGs + layers.json)
   --stages                      also write <out>_stages.jpg: the canvas after every drawing step
                                 (steps = each log("...") / sc.log("...") call in the scene)
   --set NAME=EXPR               override a module-level constant before rendering (repeatable), e.g.
@@ -77,8 +79,16 @@ def apply_override(mod, assignment):
     return root, original
 
 
-def render_one(mod, w, h, seed, log, stages=False):
+def render_one(mod, w, h, seed, log, stages=False, layers=False):
     from pixelcanvas import vision
+    from pixelcanvas import layers as _layers
+    if layers:
+        _layers.enable(target_size=(w, h))
+        inner_l = log
+
+        def log(m):                                    # noqa: F811 — every log() call starts a new layer
+            _layers.mark(m)
+            inner_l(m)
     if stages:
         vision.enable_stages(target_size=(w, h))
         inner = log
@@ -91,6 +101,10 @@ def render_one(mod, w, h, seed, log, stages=False):
         kwargs["seed"] = seed
     cv = mod.render(**kwargs)
     shots = vision.take_stages(cv) if stages else None
+    if layers:
+        stack = _layers.take(cv)
+        stack, _ = _layers.reconcile(stack, cv)
+        return cv, shots, stack
     return cv, shots
 
 
@@ -108,6 +122,8 @@ def main():
     ap.add_argument("--seeds", nargs="+", type=int, help="one variant per seed → contact sheet")
     ap.add_argument("--stages", action="store_true", help="also save a sheet of every drawing step")
     ap.add_argument("--check", action="store_true", help="also save a diagnostic sheet + print warnings")
+    ap.add_argument("--layers", action="store_true",
+                    help="also save editable layers (one per log() step): <out>.psd, <out>.ora, <out>_layers/")
     ap.add_argument("--list", action="store_true", help="list scenes")
     args = ap.parse_args()
     if args.list or not args.scene:
@@ -158,7 +174,8 @@ def main():
         log(f"sheet   {_rel(out)}   ← look at this and pick a variant")
         return 0
 
-    cv, shots = render_one(mod, w, h, args.seed, log, stages=args.stages)
+    res = render_one(mod, w, h, args.seed, log, stages=args.stages, layers=args.layers)
+    cv, shots = res[0], res[1]
 
     tag = "" if scale == 1 else f"_x{scale:g}"
     out = args.out or os.path.join(ROOT, "outputs", f"{args.scene}{tag}.png")
@@ -183,6 +200,14 @@ def main():
         log(f"stages  {_rel(base + '_stages.jpg')}   ({len(shots)} steps)")
     elif args.stages:
         log("stages: none captured (the scene never called log(...))")
+    if args.layers:
+        from pixelcanvas import layers as _layers
+        stack = res[2]
+        paths = _layers.save_all(stack, base, final=cv.buf)
+        names = ", ".join(L.name for L in stack)
+        log(f"layers  {len(stack)} (bottom→top): {names}")
+        for p in paths:
+            log(f"        {_rel(p)}")
     if args.check:
         import look
         sheet_path = base + "_check.jpg"

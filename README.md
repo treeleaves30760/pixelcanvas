@@ -79,6 +79,16 @@ Real drafts from making the banner above, each round fixing the 2~4 worst proble
 
 ![zoom](docs/zoom_neon_poster.jpg)
 
+## Editable layers (PSD / OpenRaster)
+
+`python tools/render.py SCENE --layers` also writes the picture as layers a person can edit: `SCENE.psd`
+(Photoshop, Photopea, GIMP, Affinity), `SCENE.ora` (Krita, GIMP) and `SCENE_layers/` (one PNG per layer +
+`layers.json`). Every `log("step")` in the scene is one layer (sky, each mountain range, river, trees, title, post…).
+Painted objects are solid where they were painted, so moving or hiding one leaves what was behind it intact;
+glows are see-through layers, and the final grading is folded into every layer so hiding an object leaves no ghost. The stack composites back to the final render exactly (±2/255).
+`tools/layers.py sheet|compose|export` shows every layer, re-composites with layers hidden, or rebuilds a PSD
+from edited PNGs.
+
 ## Text, typography and vector shapes
 
 Image models often misspell text. This project rasterises real fonts, so the text always matches what the user
@@ -159,13 +169,16 @@ pixelcanvas/              the package
   filters.py              blend (8 modes) / blur / sample / radial blur / light shafts / bloom / vignette / grain / levels ...
   canvas.py               Canvas: create / load / pixels / paint / gradients / glow / text / paste / sample / post / save
   vision.py               inspection views: guides / zoom / value map / edges / contact sheet / render stages
+  layers.py               editable layers: one per drawing step → PSD / ORA / PNG stack, re-composite
+  stylize.py              media: oil painting / watercolour / pencil sketch / cel-shaded anime / canvas texture
   scenery.py              landscape recipes: Scene, sky, sun, clouds, mountains, mist, rivers, water, trees, god rays, finish
 scenes/                   one file per picture: mountains_sunset, night_sky, still_life, city_dusk, sea_sunset, neon_poster,
                           aurora_lake
                           _template.py (landscape) / _template_poster.py (design)
 skills/pixelcanvas/       the Agent Skill (SKILL.md + references/)
 tools/
-  render.py               render (--scale / --size / --seed / --crop / --check / --stages / --set / --sweep / --seeds)
+  render.py               render (--scale / --size / --seed / --crop / --check / --stages / --layers / --set / --sweep / --seeds)
+  layers.py               layer stacks: info / sheet / compose (hide, re-composite edits) / export (PSD, ORA)
   look.py                 inspection: check / guides / zoom / values / edges / sheet / compare / diff / crop / grid /
                           critique / probe / stats / report
   fonts.py                list fonts, render a specimen sheet
