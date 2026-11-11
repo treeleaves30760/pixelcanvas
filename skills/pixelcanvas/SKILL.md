@@ -9,6 +9,12 @@ description: >-
   models without vision) → fix 2-4 things → re-render. Use whenever the user asks to draw, paint, render,
   illustrate, design a poster/graphic, or "generate a picture/wallpaper", or to retouch an image, and no image
   model is available. 觸發詞：畫一張、幫我畫、產生圖片、海報、桌布、插畫、風景圖、設計圖、修圖、調色。
+license: MIT
+compatibility: Python 3.9+ with numpy and Pillow (installed by scripts/bootstrap.py); git for the first-time download. Works with or without vision.
+metadata:
+  author: treeleaves30760
+  version: "0.3.0"
+  repository: https://github.com/treeleaves30760/pixelcanvas
 ---
 
 # pixelcanvas: drawing with code + maths + looking
@@ -19,13 +25,19 @@ over-exposed, flat or too clean. **Never hand over the first render.**
 
 ## 0. Setup
 
-1. Find the project root (folder with `pixelcanvas/`, `tools/render.py`, `scenes/`): current directory → env var
-   `PIXELCANVAS_HOME` → "Local install location" at the bottom of this file. If none, install:
-   ```bash
-   git clone https://github.com/treeleaves30760/pixelcanvas.git && cd pixelcanvas
-   pip install -r requirements.txt          # numpy, Pillow (scipy optional: faster blur / sampling)
-   ```
-2. Run every command from the project root. `python -m pytest -q` should pass in a few seconds.
+The renderer (`pixelcanvas/`, `tools/`, `scenes/`) is not inside the installed skill folder. Run the bootstrap
+script that sits next to this file; it finds the project (current directory → `$PIXELCANVAS_HOME` →
+`~/.pixelcanvas`), downloads it on first use (<1 MB), installs numpy + Pillow if missing, and prints the project
+root as its **last line**:
+
+```bash
+python <folder of this SKILL.md>/scripts/bootstrap.py      # e.g. ~/.claude/skills/pixelcanvas/scripts/bootstrap.py
+cd <printed root>                                          # run every command below from here
+```
+
+Already inside a checkout, or "Local install location" at the bottom of this file is filled in? Use that and skip
+the script. Manual fallback: `git clone https://github.com/treeleaves30760/pixelcanvas.git && pip install -r requirements.txt`.
+Optional: scipy makes blur / sampling faster. `python -m pytest -q` passes in a few seconds.
 
 ## 1. Plan first (write it as the scene file's docstring)
 
@@ -138,7 +150,9 @@ python tools/layers.py compose outputs/my_scene_layers --hide post --out raw.png
 One layer per `log()` step, bottom → top. Painted objects are solid where their mask was (move the mountain and the
 sky is still behind it); glows and haze are see-through. The final `post` step is folded into every layer (a fitted
 colour LUT + a smooth vignette gain), so grading never leaves a ghost copy of objects; only what that can't express
-(grain, global bloom halos) stays in a thin `post (residual)` layer. The stack re-composites to the final image.
+(grain, global bloom halos) stays in a thin `post (residual)` layer. An object's soft drop shadow / outer glow drawn in
+its own step is split off into a `<name> (halo)` layer in a group with the object (a PSD / ORA folder), so the object
+keeps crisp edges and the group still hides / moves as one. The stack re-composites to the final image.
 
 When the picture is meant to be edited (or layers are requested):
 - **One step per requested layer, named exactly as asked**, in the requested order; nothing drawn outside them except
@@ -148,6 +162,10 @@ When the picture is meant to be edited (or layers are requested):
 - **An object's own light stays with it**: its glow (`cv.glow`), rim light and contact shadow go in its step — unless
   the request lists them as separate effect layers, then give each its own step. Avoid a global `bloom` in `post`
   (it can't fold into layers); grading, `soft_clip`, `vignette` and light `grain` are fine.
+- **Effect layers hold only the effect**: firelight / glow / fog / rays steps paint light and air, not the shapes of
+  other objects (light falling on the tent belongs in the tent's step). Never filter the whole canvas after objects
+  are drawn (motion blur, blur, warp of `cv.buf`): it smears a copy of every object into that step. Blur only the
+  effect's own mask or colour before painting it.
 - **Check by hiding**: `python tools/layers.py compose outputs/x_layers --hide <object> --out hidden.png` for each
   object → the scene behind must be complete, with no hole and no faint copy of the object.
 

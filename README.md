@@ -1,8 +1,22 @@
-# pixelcanvas — let AI models draw with code
+# pixelcanvas — AI image generation with code, no image model needed
 
 ![pixelcanvas — aurora over a mountain lake, rendered entirely by code](docs/hero.jpg)
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+![Agent Skill](https://img.shields.io/badge/Agent%20Skill-SKILL.md-8A2BE2)
+
 [繁體中文](README-zh.md)
+
+> An **Agent Skill** for Claude Code, Codex, Cursor, Gemini CLI and any tool that reads `SKILL.md`: draw posters,
+> wallpapers, landscapes, thumbnails and typography with exact text, edit photos, and export editable **PSD / ORA
+> layers**, using only numpy + Pillow. No image model, no API key, no assets.
+
+```bash
+npx skills add treeleaves30760/pixelcanvas          # install the skill (interactive: pick your tools)
+```
+
+Then ask your assistant: *"Draw a 2560x1440 snowy forest at night"* or *"Make a poster for a jazz night, title 'Blue Hour'"*.
 
 **pixelcanvas** lets a language model that *cannot generate images* still produce good-looking ones. Skies, clouds,
 mountains, water, cities, star fields, light, posters, typography — every pixel is computed from noise, masks,
@@ -23,6 +37,19 @@ a text report instead.
 <p align="center"><img src="gallery/neon_poster_preview.jpg" width="420" alt="neon_poster"></p>
 
 All of the above, including the banner and its title, are plain Python files in [`scenes/`](scenes/).
+
+## Install
+
+| You use | Command |
+|---|---|
+| Any supported agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot, …) | `npx skills add treeleaves30760/pixelcanvas` |
+| Claude Code, global, no prompts | `npx skills add treeleaves30760/pixelcanvas -g -a claude-code -y` |
+| Just look at what is inside | `npx skills add treeleaves30760/pixelcanvas --list` |
+| Clone and hack on it | `git clone https://github.com/treeleaves30760/pixelcanvas.git && cd pixelcanvas && pip install -r requirements.txt` |
+
+The installed skill is `SKILL.md` + `references/` + `scripts/bootstrap.py`. On first use the assistant runs the
+bootstrap script, which downloads the renderer (under 1 MB) to `~/.pixelcanvas` and installs numpy + Pillow if they
+are missing. Requires Python 3.9+ and git.
 
 ## Quick start
 
@@ -85,7 +112,9 @@ Real drafts from making the banner above, each round fixing the 2~4 worst proble
 (Photoshop, Photopea, GIMP, Affinity), `SCENE.ora` (Krita, GIMP) and `SCENE_layers/` (one PNG per layer +
 `layers.json`). Every `log("step")` in the scene is one layer (sky, each mountain range, river, trees, title, post…).
 Painted objects are solid where they were painted, so moving or hiding one leaves what was behind it intact;
-glows are see-through layers, and the final grading is folded into every layer so hiding an object leaves no ghost. The stack composites back to the final render exactly (±2/255).
+glows are see-through layers, and the final grading is folded into every layer so hiding an object leaves no ghost.
+An object's soft drop shadow or outer glow is split into a `(halo)` layer grouped with it (a folder in PSD / ORA):
+the object keeps crisp edges, and the group hides or moves as one. The stack composites back to the final render exactly (±2/255).
 `tools/layers.py sheet|compose|export` shows every layer, re-composites with layers hidden, or rebuilds a PSD
 from edited PNGs.
 
@@ -138,6 +167,7 @@ plan → scene → draft → look → fix → full size.
 
 | Tool | How |
 |---|---|
+| Any tool (recommended) | `npx skills add treeleaves30760/pixelcanvas` |
 | Claude Code | works inside this repo (`CLAUDE.md`); global install: `python tools/install_skill.py` → `~/.claude/skills/pixelcanvas` |
 | Codex CLI | `python tools/install_skill.py --tool codex` → `~/.codex/skills/pixelcanvas`; inside the repo it also reads `AGENTS.md` |
 | Other tools that read SKILL.md | `python tools/install_skill.py --dest <that tool's skills dir>` |
@@ -175,7 +205,7 @@ pixelcanvas/              the package
 scenes/                   one file per picture: mountains_sunset, night_sky, still_life, city_dusk, sea_sunset, neon_poster,
                           aurora_lake
                           _template.py (landscape) / _template_poster.py (design)
-skills/pixelcanvas/       the Agent Skill (SKILL.md + references/)
+skills/pixelcanvas/       the Agent Skill (SKILL.md + references/ + scripts/bootstrap.py)
 tools/
   render.py               render (--scale / --size / --seed / --crop / --check / --stages / --layers / --set / --sweep / --seeds)
   layers.py               layer stacks: info / sheet / compose (hide, re-composite edits) / export (PSD, ORA)
@@ -183,7 +213,7 @@ tools/
                           critique / probe / stats / report
   fonts.py                list fonts, render a specimen sheet
   new_scene.py            new scene from a template (--poster for designs)
-  install_skill.py        install the skill for Claude Code / Codex / other tools
+  install_skill.py        install the skill for Claude Code / Codex / other tools (offline alternative to npx)
 tests/                    pytest: package, every scene, every code sample in the skill docs, the tools
 gallery/                  finished pictures;   docs/  README images;   outputs/  render output (git-ignored)
 CLAUDE.md / AGENTS.md     instructions for AI assistants
