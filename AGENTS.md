@@ -4,6 +4,8 @@ This project lets **models that cannot generate images** draw good-looking ones:
 from noise, masks, signed distance fields, rasterised text and blending, and a **render → look → fix** loop
 improves the image. There are no image assets.
 
+**Install as a skill:** `npx skills add treeleaves30760/pixelcanvas` (the skill's `scripts/bootstrap.py` fetches the renderer on first use).
+
 **The full workflow is in [`skills/pixelcanvas/SKILL.md`](skills/pixelcanvas/SKILL.md). Read it before drawing.**
 References: [API](skills/pixelcanvas/references/api.md) · [techniques & palettes](skills/pixelcanvas/references/techniques.md) ·
 [typography, shapes, layout](skills/pixelcanvas/references/typography.md) · [how to look + checklist](skills/pixelcanvas/references/review.md).

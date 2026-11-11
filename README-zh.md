@@ -1,8 +1,22 @@
-# pixelcanvas — 讓 AI 用程式畫圖
+# pixelcanvas — 讓 AI 用程式畫圖（不需要圖片生成模型）
 
 ![pixelcanvas — aurora over a mountain lake, rendered entirely by code](docs/hero.jpg)
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+![Agent Skill](https://img.shields.io/badge/Agent%20Skill-SKILL.md-8A2BE2)
+
 [English](README.md)
+
+> 給 Claude Code、Codex、Cursor、Gemini CLI 等所有讀 `SKILL.md` 的工具用的 **Agent Skill**：只靠 numpy + Pillow
+> 畫海報、桌布、風景圖、縮圖、精確文字排版，修照片，並匯出可編輯的 **PSD / ORA 圖層**。
+> 不需要圖片生成模型、API key 或素材。
+
+```bash
+npx skills add treeleaves30760/pixelcanvas          # 安裝 skill（互動式選擇要裝到哪些工具）
+```
+
+裝好後直接說：「畫一張 2560x1440 的夜晚雪林」或「做一張爵士夜海報，標題 Blue Hour」。
 
 **pixelcanvas** 讓「不能生成圖片」的語言模型也能畫出好看的圖。天空、雲、山、水、城市、星空、光線、海報、文字排版，
 全部用 numpy + Pillow 從噪聲、遮罩、距離場（SDF）、文字點陣化與混合算出來。沒有任何素材圖，也不需要擴散模型。
@@ -21,7 +35,19 @@
 
 以上每一張（包含最上面的橫幅與它的標題文字）都只是 [`scenes/`](scenes/) 裡的一個 Python 檔。
 
-## 安裝與第一次渲染
+## 安裝
+
+| 你用的工具 | 指令 |
+|---|---|
+| 任何支援的 agent（Claude Code、Codex、Cursor、Gemini CLI、Copilot…） | `npx skills add treeleaves30760/pixelcanvas` |
+| Claude Code 全域安裝、不跳提問 | `npx skills add treeleaves30760/pixelcanvas -g -a claude-code -y` |
+| 先看裡面有什麼 | `npx skills add treeleaves30760/pixelcanvas --list` |
+| clone 下來自己改 | `git clone https://github.com/treeleaves30760/pixelcanvas.git && cd pixelcanvas && pip install -r requirements.txt` |
+
+安裝進去的 skill 是 `SKILL.md` + `references/` + `scripts/bootstrap.py`。第一次使用時 AI 會執行 bootstrap 腳本：
+把渲染器（不到 1 MB）下載到 `~/.pixelcanvas`，缺 numpy / Pillow 就自動安裝。需要 Python 3.9+ 與 git。
+
+## 第一次渲染
 
 ```bash
 pip install -r requirements.txt                          # numpy、Pillow（scipy 可選，讓模糊 / 取樣更快）
@@ -80,7 +106,9 @@ VLM 很會判斷整體好不好看，但有三個弱點：讀不準位置、看�
 `python tools/render.py 場景 --layers` 會另外輸出可讓人修改的圖層檔：`場景.psd`（Photoshop、Photopea、GIMP、
 Affinity）、`場景.ora`（Krita、GIMP）與 `場景_layers/`（每層一張 PNG + `layers.json`）。場景裡每個 `log("步驟")`
 就是一個圖層（天空、每一層山、河、樹、標題、後製…）。有畫上去的物件在它的遮罩範圍內是不透明的，所以移動或隱藏它，
-後面的東西仍然完整；光暈是半透明圖層，最後的調色會併入每一層，隱藏物件時不會留下殘影。全部疊回去與最終渲染完全一致（誤差 ±2/255）。
+後面的東西仍然完整；光暈是半透明圖層，最後的調色會併入每一層，隱藏物件時不會留下殘影。
+物件的柔和投影或外光暈會拆成一個 `(halo)` 圖層，跟物件放在同一個群組（PSD / ORA 的資料夾）：物件本身邊緣清晰，
+隱藏或移動群組時投影會一起跟著。全部疊回去與最終渲染完全一致（誤差 ±2/255）。
 `tools/layers.py sheet|compose|export` 可看每一層、隱藏某些層重新合成，或把改過的 PNG 重新打包成 PSD。
 
 ## 文字、排版與向量形狀
@@ -131,6 +159,7 @@ cv.soft_clip(0.85).save("poster.png")
 
 | 工具 | 做法 |
 |---|---|
+| 任何工具（建議） | `npx skills add treeleaves30760/pixelcanvas` |
 | Claude Code | 在本專案裡直接可用（`CLAUDE.md`）；全域安裝：`python tools/install_skill.py` → `~/.claude/skills/pixelcanvas` |
 | Codex CLI | `python tools/install_skill.py --tool codex` → `~/.codex/skills/pixelcanvas`；在本專案裡也會讀 `AGENTS.md` |
 | 其他支援 SKILL.md 的工具 | `python tools/install_skill.py --dest <該工具的 skills 目錄>` |

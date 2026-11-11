@@ -16,7 +16,7 @@ pixelcanvas/scenery.py  高階「景物配方」：Scene + sky/sun/cirrus/cumulu
 scenes/                 每張圖一個檔：render(width, height, seed, log) -> Canvas；_template.py 是範本
                         範例：mountains_sunset（高階配方）/ night_sky / still_life / city_dusk / sea_sunset（低階 API）/
                         neon_poster（文字 + SDF + 版面）/ aurora_lake（極光 + 湖面倒影 + 標題橫幅，README 首圖）；_template_poster.py 是設計範本
-skills/pixelcanvas/     給 AI 的 skill（英文）：SKILL.md + references/（api / techniques 技巧與配色 / typography 文字與版面 /
+skills/pixelcanvas/     給 AI 的 skill（英文）：SKILL.md + scripts/bootstrap.py（npx 安裝後下載渲染器）+ references/（api / techniques 技巧與配色 / typography 文字與版面 /
                         review 看圖流程與檢查清單）
 tools/render.py         渲染（--scale 0.5 草稿 / 全尺寸 / --crop 裁切 / --check 診斷圖 / --stages 逐步驟快照 / --layers 圖層檔 /
                         --set 改常數 / --sweep、--seeds 變體對照表）

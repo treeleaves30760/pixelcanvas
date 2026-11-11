@@ -68,6 +68,7 @@ class Layer:
     opacity: float = 1.0
     kind: str = "paint"                   # "base" | "paint" | "effect" (no painted coverage) | "post"
     meta: dict = field(default_factory=dict)
+    group: str = None                     # layers sharing a group name are one editable unit (object + its halo)
 
     def full(self):
         """The layer as a full-canvas (H, W, 4) float32 array, 0~1."""
@@ -118,10 +119,12 @@ def _to_layer(name, a, col, size, kind, meta=None):
 class LayerRecorder:
     """Records a canvas step by step. ``mark(name)`` closes the running step and opens ``name``."""
 
-    def __init__(self, cv=None, base_name="base", post="regrade"):
+    def __init__(self, cv=None, base_name="base", post="regrade", halos=None):
         self.cv = None
         self.base_name = base_name
         self.post = post                  # "regrade": push the final post step into every layer (no ghost layer)
+        # "split": soft shadows / glows around a painted object become their own "<name> (halo)" layer
+        self.halos = os.environ.get("PIXELCANVAS_HALOS", "split") if halos is None else halos
         self.final = None
         self.layers = []
         self.current = None
@@ -205,6 +208,8 @@ class LayerRecorder:
                 L.name = f"{L.name} ({n + 1})"
         if self.post == "regrade" and self.layers:
             self.layers = push_post(self.layers, self.final)
+        if self.halos == "split" and self.layers:
+            self.layers = split_halos(self.layers)
         return self.layers
 
 
@@ -360,12 +365,68 @@ def push_post(stack, final=None, tol=1.5 / 255):
         L.rgba = np.concatenate([rgb8, L.rgba[..., 3:4]], -1)
         L.rgba[L.rgba[..., 3] == 0, :3] = 0
     out = list(lower)
+    _spread_noise(out, F)
     _assign_to_owners(out, F)
     comp = composite(out, only_visible=False)
     if float(np.abs(comp - F).max()) > tol:
         a, col = _extract(comp, F)
         out.append(_to_layer("post (residual)", a, col, (W, H), "post"))
     return out
+
+
+def _spread_noise(stack, F, min_alpha=0.5):
+    """Grain belongs to every layer, not only to the one that is visible. Left to _assign_to_owners, the grain of the
+    final image would go into the visible layer only, so a lower layer would have a grain-free hole shaped like the
+    object above it — a ghost when that object is hidden. Take the pixel-scale part of the remaining error (error
+    minus its 3x3 median: grain, not shapes); every layer gets the grain seen where IT is the visible layer, and
+    fills the places it is covered with its own grain shifted in from nearby (grain strength depends on the colour,
+    so each layer keeps its own). The composite moves by exactly the grain where a layer is visible."""
+    try:
+        from scipy.ndimage import median_filter
+    except Exception:                                   # noqa: BLE001
+        return
+    W, H = stack[0].size
+    d = F - composite(stack, only_visible=False)
+    N = (d - median_filter(d, size=(3, 3, 1))).astype(F32)
+    if float(np.abs(N).max()) < 1.0 / 255:
+        return
+    owner = np.full((H, W), -1, np.int32)
+    edge = np.zeros((H, W), bool)                         # near edges the pixel-scale error is fit error, not grain
+    for k, L in enumerate(stack):
+        if not L.rgba.size:
+            continue
+        x0, y0, x1, y1 = L.bbox
+        a = L.rgba[..., 3].astype(F32) / 255.0
+        owner[y0:y1, x0:x1] = np.where(a >= min_alpha, k, owner[y0:y1, x0:x1])
+        if k:
+            g = np.zeros_like(a, bool)
+            g[1:] |= np.abs(np.diff(a, axis=0)) > 0.1
+            g[:, 1:] |= np.abs(np.diff(a, axis=1)) > 0.1
+            edge[y0:y1, x0:x1] |= g
+    edge = _dilate(edge, 2)
+    for k, L in enumerate(stack):
+        if not L.rgba.size:
+            continue
+        mine = (owner == k) & ~edge
+        if not mine.any():
+            continue
+        Nk = np.where(mine[..., None], N, 0).astype(F32)
+        have = mine.copy()
+        x0, y0, x1, y1 = L.bbox
+        need = np.zeros((H, W), bool)
+        need[y0:y1, x0:x1] = L.rgba[..., 3] > 0
+        for r in (5, 11, 23, 47, 97, 199, 401):
+            for sh in ((r, 0), (0, r), (-r, 0), (0, -r), (r, r), (-r, -r), (r, -r), (-r, r)):
+                hole = need & ~have
+                if not hole.any():
+                    break
+                src_ok = np.roll(have, sh, (0, 1)) & hole
+                Nk[src_ok] = np.roll(Nk, sh, (0, 1))[src_ok]
+                have |= src_ok
+        col = L.rgba[..., :3].astype(F32) / 255.0 + Nk[y0:y1, x0:x1]
+        rgb8 = np.round(_clamp(col) * 255.0).astype(np.uint8)
+        L.rgba = np.concatenate([rgb8, L.rgba[..., 3:4]], -1)
+        L.rgba[L.rgba[..., 3] == 0, :3] = 0
 
 
 def _assign_to_owners(stack, F, min_alpha=0.5):
@@ -391,6 +452,71 @@ def _assign_to_owners(stack, F, min_alpha=0.5):
             L.rgba = np.concatenate([rgb8, L.rgba[..., 3:4]], -1)
             owned[y0:y1, x0:x1] |= own
         T[y0:y1, x0:x1] = t * (1.0 - a)
+
+
+def _dilate(m, r):
+    """Binary dilation by a (2r+1) square, numpy only."""
+    out = m.copy()
+    H, W = m.shape
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx == 0 and dy == 0:
+                continue
+            ys, yd = (slice(0, H - dy), slice(dy, H)) if dy >= 0 else (slice(-dy, H), slice(0, H + dy))
+            xs, xd = (slice(0, W - dx), slice(dx, W)) if dx >= 0 else (slice(-dx, W), slice(0, W + dx))
+            out[yd, xd] |= m[ys, xs]
+    return out
+
+
+def _fill_holes(m):
+    """Fill enclosed holes of a binary mask (flood fill from the border, Pillow)."""
+    from PIL import ImageDraw
+    H, W = m.shape
+    im = Image.new("L", (W + 2, H + 2), 0)
+    im.paste(Image.fromarray((m * 255).astype(np.uint8)), (1, 1))
+    ImageDraw.floodfill(im, (0, 0), 128)
+    return np.asarray(im)[1:-1, 1:-1] != 128
+
+
+def split_halos(stack, solid=0.96, aa=2, min_px=200):
+    """Move each painted object's soft halo (drop shadow, outer glow, feathered fringe) into its own layer,
+    placed directly below the object and named "<object> (halo)".
+
+    The object keeps its solid body, its anti-aliased edge (``aa`` px around the solid part) and anything inside
+    its outline (translucent glass, glows in letter counters); soft pixels outside that are the halo. Alpha is
+    only partitioned, so the stack still composites to the same image. Object and halo share a ``group`` (a
+    folder in PSD / ORA, "group" in layers.json): hide or move the group and the shadow goes with it, while the
+    object itself stays crisp and the shadow can be restyled on its own (as with a layer style)."""
+    out = []
+    for L in stack:
+        if L.kind != "paint" or not L.rgba.size:
+            out.append(L)
+            continue
+        a = L.rgba[..., 3].astype(F32) / 255.0
+        core = a >= solid
+        if not core.any():
+            out.append(L)
+            continue
+        body = _fill_holes(_dilate(core, aa))
+        halo = (a > 0) & ~body
+        n = int(halo.sum())
+        if n < max(min_px, 0.02 * a.size) and n < 0.5 * int(body.sum()):
+            out.append(L)
+            continue
+        h_rgba = L.rgba.copy()
+        h_rgba[~halo] = 0
+        o_rgba = L.rgba.copy()
+        o_rgba[halo] = 0
+        x0, y0 = L.bbox[:2]
+        for nm, rgba, kind in ((f"{L.name} (halo)", h_rgba, "effect"), (L.name, o_rgba, L.kind)):
+            ys, xs = np.nonzero(rgba[..., 3])
+            if not len(xs):
+                continue
+            bx0, bx1, by0, by1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
+            out.append(Layer(nm, np.ascontiguousarray(rgba[by0:by1, bx0:bx1]),
+                             (x0 + bx0, y0 + by0, x0 + bx1, y0 + by1), L.size, L.visible, L.opacity, kind,
+                             dict(L.meta), group=L.group or L.name))
+    return out
 
 
 def reconcile(stack, final, name="final fixes", tol=1.5 / 255):
@@ -424,8 +550,11 @@ def save_pngs(stack, folder, final=None):
             L.to_pil().save(os.path.join(folder, fn))
         else:
             fn = None
-        entries.append(dict(index=i, name=L.name, file=fn, x=L.bbox[0], y=L.bbox[1], bbox=list(L.bbox),
-                            visible=L.visible, opacity=L.opacity, kind=L.kind, blend="normal"))
+        e = dict(index=i, name=L.name, file=fn, x=L.bbox[0], y=L.bbox[1], bbox=list(L.bbox),
+                 visible=L.visible, opacity=L.opacity, kind=L.kind, blend="normal")
+        if L.group:
+            e["group"] = L.group
+        entries.append(e)
     comp = composite(stack) if final is None else final
     Image.fromarray(np.round(_clamp(comp) * 255).astype(np.uint8), "RGB").save(os.path.join(folder, "composite.png"))
     with open(os.path.join(folder, "layers.json"), "w", encoding="utf-8") as f:
@@ -451,11 +580,22 @@ def load_pngs(folder):
         else:
             im, bbox = np.zeros((0, 0, 4), np.uint8), (0, 0, 0, 0)
         stack.append(Layer(e["name"], np.ascontiguousarray(im), bbox, (W, H), bool(e.get("visible", True)),
-                           float(e.get("opacity", 1.0)), e.get("kind", "paint")))
+                           float(e.get("opacity", 1.0)), e.get("kind", "paint"), group=e.get("group")))
     return stack
 
 
 # ------------------------------------------------------------------ OpenRaster (.ora: Krita, GIMP, MyPaint)
+
+def _runs(stack):
+    """Consecutive layers with the same group → [(group or None, [(index, Layer), ...]), ...] bottom → top."""
+    runs = []
+    for i, L in enumerate(stack):
+        if runs and L.group and runs[-1][0] == L.group:
+            runs[-1][1].append((i, L))
+        else:
+            runs.append((L.group, [(i, L)]))
+    return runs
+
 
 def save_ora(stack, path, final=None):
     W, H = stack[0].size
@@ -467,16 +607,24 @@ def save_ora(stack, path, final=None):
         im.save(b, "PNG")
         return b.getvalue()
 
+    def esc(s):
+        return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
     xml = [f'<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="{W}" h="{H}">\n<stack>']
     files = []
-    for i, L in reversed(list(enumerate(stack))):           # stack.xml lists the top layer first
-        if not L.rgba.size:
-            continue
-        src = f"data/{i:02d}.png"
-        files.append((src, png_bytes(L.to_pil())))
-        name = (L.name.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;"))
-        xml.append(f' <layer src="{src}" name="{name}" x="{L.bbox[0]}" y="{L.bbox[1]}" opacity="{L.opacity:.3f}" '
-                   f'visibility="{"visible" if L.visible else "hidden"}" composite-op="svg:src-over"/>')
+    for g, run in reversed(_runs(stack)):                   # stack.xml lists the top layer first
+        if g:
+            xml.append(f' <stack name="{esc(g)}" composite-op="svg:src-over">')
+        for i, L in reversed(run):
+            if not L.rgba.size:
+                continue
+            src = f"data/{i:02d}.png"
+            files.append((src, png_bytes(L.to_pil())))
+            xml.append(f' <layer src="{src}" name="{esc(L.name)}" x="{L.bbox[0]}" y="{L.bbox[1]}" '
+                       f'opacity="{L.opacity:.3f}" visibility="{"visible" if L.visible else "hidden"}" '
+                       f'composite-op="svg:src-over"/>')
+        if g:
+            xml.append(" </stack>")
     xml.append("</stack>\n</image>\n")
     thumb = comp_im.copy()
     thumb.thumbnail((256, 256))
@@ -543,27 +691,40 @@ def save_psd(stack, path, final=None, rle=True):
     W, H = stack[0].size
     enc = _channel_rle if rle else _channel_raw
     records, chandata = [], []
-    for L in stack:
-        x0, y0, x1, y1 = L.bbox
-        planes = [(-1, L.rgba[..., 3]), (0, L.rgba[..., 0]), (1, L.rgba[..., 1]), (2, L.rgba[..., 2])] \
-            if L.rgba.size else [(-1, np.zeros((0, 0), np.uint8))] + [(c, np.zeros((0, 0), np.uint8)) for c in range(3)]
+    empty = np.zeros((0, 0), np.uint8)
+
+    def record(name, rgba, bbox, visible=True, opacity=1.0, section=None):
+        x0, y0, x1, y1 = bbox
+        planes = [(-1, rgba[..., 3]), (0, rgba[..., 0]), (1, rgba[..., 1]), (2, rgba[..., 2])] \
+            if rgba.size else [(-1, empty)] + [(c, empty) for c in range(3)]
         blocks = [(cid, enc(p)) for cid, p in planes]
         rec = struct.pack(">iiiiH", y0, x0, y1, x1, len(blocks))
         for cid, b in blocks:
             rec += struct.pack(">hI", cid, len(b))
-        flags = 0 if L.visible else 0x02
-        rec += b"8BIMnorm" + struct.pack(">BBBB", int(round(L.opacity * 255)), 0, flags, 0)
-        name_b = L.name.encode("ascii", "replace")[:255]
+        flags = 0 if visible else 0x02
+        rec += b"8BIMnorm" + struct.pack(">BBBB", int(round(opacity * 255)), 0, flags, 0)
+        name_b = name.encode("ascii", "replace")[:255]
         pas = bytes([len(name_b)]) + name_b
         pas += b"\0" * ((4 - len(pas) % 4) % 4)
-        uni = L.name.encode("utf-16-be")
-        luni = struct.pack(">I", len(L.name)) + uni
+        uni = name.encode("utf-16-be")
+        luni = struct.pack(">I", len(name)) + uni
         luni += b"\0" * ((4 - len(luni) % 4) % 4)
         extra = struct.pack(">I", 0) + struct.pack(">I", 0) + pas + b"8BIMluni" + struct.pack(">I", len(luni)) + luni
+        if section is not None:                        # 1 = open folder, 3 = bounding "</Layer group>" divider
+            extra += b"8BIMlsct" + struct.pack(">II", 4, section)
         rec += struct.pack(">I", len(extra)) + extra
         records.append(rec)
         chandata.append(b"".join(b for _, b in blocks))
-    layer_info = struct.pack(">h", len(stack)) + b"".join(records) + b"".join(chandata)
+
+    nogeom = np.zeros((0, 0, 4), np.uint8)
+    for g, run in _runs(stack):                        # PSD layer records go bottom → top; a folder is
+        if g:                                          # [divider, children..., folder header]
+            record("</Layer group>", nogeom, (0, 0, 0, 0), section=3)
+        for _, L in run:
+            record(L.name, L.rgba, L.bbox, L.visible, L.opacity)
+        if g:
+            record(g, nogeom, (0, 0, 0, 0), section=1)
+    layer_info = struct.pack(">h", len(records)) + b"".join(records) + b"".join(chandata)
     if len(layer_info) % 2:
         layer_info += b"\0"
     lmi = struct.pack(">I", len(layer_info)) + layer_info + struct.pack(">I", 0)

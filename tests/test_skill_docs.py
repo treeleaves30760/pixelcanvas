@@ -61,6 +61,9 @@ def test_skill_frontmatter_and_links():
         text = f.read()
     m = re.match(r"---\n(.*?)\n---\n", text, re.S)
     assert m and re.search(r"^name: pixelcanvas$", m.group(1), re.M) and "description:" in m.group(1)
+    assert re.search(r"^license: MIT$", m.group(1), re.M)                 # skill directories read these fields
+    desc = re.search(r"^description: >-\n((?:  .*\n)+)", m.group(1) + "\n", re.M).group(1)
+    assert len(" ".join(desc.split())) <= 1024                            # Agent Skills limit
     for link in re.findall(r"\]\(([^)]+\.md)\)", text):
         assert os.path.exists(os.path.join(SKILL, link)), link
     for scene in re.findall(r"`scenes/(\w+)\.py`", text):          # 表格裡引用的範例場景
@@ -89,3 +92,10 @@ def test_install_skill(tmp_path):
     assert (tmp_path / "pixelcanvas" / "references" / "api.md").exists()
     assert _run("tools/install_skill.py", "--dest", str(tmp_path), "--uninstall").returncode == 0
     assert not (tmp_path / "pixelcanvas").exists()
+
+
+def test_bootstrap_finds_project_and_skill_ships_it():
+    assert (ROOT_SKILL := os.path.join(SKILL, "scripts", "bootstrap.py")) and os.path.exists(ROOT_SKILL)
+    r = subprocess.run([sys.executable, ROOT_SKILL], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr
+    assert os.path.samefile(r.stdout.strip().splitlines()[-1], ROOT)
