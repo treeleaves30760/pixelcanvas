@@ -63,8 +63,10 @@ def test_no_ghost_after_hiding_an_object():
     assert [L.name for L in st][:3] == ["base", "sky", "ball"]           # grading + vignette fold into the layers
     assert len(st) == 3 or st[3].full()[..., 3].mean() < 0.08           # at most a thin residual
     hidden = layers.composite(st, hidden={"ball"})
-    ref = layers.composite(st, hidden={"ball"})[35:45, 20:30]            # plain sky elsewhere at the same height
-    assert np.abs(hidden[35:45, 55:65].mean((0, 1)) - ref.mean((0, 1))).max() < 0.05   # no red ghost
+    sky = Canvas(120, 80)                                                # the same post on the sky alone = truth
+    sky.gradient([(0, "#3050a0"), (1, "#6080c0")]).soft_clip(0.7).contrast(0.2).saturation(1.2).split_tone().vignette(0.4)
+    ref = np.clip(sky.buf, 0, 1)
+    assert np.abs(hidden[30:50, 50:70] - ref[30:50, 50:70]).mean((0, 1)).max() < 0.05   # no red ghost under the ball
 
 
 def test_bloom_leaves_only_a_thin_residual():
@@ -136,3 +138,46 @@ def test_render_cli_layers(tmp_path):
     r = subprocess.run([sys.executable, "tools/layers.py", "compose", str(tmp_path / "np_layers"), "--hide", "post",
                         "--out", str(tmp_path / "c.png")], cwd=ROOT, capture_output=True, text=True, env=env)
     assert r.returncode == 0 and os.path.exists(str(tmp_path / "c.png")), r.stderr
+
+
+def _card_with_shadow(halos):
+    from pixelcanvas.filters import gaussian_blur
+    cv = Canvas(200, 120)
+    rec = layers.LayerRecorder(cv, halos=halos)
+    rec.mark("bg")
+    cv.paint("#304060", np.ones((120, 200), np.float32))
+    rec.mark("card")
+    m = np.zeros((120, 200), np.float32)
+    m[30:90, 50:150] = 1
+    cv.paint("#000000", 0.6 * gaussian_blur(np.roll(m, (5, 5), (0, 1)), 5))     # drop shadow in the same step
+    cv.paint("#ffffff", m)
+    return cv, rec.finish()
+
+
+def test_split_halos_groups_shadow_with_object(tmp_path):
+    cv, st = _card_with_shadow("split")
+    names = [L.name for L in st]
+    assert names[-2:] == ["card (halo)", "card"]
+    halo, card = st[-2], st[-1]
+    assert halo.group == card.group == "card" and halo.kind == "effect"
+    assert card.bbox == (48, 28, 152, 92)                             # crisp card: body + 2 px edge band only
+    assert np.abs(layers.composite(st) - np.clip(cv.buf, 0, 1)).max() < 2.5 / 255
+    # the group survives every format
+    layers.save_all(st, str(tmp_path / "g"))
+    man = json.load(open(tmp_path / "g_layers" / "layers.json", encoding="utf-8"))
+    assert [e.get("group") for e in man["layers"]][-2:] == ["card", "card"]
+    assert [L.group for L in layers.load_pngs(str(tmp_path / "g_layers"))][-2:] == ["card", "card"]
+    xml = zipfile.ZipFile(tmp_path / "g.ora").read("stack.xml").decode()
+    assert '<stack name="card"' in xml
+    try:
+        from psd_tools import PSDImage
+    except ImportError:
+        return
+    psd = PSDImage.open(tmp_path / "g.psd")
+    grp = [l for l in psd if l.is_group()]
+    assert [g.name for g in grp] == ["card"] and [l.name for l in grp[0]] == ["card (halo)", "card"]
+
+
+def test_halos_kept_by_default():
+    _, st = _card_with_shadow("keep")
+    assert [L.name for L in st][-1] == "card" and all(L.group is None for L in st)

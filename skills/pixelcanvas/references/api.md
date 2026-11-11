@@ -137,6 +137,10 @@ size), `composite(stack, hidden={...})`, `save_psd`, `save_ora`, `save_pngs`, `l
 stack back), `reconcile(stack, final)`, `push_post(stack, final)` (fold a trailing post step into every layer:
 fitted colour LUT + smooth gain, leftovers → thin "post (residual)" layer; `LayerRecorder(post="layer")` keeps the
 old separate post layer). Layer `kind`: `base` / `paint` (has painted coverage) / `effect` / `post`.
+`split_halos(stack)` (on by default; `LayerRecorder(halos="keep")` or env `PIXELCANVAS_HALOS=keep` turns it off):
+a painted object's soft drop shadow / outer glow (soft pixels more than 2 px outside its solid outline) becomes a
+`"<name> (halo)"` layer just below it, and both get `Layer.group = name` → a folder in PSD / ORA and `"group"` in
+layers.json, so the object stays crisp while hiding / moving the group takes the shadow along.
 
 ## High-level recipes (pixelcanvas.scenery) — landscapes
 
