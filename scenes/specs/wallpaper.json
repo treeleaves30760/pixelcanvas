@@ -1,0 +1,12 @@
+{
+  "pcscene": 1,
+  "prompt": "A calm mountain wallpaper at dusk in deep teal and coral with the word 'Breathe'",
+  "kind": "wallpaper",
+  "size": [1920, 1080],
+  "palette": "deep teal and coral",
+  "background": {"backdrop": "mountains"},
+  "layers": [
+    {"text": "Breathe", "role": "title"},
+    {"text": "in, hold, out", "role": "subtitle"}
+  ]
+}

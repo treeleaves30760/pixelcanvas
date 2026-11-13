@@ -1,0 +1,19 @@
+{
+  "pcscene": 1,
+  "prompt": "A poster for a spring plant market called 'Green Days' on Saturday 10:00 at Riverside Park, green and cream",
+  "kind": "poster",
+  "size": [1080, 1350],
+  "palette": "forest green and cream",
+  "background": {"backdrop": "spotlight"},
+  "layers": [
+    {"draw": "potted monstera", "at": "centre", "size": "large"},
+    {"draw": "potted cactus", "at": "far left", "size": "medium"},
+    {"draw": "potted fern", "at": "far right", "size": "medium"},
+    {"text": "Spring market", "role": "kicker"},
+    {"text": "Green Days", "role": "title"},
+    {"text": "Plants, pots and coffee", "role": "subtitle"},
+    {"text": "Saturday 10:00", "role": "details"},
+    {"text": "Riverside Park", "role": "details"}
+  ],
+  "style": null
+}

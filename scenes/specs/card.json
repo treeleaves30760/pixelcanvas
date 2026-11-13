@@ -1,0 +1,14 @@
+{
+  "pcscene": 1,
+  "prompt": "A social card that says 'Slow Mornings' by Ana Ruiz on a warm cream background",
+  "kind": "card",
+  "size": [1200, 630],
+  "palette": "cream and terracotta",
+  "background": {"color": "cream"},
+  "layers": [
+    {"draw": "coffee cup", "at": "centre", "size": "large", "color": "terracotta"},
+    {"text": "Essay", "role": "kicker"},
+    {"text": "Slow Mornings", "role": "title"},
+    {"text": "by Ana Ruiz", "role": "byline"}
+  ]
+}

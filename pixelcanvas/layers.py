@@ -181,7 +181,7 @@ class LayerRecorder:
         cov = self.coverage
         a, col = _extract(self.before, now, cov)
         kind = "paint" if cov is not None and cov.max() > 0.5 else "effect"
-        if re.search(r"post|finish|grade|grading|後製", self.current, re.I):
+        if re.search("post|finish|grade|grading|\u5f8c\u88fd", self.current, re.I):   # also the CJK word for "post"
             kind = "post"
         H, W = now.shape[:2]
         self.layers.append(_to_layer(self.current, a, col, (W, H), kind))

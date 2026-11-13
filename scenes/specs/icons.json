@@ -1,0 +1,16 @@
+{
+  "pcscene": 1,
+  "prompt": "A set of six app icons in navy",
+  "kind": "icons",
+  "size": [1200, 800],
+  "background": {"color": "#f4f1ea"},
+  "layers": [
+    {"text": "App icons", "role": "title"},
+    {"draw": "home icon", "color": "navy"},
+    {"draw": "search icon", "color": "navy"},
+    {"draw": "camera icon", "color": "navy"},
+    {"draw": "calendar icon", "color": "navy"},
+    {"draw": "mail icon", "color": "navy"},
+    {"draw": "heart icon", "color": "navy"}
+  ]
+}

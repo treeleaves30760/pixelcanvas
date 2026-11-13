@@ -135,14 +135,16 @@ def render(width=2400, height=1000, seed=DEFAULT_SEED, log=None):
         log("title")
         x0 = 0.065 * W
         cv.paint("#000000", smoothstep(0.55, 0.0, U) * smoothstep(0.62, 0.1, V) * 0.35)   # calm the title area
+        cv.paint("#02060f", smoothstep(0.50, 0.12, U) * smoothstep(0.12, 0.0, np.abs(V - 0.335) - 0.075) * 0.45)  # soft scrim behind the captions
         cv.text(TITLE, box=(x0, 0.08 * H, 0.46 * W, 0.27 * H), box_anchor="lb", color="#f2fbff", bold=True,
                 glow=dict(radius=40 * S, color="#2bd2c4", strength=0.45),
                 shadow=dict(dx=0, dy=4 * S, blur=10 * S, color="#000000", opacity=0.6))
         t = cv.last_bbox
-        cv.text(TAGLINE, (x0 + 4 * S, t[3] + 26 * S), 46 * S, "#bff7e4", anchor="lt")
+        cv.text(TAGLINE, (x0 + 4 * S, t[3] + 26 * S), 46 * S, "#d4fbef", anchor="lt",
+                shadow=dict(dx=0, dy=2 * S, blur=8 * S, color="#000000", opacity=0.7))
         t2 = cv.last_bbox
-        cv.text(SUBLINE.upper(), (x0 + 4 * S, t2[3] + 22 * S), 24 * S, "#8fa8c8", anchor="lt", tracking=0.18,
-                bold=True)
+        cv.text(SUBLINE.upper(), (x0 + 4 * S, t2[3] + 22 * S), 24 * S, "#e3eefa", anchor="lt", tracking=0.18,
+                bold=True, shadow=dict(dx=0, dy=2 * S, blur=8 * S, color="#000000", opacity=0.75))
 
     log("post")
     cv.bloom(0.7, 0.015 * H, 0.35).vignette(0.3, 0.65).grain(0.012, seed).soft_clip(0.85)

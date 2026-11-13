@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""噪聲：Perlin / fBm / ridged / billow / domain warp（2D 與 1D）。
+"""Noise: Perlin / fBm / ridged / billow / domain warp (2D and 1D).
 
-這是地形、雲、水紋、材質的來源。所有函數都是確定性的（同 seed 同結果），
-而且是「以格為單位」的連續場：換解析度只是重新取樣，圖案不變。
+This is the source of terrain, clouds, water ripples and materials. Every function is deterministic (same seed, same result)
+and a continuous field in "cell" units: changing resolution only resamples it, the pattern stays the same.
+Scales are in pixels: write ``scale = 120 * S`` with ``S = H / 1080`` so a half-size draft keeps the same pattern.
+``mode`` is "plain", "ridged" or "billow".
 """
 from __future__ import annotations
 
@@ -10,10 +12,15 @@ import numpy as np
 
 from .color import F32, grid
 
-try:
-    from scipy import ndimage as _ndi
-except Exception:  # pragma: no cover
-    _ndi = None
+
+
+def _scipy_ndimage():
+    """scipy.ndimage when installed (imported on first use: it costs ~0.3 s at import time), else None."""
+    try:
+        from scipy import ndimage
+        return ndimage
+    except Exception:  # pragma: no cover
+        return None
 
 __all__ = ["perlin2d_at", "perlin2d", "fbm2d_at", "fbm2d", "warp2d", "perlin1d_at", "fbm1d", "smooth1d"]
 
@@ -26,7 +33,7 @@ def _fade(t):
 
 
 def _mix32(h):
-    """uint32 雜湊攪拌 → 0~255 索引（numpy uint32 運算自動 wrap）。"""
+    """uint32 hash scramble -> 0~255 index (numpy uint32 arithmetic wraps automatically)."""
     with np.errstate(over="ignore"):
         h = h ^ (h >> _U32(13))
         h = h * _KM
@@ -64,7 +71,7 @@ def _grad1(seed):
 
 
 def perlin2d_at(X, Y, seed=0):
-    """在任意座標（以「格」為單位）取樣 2D Perlin 梯度噪聲，回傳約 -1~1，形狀同 X。"""
+    """Sample 2D Perlin gradient noise at arbitrary coordinates (in cells); returns roughly -1~1, same shape as X."""
     X = np.asarray(X, F32)
     Y = np.asarray(Y, F32)
     xi = np.floor(X).astype(np.int64)
@@ -89,7 +96,7 @@ def perlin2d_at(X, Y, seed=0):
 
 
 def _perlin_grid(x, y, seed=0):
-    """可分離的快速路徑：x (w,)、y (h,) 皆為「格」單位的 1D 座標，回傳 (h, w)。"""
+    """Separable fast path: x (w,) and y (h,) are 1D coordinates in cells; returns (h, w)."""
     x = np.asarray(x, F32)
     y = np.asarray(y, F32)
     xi = np.floor(x).astype(np.int64)
@@ -121,13 +128,19 @@ def _perlin_grid(x, y, seed=0):
 
 
 def perlin2d(h, w, scale, seed=0, offset=(0.0, 0.0), aspect=1.0):
-    """整張 (h, w) 的 Perlin 噪聲。``scale`` = 一格的像素寬；``aspect`` > 1 讓特徵在 y 方向拉長、< 1 則橫向拉長。"""
+    """Full (h, w) Perlin noise. ``scale`` = pixel width of one cell; ``aspect`` > 1 stretches features along y, < 1 stretches them horizontally."""
     x = (np.arange(w, dtype=F32) + offset[0]) / scale
     y = (np.arange(h, dtype=F32) + offset[1]) / (scale * aspect)
     return _perlin_grid(x, y, seed)
 
 
+MODES = ("plain", "ridged", "billow")
+
+
 def _accumulate(sampler, octaves, lacunarity, gain, seed, mode):
+    if mode not in MODES:
+        from ._args import check_choice
+        check_choice("fbm mode", "mode", mode, MODES)
     total = None
     amp, norm, freq, weight = 1.0, 0.0, 1.0, 1.0
     for i in range(octaves):
@@ -146,12 +159,12 @@ def _accumulate(sampler, octaves, lacunarity, gain, seed, mode):
 
 
 def fbm2d_at(X, Y, octaves=6, lacunarity=2.0, gain=0.5, seed=0, mode="plain"):
-    """分形噪聲（多八度疊加），座標以「格」為單位。
+    """Fractal noise (octaves summed), coordinates in cells.
 
     mode:
-      'plain'  → 約 -1~1，一般地形 / 雲
-      'ridged' → 0~1，尖銳山脊（ridged multifractal）
-      'billow' → 0~1，鼓起的雲朵狀
+      'plain'  -> about -1~1, general terrain / clouds
+      'ridged' -> 0~1, sharp ridges (ridged multifractal)
+      'billow' -> 0~1, puffy cloud-like
     """
     X = np.asarray(X, F32)
     Y = np.asarray(Y, F32)
@@ -159,14 +172,14 @@ def fbm2d_at(X, Y, octaves=6, lacunarity=2.0, gain=0.5, seed=0, mode="plain"):
 
 
 def fbm2d(h, w, scale, octaves=6, lacunarity=2.0, gain=0.5, seed=0, offset=(0.0, 0.0), aspect=1.0, mode="plain"):
-    """整張 (h, w) 的 fBm 噪聲（快速可分離路徑），參數同 fbm2d_at；``scale`` 為最低頻的格寬（像素）。"""
+    """Full (h, w) fBm noise (fast separable path), same parameters as fbm2d_at; ``scale`` is the lowest-frequency cell width in pixels."""
     x = (np.arange(w, dtype=F32) + offset[0]) / scale
     y = (np.arange(h, dtype=F32) + offset[1]) / (scale * aspect)
     return _accumulate(lambda f, s: _perlin_grid(x * f, y * f, s), octaves, lacunarity, gain, seed, mode)
 
 
 def warp2d(h, w, scale, strength=1.0, octaves=5, seed=0, aspect=1.0, mode="plain", offset=(0.0, 0.0)):
-    """Domain warping：先用噪聲扭曲座標再取噪聲 → 流動 / 雲霧 / 大理石狀圖案。"""
+    """Domain warping: distort the coordinates with noise, then sample noise -> flowing / mist / marble-like patterns."""
     qx = fbm2d(h, w, scale, 4, seed=seed + 7, offset=offset, aspect=aspect)
     qy = fbm2d(h, w, scale, 4, seed=seed + 13, offset=(offset[0] + 5.2 * scale, offset[1] + 1.3 * scale), aspect=aspect)
     X, Y = grid(h, w)
@@ -176,7 +189,7 @@ def warp2d(h, w, scale, strength=1.0, octaves=5, seed=0, aspect=1.0, mode="plain
 
 
 def perlin1d_at(X, seed=0):
-    """1D Perlin，座標以「格」為單位，回傳約 -1~1。"""
+    """1D Perlin, coordinates in cells; returns roughly -1~1."""
     X = np.asarray(X, F32)
     xi = np.floor(X).astype(np.int64)
     xf = X - xi
@@ -190,19 +203,45 @@ def perlin1d_at(X, seed=0):
 
 
 def fbm1d(n, scale, octaves=5, lacunarity=2.0, gain=0.5, seed=0, offset=0.0, mode="plain"):
-    """長度 n 的 1D fBm（例如山稜線、河岸線）。mode 同 fbm2d_at。"""
+    """1D fBm of length n (e.g. mountain ridge, river bank). mode as in fbm2d_at."""
     X = (np.arange(n, dtype=F32) + offset) / scale
     return _accumulate(lambda f, s: perlin1d_at(X * f, s), octaves, lacunarity, gain, seed, mode)
 
 
 def smooth1d(a, sigma):
-    """1D 高斯平滑（邊界複製）。"""
+    """1D Gaussian smoothing (edges replicated)."""
     a = np.asarray(a, F32)
     if sigma <= 0:
         return a.copy()
-    if _ndi is not None:
-        return _ndi.gaussian_filter1d(a, sigma, mode="nearest").astype(F32)
-    r = int(3 * sigma) + 1
+    ndi = _scipy_ndimage()
+    if ndi is not None:
+        return ndi.gaussian_filter1d(a, sigma, mode="nearest").astype(F32)
+    r = max(int(4.0 * sigma + 0.5), 1)
     k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
     k /= k.sum()
     return np.convolve(np.pad(a, r, mode="edge"), k, mode="valid").astype(F32)
+
+
+# ---- did-you-mean for names that do not exist (pixelcanvas._args.module_getattr)
+from ._args import module_getattr as _module_getattr  # noqa: E402
+
+_HINTS = {
+    "perlin": "use noise.perlin2d(h, w, scale, seed=0) for a field, or noise.perlin2d_at(X, Y, seed) at coordinates",
+    "perlin3d": "use noise.perlin2d(h, w, scale, seed=0); there is no 3D noise, change seed or offset for variants",
+    "simplex": "use noise.perlin2d(h, w, scale, seed=0) or noise.fbm2d(h, w, scale, octaves=6, seed=0)",
+    "fbm": "use noise.fbm2d(h, w, scale, octaves=6, seed=0) for a field, or noise.fbm1d(n, scale) for a line",
+    "noise": "use noise.fbm2d(h, w, scale, octaves=6, seed=0) (0..1 field), or noise.perlin2d(h, w, scale)",
+    "noise2d": "use noise.fbm2d(h, w, scale, octaves=6, seed=0)",
+    "value": "use noise.perlin2d(h, w, scale, seed=0)",
+    "turbulence": "use noise.fbm2d(h, w, scale, mode='billow') (modes: plain, ridged, billow)",
+    "ridged": "use noise.fbm2d(h, w, scale, mode='ridged')",
+    "billow": "use noise.fbm2d(h, w, scale, mode='billow')",
+    "warp": "use noise.warp2d(h, w, scale, strength=1.0) for a displacement field",
+    "domainwarp": "use noise.warp2d(h, w, scale, strength=1.0)",
+    "worley": "use pixelcanvas.elements.worley / voronoi for cellular patterns",
+    "cellular": "use pixelcanvas.elements.worley / voronoi for cellular patterns",
+    "smooth": "use noise.smooth1d(a, sigma) for a 1D array; for images use pixelcanvas.filters.gaussian_blur(a, sigma)",
+    "blur": "use pixelcanvas.filters.gaussian_blur(a, sigma)",
+    "random": "use np.random.default_rng(seed); noise.fbm2d(h, w, scale, seed=seed) for smooth noise",
+}
+__getattr__ = _module_getattr(__name__, _HINTS)

@@ -1,0 +1,11 @@
+{
+  "pcscene": 1,
+  "prompt": "A bar chart of monthly sign-ups titled 'Sign-ups 2026'",
+  "kind": "chart",
+  "chart": {
+    "type": "bar",
+    "title": "Sign-ups 2026",
+    "data": {"Jan": 320, "Feb": 410, "Mar": 380, "Apr": 520},
+    "ylabel": "sign-ups"
+  }
+}

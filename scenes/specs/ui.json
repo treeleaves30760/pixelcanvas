@@ -1,0 +1,12 @@
+{
+  "pcscene": 1,
+  "prompt": "A habit app home screen that says 'Hello, Maya' with cards for 'Morning run', 'Reading' and 'Sleep'",
+  "kind": "ui",
+  "ui": {
+    "template": "home",
+    "screen": "phone",
+    "theme": "light",
+    "accent": "#3a7d6b",
+    "content": {"title": "Hello, Maya", "subtitle": "Tuesday, 3 March", "cards": [{"title": "Morning run", "text": "5 km at 7:00", "progress": 40}, {"title": "Reading", "text": "20 pages a day"}, {"title": "Sleep", "text": "7 h 40 min last night"}]}
+  }
+}

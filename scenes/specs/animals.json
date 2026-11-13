@@ -1,0 +1,12 @@
+{
+  "pcscene": 1,
+  "prompt": "A white rabbit sitting under a cherry tree on a spring morning, three butterflies in the sky",
+  "kind": "animals",
+  "background": {"sky": "morning", "ground": "grass", "far": "hills"},
+  "layers": [
+    {"draw": "cherry", "at": "left third", "size": "huge"},
+    {"draw": "rabbit", "color": "white", "pose": "sit", "at": "under cherry"},
+    {"draw": "butterfly", "count": 3, "at": "top right"},
+    {"draw": "daisy", "count": 5, "at": "foreground", "arrange": "scatter"}
+  ]
+}

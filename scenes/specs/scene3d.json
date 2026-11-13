@@ -1,0 +1,16 @@
+{
+  "pcscene": 1,
+  "prompt": "A yellow mug, a green bottle and two red apples, studio product shot",
+  "kind": "scene3d",
+  "scene3d": {
+    "objects": [
+      {"draw": "bottle", "color": "seagreen"},
+      {"draw": "mug", "color": "goldenrod"},
+      {"draw": "apple", "count": 2}
+    ],
+    "lighting": "studio",
+    "camera": "three-quarter",
+    "ground": "#e9e1d6",
+    "background": ["#f3eee8", "#d9cfc4"]
+  }
+}

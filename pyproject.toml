@@ -1,21 +1,36 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pixelcanvas"
-version = "0.3.0"
-description = "Let AI models draw with code: pixel-level painting, typography and inspection tools for vision models (numpy + Pillow)"
-readme = "README.md"
-license = {text = "MIT"}
+version = "0.4.0"
+description = "An agent skill and library that draws finished pictures with code: numpy + Pillow, no image model"
+readme = "docs/PYPI.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{name = "treeleaves30760"}]
-keywords = ["agent-skill", "claude-code", "codex", "ai-art", "procedural-generation", "image-generation",
-            "text-to-image", "numpy", "pillow", "vlm", "poster", "typography", "psd", "layers"]
+keywords = ["agent-skill", "claude-code", "codex", "opencode", "mcp", "ai-agents", "procedural-generation",
+            "image-generation", "text-to-image", "generative-art", "numpy", "pillow", "poster", "diagram", "chart",
+            "svg", "dxf", "typography", "psd", "layers"]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Artistic Software",
     "Topic :: Multimedia :: Graphics",
-    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Visualization",
 ]
 requires-python = ">=3.9"
 dependencies = ["numpy>=1.22", "Pillow>=9.1"]
@@ -26,13 +41,33 @@ test = ["pytest"]
 
 [project.urls]
 Homepage = "https://github.com/treeleaves30760/pixelcanvas"
+Repository = "https://github.com/treeleaves30760/pixelcanvas"
 Issues = "https://github.com/treeleaves30760/pixelcanvas/issues"
+Changelog = "https://github.com/treeleaves30760/pixelcanvas/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/treeleaves30760/pixelcanvas#readme"
 
 [project.scripts]
 pixelcanvas = "pixelcanvas.cli:main"
 
-[tool.setuptools]
-packages = ["pixelcanvas"]
+# Packages: setup.py finds pixelcanvas and every sub-package under pixelcanvas/ (clay, pictograms, ...) on its own
+# and adds the three runtime packages below. The wheel carries the tools, the templates / example scenes / specs and
+# both skills as pixelcanvas/_runtime/{tools,scenes,skills}: `pixelcanvas render ...`, `pixelcanvas install-skill`
+# and the MCP server find them there, while a checkout keeps using ./tools, ./scenes and ./skills unchanged.
+[tool.setuptools.package-dir]
+"pixelcanvas._runtime.tools" = "tools"
+"pixelcanvas._runtime.scenes" = "scenes"
+"pixelcanvas._runtime.skills" = "skills"
+
+[tool.setuptools.package-data]
+"pixelcanvas" = ["**/*.json", "**/*.txt"]
+"pixelcanvas._runtime.tools" = ["**/*.py"]
+"pixelcanvas._runtime.scenes" = ["**/*.py", "**/*.json"]
+"pixelcanvas._runtime.skills" = ["**/*.md", "**/*.py", "**/*.json"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", "*.pyc", "**/__pycache__/*", "ROOT.txt", "**/ROOT.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["release: builds and installs the wheel in clean venvs (tools/release_check.py); run with -m release"]
+addopts = "-m 'not release'"

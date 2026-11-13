@@ -1,0 +1,11 @@
+{
+  "pcscene": 1,
+  "prompt": "Mountains at sunset with pine trees",
+  "kind": "landscape",
+  "background": {"sky": "sunset", "far": "mountains", "ground": "meadow", "horizon": 0.64},
+  "layers": [
+    {"draw": "sun", "at": "centre", "size": "small"},
+    {"draw": "pine", "count": 3, "at": "left third", "arrange": "row", "size": "large"},
+    {"draw": "pine", "count": 2, "at": "right", "arrange": "row"}
+  ]
+}

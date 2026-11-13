@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-黃昏山川（mountains_sunset）— 用 scenery 配方組合的第一個範例場景。
+Sunset mountains (mountains_sunset) — the first example scene, built from scenery recipes.
 
-渲染：python tools/render.py mountains_sunset            （全尺寸 1920x1080，約 25 秒）
-      python tools/render.py mountains_sunset --scale 0.5 （草稿 960x540，約 6 秒）
+Render: python tools/render.py mountains_sunset            (full size 1920x1080, about 25 s)
+       python tools/render.py mountains_sunset --scale 0.5 (draft 960x540, about 6 s)
 
-場景檔的約定：提供 ``render(width, height, seed, log) -> Canvas``，以及 ``DEFAULT_SIZE``。
-所有位置用比例（0~1）、所有像素單位以 1080p 為基準（scenery 內部會依解析度縮放）。
+Scene file convention: provide ``render(width, height, seed, log) -> Canvas`` and ``DEFAULT_SIZE``.
+All positions are fractions (0~1); all pixel units are relative to 1080p (scenery scales them to the resolution).
 """
 import numpy as np
 
@@ -19,13 +19,26 @@ NAME = "mountains_sunset"
 DEFAULT_SIZE = (1920, 1080)
 DEFAULT_SEED = 2026
 
-# ---- 調色盤 ----------------------------------------------------------------
+# ---- tunables (try: python tools/render.py mountains_sunset --sweep SUN_X 0.4 0.6 0.75) --------------------
+HORIZON = 0.615            # horizon height as a fraction of the canvas (mirror axis of the water)
+SUN_X, SUN_Y = 0.60, 0.565 # sun position (fractions); 0.60 puts it in the saddle of the farthest ridge
+LIGHT_DIR = (0.90, -0.42)  # direction the light travels (x right, y down), used for rim light and shading
+CLOUD_COVERAGE = 0.50      # cumulus coverage 0~1
+CLOUD_SOFTNESS = 0.34      # cumulus edge softness
+MIST_STRENGTH = 0.5        # valley mist
+HAZE_STRENGTH = 0.8        # horizontal haze band over the river
+GOD_RAY_STRENGTH = 0.24    # light shafts from the sun
+TREE_SEED_OFFSET = 99      # seed offset for foreground tree placement
+MID_TREE_COUNT = 60        # midground pines along the river bank
+BIRDS = [(0.27, 0.33, 12, 0.0), (0.295, 0.305, 10, 0.1), (0.255, 0.295, 8, -0.1), (0.31, 0.345, 7, 0.05)]
+
+# ---- palette ----------------------------------------------------------------
 SKY = [(0.00, "#0c1c3e"), (0.18, "#1e4576"), (0.33, "#3f6f9f"), (0.44, "#86a6c2"), (0.50, "#b9aba6"),
        (0.55, "#d6a784"), (0.615, "#e6a86c"), (0.70, "#efb97f"), (1.00, "#f3c89c")]
 HAZE = [(0.00, "#5f7fae"), (0.40, "#8fa9c8"), (0.52, "#c1b0b0"), (0.575, "#e2b48f"), (0.615, "#e9b888"),
         (0.75, "#e0bb98"), (1.00, "#d4b89a")]
 
-# ---- 山脈（遠 → 近）：base/amp 為高度比例，peaks = (x 比例, 高度比例, 半寬比例) ---------
+# ---- mountain ranges (far -> near): base/amp are height fractions, peaks = (x fraction, height fraction, half-width fraction) ---------
 LAYERS_FAR = [
     dict(base=0.600, amp=0.18, scale=560, seed=11, fog=0.80, shadow="#6e6e9d", lit="#c5b0bd", snow=0.55, relief=16,
          peaks=[(0.30, 0.10, 0.075), (0.84, 0.08, 0.06)], dips=[(0.60, 0.05, 0.06)]),
@@ -47,50 +60,50 @@ LAYERS_NEAR = [
 def render(width=1920, height=1080, seed=DEFAULT_SEED, log=None):
     sc = Scene(width, height, seed, log=log)
     W, H, S = sc.W, sc.H, sc.S
-    sc.set_horizon(0.615)                               # 眼平線 = 水面鏡射軸
-    sc.set_sun(0.60, 0.565, light_dir=(0.90, -0.42))    # 太陽坐在最遠山稜的鞍部上
+    sc.set_horizon(HORIZON)                             # horizon = mirror axis of the water
+    sc.set_sun(SUN_X, SUN_Y, light_dir=LIGHT_DIR)    # the sun sits in the saddle of the farthest ridge
     sc.set_haze(HAZE)
 
-    # 1. 天空、太陽、雲
+    # 1. sky, sun, clouds
     sc.log("sky & clouds")
     sky(sc, SKY)
     disc = sun(sc)
     cirrus(sc)
-    clouds = cumulus(sc)
+    clouds = cumulus(sc, coverage=CLOUD_COVERAGE, softness=CLOUD_SOFTNESS, scale=300, warp=0.5, aspect=0.45, rim=0.25)
 
-    # 2. 遠山（大氣透視由 fog 參數控制）
+    # 2. far mountains (atmospheric perspective is controlled by the fog parameter)
     for i, L in enumerate(LAYERS_FAR):
         sc.log(f"mountain layer {i}")
         mountain_layer(sc, L)
 
-    # 3. 谷底、霧、近景山坡
+    # 3. valley floor, mist, near slopes
     sc.log("valley & near slopes")
     valley_floor(sc)
-    mist(sc)
+    mist(sc, strength=MIST_STRENGTH)
     near = np.zeros((H, W), F32)
     for L in LAYERS_NEAR:
         near = np.maximum(near, mountain_layer(sc, L))
 
-    # 4. 河流（倒影取樣「目前畫面」，所以要在山與岸之後、前景之前）
+    # 4. river (the reflection samples the current canvas, so it comes after mountains and banks, before the foreground)
     sc.log("river")
     center, half, t1 = river_course(sc)
     water, e = water_mask(sc, center, half, t1)
     water_surface(sc, water, e, t1)
     river_bank(sc, water, e, t1)
-    haze_band(sc, exclude=near)
+    haze_band(sc, strength=HAZE_STRENGTH, exclude=near)
 
-    # 5. 前景：沿岸小樹、兩側大松樹、地面、飛鳥
+    # 5. foreground: trees along the bank, big pines at both sides, ground, birds
     sc.log("foreground")
-    rng = np.random.default_rng(seed + 99)
+    rng = np.random.default_rng(seed + TREE_SEED_OFFSET)
     near_trees = []
-    for i in range(7):                                   # 左前景
+    for i in range(7):                                   # left foreground
         hgt = rng.uniform(380, 640) * (1 - i * 0.06) * S
         near_trees.append(((30 + i * 62 + rng.uniform(-20, 20)) * S, H + rng.uniform(-10, 90) * S, hgt, hgt * 0.30))
-    for i in range(5):                                   # 右前景
+    for i in range(5):                                   # right foreground
         hgt = rng.uniform(420, 700) * (1 - i * 0.07) * S
         near_trees.append((W - (30 + i * 70 + rng.uniform(-20, 20)) * S, H + rng.uniform(-10, 90) * S, hgt, hgt * 0.30))
     mid_trees = []
-    for _ in range(60):                                  # 中景：沿著河岸、避開水面
+    for _ in range(MID_TREE_COUNT):                                  # midground: along the river bank, avoiding the water
         yb = rng.uniform(0.80, 0.96) * H
         tt = (yb - sc.horizon) / (H - sc.horizon)
         side = rng.choice([-1, 1])
@@ -107,11 +120,11 @@ def render(width=1920, height=1080, seed=DEFAULT_SEED, log=None):
     sc.occlude(np.maximum(near_mask, mid_mask))
     ground_edge(sc, 0.955, "left", (0.18, 0.32), seed_off=62)
     ground_edge(sc, 0.965, "right", (0.16, 0.30), seed_off=63)
-    birds(sc, [(0.27, 0.33, 12, 0.0), (0.295, 0.305, 10, 0.1), (0.255, 0.295, 8, -0.1), (0.31, 0.345, 7, 0.05)])
+    birds(sc, BIRDS)
 
-    # 6. 體積光與後製
+    # 6. light shafts and post
     sc.log("light shafts & post")
-    god_rays(sc, disc, clouds)
+    god_rays(sc, disc, clouds, strength=GOD_RAY_STRENGTH)
     finish(sc)
     return sc.cv
 

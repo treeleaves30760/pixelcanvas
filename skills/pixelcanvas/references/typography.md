@@ -1,7 +1,7 @@
-# Typography, shapes & layout: posters, cards, thumbnails, UI mock-ups, labelled diagrams
+# Typography, layout and templates: posters, cards, menus, thumbnails, labelled pictures
 
-Text and crisp vector shapes are where code beats image models: letters come out exactly right, in any language.
-Every snippet below runs as-is after this prelude (`tests/test_skill_docs.py` executes them all):
+Every glyph comes from a real font (fallback fonts fill in CJK and symbols) and every text draw is recorded for
+`audit_text(cv)` and `--check`. Every snippet below runs as-is after this prelude:
 
 ```python
 import numpy as np
@@ -15,148 +15,234 @@ X, Y = cv.xy()
 U, V = cv.uv()
 ```
 
-Finished example: `scenes/neon_poster.py` (title block, striped SDF sun, perspective grid, info card).
-
----
+Finished examples: `scenes/type_poster.py` (bilingual concert poster, arc-text seal, vertical Chinese title),
+`scenes/type_specimen.py` (every effect, rich text, fallback), `scenes/neon_poster.py`. The fastest finished design
+is `layout.template(...)` (section 9): content in, layout out.
 
 ## 1. Drawing text: `cv.text(...)`
 
-`cv.text(text, (x, y), size, color, anchor=...)` paints anti-aliased text and stores its bounding box in
-`cv.last_bbox` = `(x0, y0, x1, y1)`. Anchor = horizontal `l/m/r` + vertical `t/m/b` (`"mm"` = centred on the point).
-`\n` makes new lines; `max_width=` wraps (spaces for Latin, between any characters for CJK).
+`cv.text(text, (x, y), size, color, anchor=...)` paints anti-aliased, kerned text in pixels; the bbox lands in
+`cv.last_bbox`. Anchor = horizontal `l/m/r` + vertical `t/m/b` (`"mm"` = centred). `\n` breaks lines; `max_width=`
+wraps (spaces for Latin, between any characters for CJK, never a closing bracket at a line start).
 
 ```python
 cv.gradient([(0, "#f4efe6"), (1, "#e6dccb")])
-cv.text("Quiet Mornings", (W / 2, 0.40 * H), 110 * S, "#1f1a17", anchor="mm", font="georgia", bold=True)
+cv.text("Quiet Mornings", (W / 2, 0.40 * H), 110 * S, "#1f1a17", anchor="mm", font="serif", bold=True)
 title = cv.last_bbox
 cv.text("A STUDY IN SOFT LIGHT", (W / 2, title[3] + 30 * S), 26 * S, "#8a6f55", anchor="mt", tracking=0.3)
-cv.text("清晨的光，安靜地落在桌上。", (W / 2, title[3] + 90 * S), 40 * S, "#3b302a", anchor="mt")
+cv.text("清晨的光，安靜地落在桌上。 Café → ★", (W / 2, title[3] + 90 * S), 40 * S, "#3b302a", anchor="mt")
 ```
-- Fonts: `font=None` picks a good default (sans; CJK font automatically when the text contains CJK);
-  `font="georgia"`, `font="msjh"`, `font="Noto Serif TC"` or a path selects one; `bold=True`.
-  Run `python tools/fonts.py --sheet` to *see* the fonts on this machine before choosing.
-- `tracking=0.2~0.4` (letter spacing as a fraction of size) for small all-caps labels; never on lowercase body text.
-- Sizes: think in a scale — title : subtitle : body ≈ 4 : 1.6 : 1 (e.g. 110 / 44 / 26 at 1080p). Two or three sizes only.
+- **Fonts**: `font=None` picks a good default (CJK for CJK text); style words `"sans"`, `"serif"`, `"slab"`, `"mono"`,
+  `"display"`, `"condensed"`, `"rounded"`, `"handwriting"`, `"script"` + `"bold"`, `"black"`, `"light"`, `"italic"`,
+  or names and paths (`"Noto Serif TC"`). More: `python tools/fonts.py --install starter` / `noto-cjk`, `--sheet`.
+- Tracking and leading follow the size (`tracking=`, `line_spacing=` override); title : subtitle : body ≈ 4 : 1.6 : 1.
 
-## 2. Fit into a box, paragraphs, alignment
+## 2. Fit into a box, paragraphs, lists, tables
 
-`box=(x0, y0, x1, y1)` auto-sizes the text to the box (minus `padding`) and places it by `box_anchor`.
-`max_width=True` with a box = paragraph mode (wraps to the box width, then fits the height).
+`box=(x0, y0, x1, y1)` auto-sizes the text to the box (minus `padding`), placed by `box_anchor`; with a box,
+`max_width=True` is paragraph mode and `balance=True` headline mode (even lines, good break points).
 
 ```python
 cv.gradient([(0, "#10202a"), (1, "#1f3b47")])
-col = (0.08 * W, 0.15 * H, 0.46 * W, 0.85 * H)                    # a text column
-cv.text("FIELD NOTES", box=(col[0], col[1], col[2], col[1] + 0.12 * H), box_anchor="lm", color="#e8f1f2", bold=True)
-body = ("Fog rolled in before dawn and stayed until noon. The ridge disappeared, then the pines, "
-        "then the lake itself. 霧從黎明前開始，一直到中午才散。")
-cv.text(body, box=(col[0], col[1] + 0.16 * H, col[2], col[3]), box_anchor="lt", max_width=True,
-        color="#b8cdd2", line_spacing=1.45)
-x0, y0, x1, y1 = text_bbox("Measure first", (0, 0), 40 * S)      # measure without drawing
-size = fit_text_size("ONE LINE THAT MUST FIT", 0.4 * W, 0.1 * H)  # largest size that fits
-cv.text("ONE LINE THAT MUST FIT", (0.75 * W, 0.5 * H), size, "#ffd27a", anchor="mm", bold=True)
+col = (0.08 * W, 0.12 * H, 0.46 * W, 0.88 * H)
+cv.text("The quiet art of setting type by hand", box=(col[0], col[1], col[2], col[1] + 0.3 * H), box_anchor="lt",
+        balance=True, color="#e8f1f2", font="serif bold")
+body = ("Fog rolled in before dawn and stayed until noon. The ridge disappeared, then the pines, then the lake "
+        "itself. 霧從黎明前開始，一直到中午才散。")
+cv.text(body, (col[0], col[1] + 0.34 * H), 26 * S, "#b8cdd2", max_width=col[2] - col[0], align="justify",
+        drop_cap=3)
+cv.text("- Lists get hanging indents\n- Numbered ones too: start lines with 1. 2. 3.", (0.55 * W, 0.15 * H), 28 * S,
+        "#e8f1f2", max_width=0.38 * W)
+cv.text("Coffee\t2\t$4.50\nCroissant\t12\t$36.00", (0.55 * W, 0.45 * H), 28 * S, "#ffd27a",
+        tabs=[(0.22 * W, "r"), (0.36 * W, ".")], tabular=True)
+x0, y0, x1, y1 = text_bbox("Measure first", (0, 0), 40 * S)        # measure without drawing
+size = fit_text_size("ONE LINE THAT MUST FIT", 0.38 * W, 0.1 * H)    # largest size that fits
+cv.text("ONE LINE THAT MUST FIT", (0.74 * W, 0.8 * H), size, "#ffd27a", anchor="mm", bold=True)
 ```
-- Line length for body text: 45~75 Latin characters or 20~35 CJK characters per line; `line_spacing` 1.3~1.5.
-- Left-align paragraphs; centre only short titles. Keep a consistent margin (≥ 5% of the short side).
+- Body text: 45–75 Latin or 20–35 CJK characters per line. `align="left" | "center" | "right" | "justify"`;
+  `list_style="bullet" | "number" | "dash" | "check"`; `tabs=[x, (x, "r"), (x, ".")]` with `\t`.
 
-## 3. Text effects: outline, shadow, glow, gradient, texture fill
+## 3. Rich text in one block
 
-Back to front: glow → shadow → outline → fill. All optional.
+Light markup is detected automatically: `**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `==highlight==`,
+`{#ff5|colour}`, `{size=1.5|bigger}`, `{b u #e33|combined}`, `{font=georgia|face}`, `{sc|small caps}`,
+`{hl=#aef|marker}`. Or pass a list of `(text, style)` spans. Different sizes share one baseline.
 
 ```python
-cv.gradient([(0, "#0b0620"), (1, "#3a1050")])
-cv.text("NEON", (W * 0.27, H * 0.3), 170 * S, color=(1.5, 0.7, 1.3), anchor="mm", bold=True,
-        glow=dict(radius=35 * S, color="#ff3cac"), outline=3 * S, outline_color="#fff0fa")       # neon (HDR fill)
-cv.text("RETRO", (W * 0.73, H * 0.3), 170 * S, anchor="mm", bold=True,
-        gradient=[(0, "#ffe66d"), (0.5, "#ff9f43"), (1, "#ff3c6e")], outline=4 * S, outline_color="#2a0030",
-        shadow=dict(dx=8 * S, dy=10 * S, blur=0, color="#2bd2ff", opacity=1))                     # hard offset shadow
-m = text_mask(H, W, "STONE", (W / 2, H * 0.72), 220 * S, bold=True, anchor="mm", font="georgia")
-rock = lerp("#5d5750", "#b9b1a6", fbm2d(H, W, 40 * S, 5, seed=4) * 0.5 + 0.5)                   # texture as colour map
-cv.paint("#000000", feather(m, 10 * S) * 0.6)
-cv.paint(rock, m)
-cv.soft_clip(0.85)
+cv.gradient([(0, "#faf7f0"), (1, "#efe8da")])
+cv.text("**Rich** text: *italic*, {#c2412d|colour}, {size=1.6|bigger}, ==marker==, {sc|Small Caps}",
+        (0.06 * W, 0.2 * H), 44 * S, "#1d1a17", font="serif")
+cv.text([("SALE ", {"bold": True, "color": "#e63946"}), ("up to ", {}), ("70%", {"size": 1.8, "bold": True})],
+        (0.06 * W, 0.45 * H), 50 * S, "#1d1a17")
+cv.text("whole block", (0.06 * W, 0.7 * H), 50 * S, "#1d1a17", case="smallcaps", underline=True)
+cv.text("rotated label", (0.75 * W, 0.6 * H), 50 * S, "#2a4d69", anchor="mm", rotate=15, bold=True)
 ```
-- Knockout / cut-out text: draw a panel, then paint the background colour back through the text mask, or
-  `cv.paint(panel_color, panel_mask * (1 - text_mask(...)))`.
-- Embossed letters: `sdf`-style shading from the mask: `bevel = 1 + 0.5 * (m - sample(m, X + 2*S, Y + 2*S))`.
+Whole-block options: `case="upper" | "lower" | "title" | "smallcaps"`, `underline`, `strike`, `highlight="#ffe45c"`,
+`rotate=deg` (counter-clockwise around `xy`), `letter_colors=[...]` (cycled) or stops (per-letter gradient).
 
-## 4. Legible text over a busy picture
+## 4. Effects: one keyword each
 
-Text on a photo-like background needs **value contrast**, not just colour contrast. Three fixes, weakest to strongest:
-shadow → gradient scrim → solid / blurred panel. Check with `python tools/look.py probe IMG U,V` (luma difference
-between text and background ≥ 0.4) or `look.py values IMG` (the text must stay visible in the 4-level map).
+`effect=` takes a name, a dict with options, or a list; effects compose with `outline`, `shadow`, `glow`,
+`gradient`, and `texture=` (an image path, array or Canvas) fills the letters.
+
+```python
+cv.gradient([(0, "#211c2b"), (1, "#0e0c14")])
+cv.text("GOLD", (0.25 * W, 0.25 * H), 170 * S, anchor="mm", font="serif bold", effect="gold")
+cv.text("NEON", (0.75 * W, 0.25 * H), 170 * S, "#ff3cac", anchor="mm", bold=True, effect=dict(kind="neon", off=[2]))
+cv.text("3D", (0.25 * W, 0.72 * H), 200 * S, "#ef476f", anchor="mm", font="display",
+        effect=dict(kind="extrude", depth=24 * S, color="#7a1f3d"))
+cv.text("WOW", (0.75 * W, 0.72 * H), 170 * S, "#f72585", anchor="mm", font="display", effect="sticker")
+```
+Effects: `long_shadow`, `extrude` (3D block letters; `depth`, `angle`, `color`), `emboss`, `letterpress`, metals
+`gold` `silver` `chrome` `rose_gold` `foil` (`stops`, `streak`), `neon` (`off=[i]` unlit letters, `tube=True`),
+`sticker`, `knockout` (letters cut out of a plate), `outline_only`, `stripes`, `glitch`, `chalk`, `stencil`.
+
+## 5. Arcs, paths and vertical CJK
+
+```python
+cv.gradient([(0, "#f3eee4"), (1, "#e7dfcf")])
+cx, cy, R = 0.25 * W, 0.5 * H, 0.32 * H
+cv.paint("#1d3557", sdf.fill(sdf.sd_circle(X, Y, cx, cy, R * 1.15)))
+text_on_arc(cv, "PIXELCANVAS TYPE FOUNDRY", (cx, cy), R, 0.12 * R, angle=-90, color="#f1faee", bold=True)
+text_on_arc(cv, "EST. 2026", (cx, cy), R, 0.11 * R, angle=90, color="#e9c46a", bold=True)
+cv.paint("#e63946", sdf.fill(sdf.sd_circle(X, Y, 0.62 * W, 0.2 * H, 0.14 * H)))          # round LIVE badge
+text_on_arc(cv, "LIVE", (0.62 * W, 0.2 * H), 0.11 * H, color="#ffffff", bold=True, repeat=True)
+cv.text("LIVE", (0.62 * W, 0.2 * H), 0.06 * H, "#ffffff", anchor="mm", bold=True)
+pts = bezier_points((0.45 * W, 0.8 * H), (0.6 * W, 0.3 * H), (0.75 * W, 1.0 * H), (0.95 * W, 0.5 * H), n=100)
+text_on_path(cv, "text follows any curve", pts, 44 * S, align="center", color="#5b4636")
+cv.text("縦書きの日本語、「括弧」も回転。", (0.95 * W, 0.08 * H), 44 * S, "#222", anchor="ra", vertical=True,
+        max_height=0.5 * H)
+```
+- `radius` runs through the middle of the letters: ring text at ~0.8 of the badge radius, the centre word at ~0.4;
+  `repeat=True` fills the ring; `side="outside" | "inside" | "auto"`; `upright=True`; also `cv.text(..., arc=...)`.
+- Vertical text runs top to bottom, columns right to left; brackets and dashes turn; `max_height` (or a `box`)
+  wraps columns. A line down the right edge: `anchor="ra"` at `(L.x1, L.y0)` of `Layout(cv)`, `max_height=L.h`.
+
+## 6. Legible text over a busy picture
+
+`color="auto"` picks black or white ink for what lies under the text (with a soft shadow on busy backgrounds);
+`plate="pill" | "box" | "scrim" | "blur"` or `dict(kind, color, opacity, pad, radius, border, shadow)` puts a plate
+behind it. Text never leaves the canvas: it is moved or shrunk inside unless `clip_ok=True`.
 
 ```python
 cv.gradient([(0, "#7fa6d6"), (0.6, "#e8c9a0"), (1, "#5a4a3a")])
 cv.paint("#2d3a2a", clamp01(Y - ((0.6 - 0.15 * fbm1d(W, 0.2 * W, 5, seed=2)) * H)[None, :] + 0.5))
-scrim = smoothstep(0.55, 1.0, V) * 0.75                          # dark gradient behind the bottom text
-cv.paint("#000000", scrim)
-cv.text("Into the Highlands", (0.06 * W, 0.86 * H), 80 * S, "#ffffff", anchor="lb", bold=True,
-        shadow=dict(blur=8 * S, opacity=0.6))
-cv.text("A field guide · 2026", (0.06 * W, 0.91 * H), 30 * S, "#e6e6e6", anchor="lt")
-card = sdf.sd_box(X, Y, 0.82 * W, 0.18 * H, 0.12 * W, 0.06 * H, radius=0.06 * H)       # pill label
-cv.paint("#ffffff", sdf.fill(card), opacity=0.92)
-cv.text("NEW", box=(0.70 * W, 0.12 * H, 0.94 * W, 0.24 * H), padding=0.025 * H, color="#1b2a1b", bold=True)
+cv.text("Into the Highlands", (0.06 * W, 0.86 * H), 80 * S, "auto", anchor="lb", bold=True, plate="scrim")
+cv.text("A field guide · 2026", (0.06 * W, 0.91 * H), 30 * S, "auto", anchor="lt")
+cv.text("NEW", (0.85 * W, 0.15 * H), 40 * S, "#1b2a1b", anchor="mm", bold=True, plate="pill")
+cv.text("frosted", (0.85 * W, 0.4 * H), 48 * S, "#ffffff", anchor="mm", plate=dict(kind="blur", color="#000000"))
 ```
 
-## 5. Crisp vector shapes with SDFs: badges, buttons, icons, geometric art
+## 7. Check your typography: `audit_text(cv)`
 
-`sdf.sd_*` gives the signed distance to a shape (negative inside). Combine like a vector editor, then render with
-`sdf.fill` (1 px anti-aliased edge at any resolution), `sdf.outline`, `sdf.glow`, `sdf.bevel_light`.
+`audit_text(cv)` turns `cv.text_log` into issues with coordinates and a fix; `--check` prints them under TEXT.
+
+```python
+cv.gradient([(0, "#808080"), (1, "#707070")])
+cv.text("grey on grey", (0.1 * W, 0.2 * H), 60 * S, "#8a8a8a")
+cv.text("crowded", (0.1 * W, 0.22 * H), 60 * S, "#ffffff")
+for issue in audit_text(cv):
+    print(issue["kind"], issue["bbox"], issue["message"], "→", issue["fix"])
+cv.text("fixed", (0.1 * W, 0.6 * H), 60 * S, "auto", plate="pill")
+```
+Issue kinds: `small`, `contrast` (4.5:1 body, 3:1 display, word by word), `clipped`, `margin`, `overlap`,
+`missing_glyphs`, `adjusted`. Decorative text can pass `audit=False`.
+
+## 8. Layout: boxes, grids and stacks
+
+`Layout(cv, margin=0.06)` is the canvas minus a margin, as a `Box`: split it instead of guessing coordinates.
+Boxes pass straight to `cv.text(box=...)`; `stack` sets a list of text items with consistent spacing.
+
+```python
+from pixelcanvas.layout import Layout, stack
+cv.gradient([(0, "#151a36"), (1, "#0b0d1c")])
+L = Layout(cv, margin=0.07)
+strip, main = L.take("bottom", 0.12, gap=0.04)        # (bottom strip, the rest)
+text_col, picture = main.golden("x")                  # 0.618 : 0.382
+cv.paint("#ffb347", picture.inset(0.05).mask(cv, radius=24 * S), opacity=0.85)
+boxes = stack(cv, text_col.inset(0, 0.1), [
+    ("Summer series 2026", "kicker"),
+    ("Night Market by the River", "title"),
+    ("Street food, music and lanterns", "subtitle"),
+    ("Every Friday from 7 pm at Pier 4. Free entry, all ages, bring friends.", "body"),
+], theme="midnight", valign="middle")
+for cell in strip.cols(3, gap=0.03):
+    cv.text("DETAIL", box=cell.inset(0.2), color="#8d93b8", bold=True)
+```
+- Box helpers: `rows([2, 1], gap)`, `cols(3)`, `grid(r, c, gap)` / `cells(...)`, `split(0.4, "x")`, `golden()`,
+  `thirds()`, `take("top", 0.2)` → (strip, rest), `inset(...)`, `sub(u0, v0, u1, v1)`, `fit(aspect)`,
+  `mask(cv, radius)`. Numbers ≤ 1 are fractions of the box's shorter side, larger numbers are pixels.
+- `stack` roles: `kicker`, `title`, `headline`, `subtitle`, `body`, `quote`, `caption`, `footer`, `meta` (or dicts
+  of `cv.text` keywords); it shrinks together on overflow. Also `align_boxes`, `distribute`, `baseline_grid()`.
+
+## 9. Templates: a finished design from content alone
+
+```python
+from pixelcanvas import layout
+boxes = layout.template("poster", cv, title="Night Market", subtitle="Street food, music and lanterns",
+                        kicker="Summer series", details=[("When", "Fri 7 pm"), ("Where", "Pier 4")], theme="midnight")
+pic = boxes["image"]                                   # free area for a picture
+cv.paint("#ffb347", sdf.fill(sdf.sd_circle(X, Y, pic.cx, pic.cy, 0.3 * pic.short)), opacity=0.9)
+```
+| Template | Content keywords |
+|---|---|
+| `poster` | title, subtitle, kicker, details=[(head, body)], footer · `frame=True`, `glow=True` |
+| `flyer` | title, subtitle, date, details=[...], place, cta (full-width picture area, colour band) |
+| `book_cover` · `magazine` | title, author, subtitle, series · title (masthead), headline, cover_lines=[(kicker, line)], issue |
+| `business_card` · `quote_card` | name, role, company, details=[...] · quote, author, source |
+| `thumbnail` | title (2–4 words), subtitle, badge · `layout="top"`: title across the top, `boxes["left"]` / `["right"]` / `["middle"]` for two subjects |
+| `slide` · `certificate` | title, subtitle, kicker, details, footer, page · title, name, details, date, signer, org |
+| `menu` | title, subtitle, sections=[(heading, [(item, price, note)])], footer |
+| `badge` · `label` | title (top arc), subtitle (bottom arc), center · title, brand, subtitle, details, est |
+
+Themes: `midnight`, `paper`, `neon`, `forest`, `sunset`, `mono`, `pastel`, `luxury`, `ocean`, or a dict
+(`layout.theme("paper", accent="#0a7")`). Any theme key is also a template option, so colours change in the call:
+`layout.template("poster", cv, title="Blue Hour", theme="ocean", title_color="#f0d078", accent="#d4a63a")`.
+
+| Theme key | Colours / sets |
+|---|---|
+| `bg` | page gradient `[(0, top), (1, bottom)]` (with `background=True`) |
+| `ink` | main text: item names, place line, the title unless `title` is set |
+| `title` (`title_color=`) | the title (gradient + soft shadow by default) |
+| `subtitle` · `soft` | subtitle line (default `soft`, which also colours secondary lines) |
+| `kicker` · `accent` | kicker, rules, frame, date pill, menu headings (default `accent`) |
+| `body` | details and body text (default `ink`) |
+| `band` | flyer footer band (default `accent`); its text picks the readable of `panel` / `ink` |
+| `muted` | captions, footer, menu leaders |
+| `panel` | card / label surfaces, badge disc |
+| `accent2` | second accent for your own decorations |
+| `title_font` · `body_font` | font of titles · of everything else |
+
+Lists with separators (`"Ana Reyes Trio · Kofi & The Lanterns · DJ Marlowe"`, also `•` `|` `/`) wrap between items,
+on balanced lines. Menus spread their sections down the whole sheet. Draw the picture first and pass
+`background=False` to set type over it. The result holds a Box per text item, `"image"` (the free area) and
+`"layout"` (the page minus its margin).
+
+## 10. Crisp vector shapes with SDFs: badges, buttons, icons
+
+`sdf.sd_*` gives the signed distance to a shape (negative inside); combine like a vector editor, then render with
+`sdf.fill` (anti-aliased at any resolution), `sdf.outline`, `sdf.glow`, `sdf.bevel_light`.
 
 ```python
 cv.gradient([(0, "#1b1f3a"), (1, "#0d0f1e")])
 cx, cy = 0.3 * W, 0.5 * H
 badge = sdf.sd_star(X, Y, cx, cy, 260 * S, 215 * S, n=16)                       # serrated seal
-ring = sdf.sd_ring(X, Y, cx, cy, 175 * S, 8 * S)
-cv.paint("#000000", sdf.glow(badge, 30 * S) * 0.5)                               # drop glow
+cv.paint("#000000", sdf.glow(badge, 30 * S) * 0.5)
 cv.paint(lerp("#d9a441", "#f6d27a", 0.5) * sdf.bevel_light(badge, 14 * S)[..., None], sdf.fill(badge))
-cv.paint("#7a5212", sdf.fill(ring))
 cv.text("100%", (cx, cy), 120 * S, "#5a3a08", anchor="mm", bold=True)
-# boolean ops: a rounded "app icon" with a cut-out circle and a smooth blob merge
 icon = sdf.sd_box(X, Y, 0.7 * W, 0.5 * H, 200 * S, 200 * S, radius=60 * S)
 hole = sdf.sd_circle(X, Y, 0.7 * W + 70 * S, 0.5 * H - 70 * S, 70 * S)
-blob = sdf.smooth_union(sdf.sd_circle(X, Y, 0.7 * W - 60 * S, 0.5 * H + 40 * S, 70 * S),
-                        sdf.sd_circle(X, Y, 0.7 * W + 30 * S, 0.5 * H + 80 * S, 55 * S), k=40 * S)
 cv.linear((0.7 * W - 200 * S, 0.5 * H - 200 * S), (0.7 * W + 200 * S, 0.5 * H + 200 * S),
           [(0, "#2bd2ff"), (1, "#7a5cff")], mask=sdf.fill(sdf.subtract(icon, hole)))
-cv.paint("#ffffff", sdf.fill(blob), opacity=0.9)
-cv.paint("#ffffff", sdf.outline(icon, 3 * S), opacity=0.5)
 ```
-- Primitives: `sd_circle, sd_ellipse, sd_box(radius, angle), sd_segment (capsule), sd_polygon, sd_star, sd_ring, sd_arc`.
-- Ops: `union, intersect, subtract, smooth_union(k), offset(d, k)` (grow / shrink), `annular(d, t)` (hollow).
-- Soft shapes: `sdf.fill(d, aa=20 * S)`; inner shadow: `sdf.fill(-sdf.offset(d, 6 * S), 8 * S)` inside the shape.
+Primitives `sd_circle, sd_ellipse, sd_box(radius, angle), sd_segment, sd_polygon, sd_star, sd_ring, sd_arc`; ops
+`union, intersect, subtract, smooth_union(k), offset(d, k), annular(d, t)`; curves: `bezier_points` + `line_mask`.
 
-## 6. Curves, arrows, ribbons: Bézier + `line_mask`
+## 11. Layout rules and formats
 
-```python
-cv.gradient([(0, "#fbf7f0"), (1, "#efe6d6")])
-path = bezier_points((0.1 * W, 0.7 * H), (0.35 * W, 0.1 * H), (0.6 * W, 0.95 * H), (0.88 * W, 0.35 * H), n=120)
-cv.paint("#c9b89c", line_mask(H, W, path, 18 * S))                             # ribbon
-cv.paint("#d0452f", line_mask(H, W, path, 6 * S))                              # line on top
-tip, prev = np.array(path[-1]), np.array(path[-6])
-d = (tip - prev) / np.linalg.norm(tip - prev)
-n_ = np.array([-d[1], d[0]])
-head = [tuple(tip + d * 30 * S), tuple(tip - d * 10 * S + n_ * 22 * S), tuple(tip - d * 10 * S - n_ * 22 * S)]
-cv.paint("#d0452f", polygon_mask(H, W, head))                                  # arrow head
-cv.text("route", (path[60][0], path[60][1] - 30 * S), 40 * S, "#5b4636", anchor="mb", font="georgia")  # label clear of the line
-```
-- Hand-drawn feel: `stroke(mask, path, r, r_end=..., jitter=0.05)` instead of `line_mask`.
+One focal element; one margin (`Layout(cv, 0.07)`); hierarchy by size, weight, colour; at most 2 font families and
+3 sizes; about 30 % of a poster calm; the title still reads in the 96 px thumbnail of `look.py check`. Formats: poster 1080x1350 (`poster`, `flyer`), square 1080x1080 (`quote_card`, `badge`), story 1080x1920 with the
+top 12 % and bottom 18 % free, thumbnail 1280x720 with at most 4 huge outlined words (`thumbnail`), slide 1920x1080
+(`slide`), book cover 1200x1800, business card 1050x600.
 
-## 7. Layout rules that make designs look intentional
-
-1. **One focal element**, clearly the biggest / brightest / most saturated. Everything else supports it.
-2. **Grid & margins**: pick a margin (6~8% of the short side) and align everything to it or to the centre line.
-   Use `look.py guides` on the render to verify alignment numerically (edges on the same U / V value).
-3. **Hierarchy by size, weight, colour — in that order**; ≤ 2 font families, ≤ 3 sizes.
-4. **Group by proximity**: related lines close together (line_spacing 1.2~1.5), groups far apart (≥ 2x line height).
-5. **Contrast**: text vs background luma difference ≥ 0.4 for body text (`look.py probe`); headlines can rely on size.
-6. **Breathing room**: ≥ 30% of a poster should be calm (no text, low detail). Crowded = amateur.
-7. **Thumbnail test**: `look.py check` shows a 96 px thumbnail — the title and focal element must still read.
-
-| Format | Size | Notes |
-|---|---|---|
-| Poster | 1080x1350 (4:5) / 2480x3508 (A4 @300dpi) | title in top third, focal image middle, info bottom |
-| Social square | 1080x1080 | keep text ≥ 50 px; centre-weighted |
-| Story / phone wallpaper | 1080x1920 | keep top 12% and bottom 18% free of key content (UI overlays) |
-| Video thumbnail | 1280x720 | ≤ 4 words, huge, outlined; one face / object; high saturation |
-| Slide / banner | 1920x1080 | left-aligned title at 8% margin; one idea per slide |
+A misspelt option, key, effect, template name or content field raises an error naming the closest valid one.

@@ -1,0 +1,20 @@
+{
+  "pcscene": 1,
+  "prompt": "A bright isometric living room with a sofa, an armchair, a coffee table with a vase, a rug, a bookshelf, a floor lamp and a plant",
+  "kind": "room",
+  "scene3d": {
+    "room": {"walls": "#e8eef0", "floor": "wood"},
+    "objects": [
+      {"draw": "sofa", "color": "#c8664a"},
+      {"draw": "armchair", "color": "#d9c7a6"},
+      {"draw": "rug", "color": "#6f8fb0"},
+      {"draw": "table", "at": "centre", "size": 0.8},
+      {"draw": "vase", "on": "table", "color": "#e0b04a"},
+      {"draw": "bookshelf"},
+      {"draw": "floor lamp"},
+      {"draw": "plant"}
+    ],
+    "lighting": "interior",
+    "camera": "isometric"
+  }
+}
