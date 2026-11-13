@@ -7,6 +7,7 @@ layers and the manifest behind `--check`. `python tools/kit.py find "..."` names
 |---|---|---|
 | `canvas`, `color`, `noise`, `masks`, `brush`, `sdf`, `filters` | the low-level layer: `Canvas`, colours, noise, masks, strokes, signed distances, filters | [below](#canvas) |
 | `illustrate` | freehand drawing: `Sketch` shapes in fractions, one-call shading / outline / shadow / glow, `pattern`, `sticker`, `wash`, `paper`, `grade`, `limit_palette`; `cv.draw()` / `cv.cairo()` layers | [illustration.md](illustration.md) |
+| match a reference image's style | `reference` (`tools/match.py`) | [reference.md](reference.md) |
 | `figure` | posable, dressed people with hands, faces and hair, in flat 2D styles | [figures.md](figures.md) |
 | `creature` | 2D animals: mammals, birds, sea life, insects, with poses and coats | [creatures.md](creatures.md) |
 | `clay` | 3D clay / toy people (`cast`, `Character`, 31 poses), 64 animal species, 33 props, decals on `solid` | [clay.md](clay.md) |

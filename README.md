@@ -1,258 +1,244 @@
-# pixelcanvas — AI image generation with code, no image model needed
+# pixelcanvas
 
-![pixelcanvas — aurora over a mountain lake, rendered entirely by code](docs/hero.jpg)
+**Your coding agent draws finished pictures with code: posters, diagrams, dashboards, 3D scenes and
+illustrations, with numpy + Pillow. No image model, no GPU, no API key.**
+
+![Pictures drawn by coding agents with pixelcanvas](gallery/wall.jpg)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Agent Skill](https://img.shields.io/badge/Agent%20Skill-SKILL.md-8A2BE2)
+![MCP server](https://img.shields.io/badge/MCP-server-0a7)
 
 [繁體中文](README-zh.md)
 
-> An **Agent Skill** for Claude Code, Codex, Cursor, Gemini CLI and any tool that reads `SKILL.md`: draw posters,
-> wallpapers, landscapes, thumbnails and typography with exact text, edit photos, and export editable **PSD / ORA
-> layers**, using only numpy + Pillow. No image model, no API key, no assets.
+pixelcanvas is an **Agent Skill** and a **Python package**. Claude Code, Codex, opencode, Cursor, Gemini CLI or any
+agent with a shell reads [`SKILL.md`](skills/pixelcanvas/SKILL.md), designs the picture, draws it in Python, runs a
+check that names what to fix, and looks at the result before handing it over. Every picture is a short scene file:
+exact text in any language, editable layers, SVG and DXF when you want them.
 
 ```bash
-npx skills add treeleaves30760/pixelcanvas          # install the skill (interactive: pick your tools)
+npx skills add treeleaves30760/pixelcanvas
 ```
 
-Then ask your assistant: *"Draw a 2560x1440 snowy forest at night"* or *"Make a poster for a jazz night, title 'Blue Hour'"*.
+Then ask: *"Make a bilingual poster for a piano night called NOCTURNE"*, *"Draw the architecture of our commerce
+platform"*, *"An isometric reading nook with a cat on the armchair"*.
 
-**pixelcanvas** lets a language model that *cannot generate images* still produce good-looking ones. Skies, clouds,
-mountains, water, cities, star fields, light, posters, typography — every pixel is computed from noise, masks,
-signed distance fields, rasterised text and blending, with numpy + Pillow. There are no image assets and no
-diffusion model.
+## What you can ask for
 
-The model works the way an illustrator does: **plan → write a scene script → render a draft → look at it →
-fix → re-render**. The project gives a vision-language model (VLM) inspection tools for the "look" step:
-coordinate grids, zoom views, value maps, stage-by-stage sheets and parameter sweeps. Models without vision get
-a text report instead.
+Every picture below was drawn by pixelcanvas from the request under it. The scene files are in [`scenes/`](scenes/).
 
-| | |
-|---|---|
-| ![aurora_lake](gallery/aurora_lake_preview.jpg) | ![mountains_sunset](gallery/mountains_sunset_preview.jpg) |
-| ![sea_sunset](gallery/sea_sunset_preview.jpg) | ![city_dusk](gallery/city_dusk_preview.jpg) |
-| ![night_sky](gallery/night_sky_preview.jpg) | ![still_life](gallery/still_life_preview.jpg) |
+**Posters, print and type**
 
-<p align="center"><img src="gallery/neon_poster_preview.jpg" width="420" alt="neon_poster"></p>
+| | | |
+|---|---|---|
+| ![type poster](gallery/type_poster.jpg) | ![farmers market](gallery/farmers_market.jpg) | ![jazz poster](gallery/jazz_poster.jpg) |
+| *"A bilingual English and Traditional Chinese concert poster for 'NOCTURNE' with a moon, a 'one night only' seal, the date, venue and tickets"* | *"A flyer for a weekend farmers' market in Taipei: title 週末小農市集, illustrated vegetables, warm paper background"* | *"A poster for a jazz night called 'Blue Hour', Friday 21:00 at The Velvet Room, a saxophone, deep blue and gold"* |
+| ![cafe menu](gallery/cafe_menu.jpg) | ![readme banner](gallery/readme_banner.jpg) | ![app icons](gallery/app_icons.jpg) |
+| *"A café menu for 'Fika & Co.': Coffee, Tea, Pastries, five items each with prices, a coffee cup and a croissant, serif type on cream paper"* | *"A README banner for 'driftwood', a dotfiles tool: bold name, the tagline 'your shell, everywhere', a terminal with three commands"* | *"Twelve app icons for a productivity suite in one style: rounded tiles, soft gradients, long shadows, each labelled"* |
 
-All of the above, including the banner and its title, are plain Python files in [`scenes/`](scenes/).
+**Screens, charts and diagrams**
+
+| | | |
+|---|---|---|
+| ![meditation app](gallery/meditation_app.jpg) | ![landing page](gallery/landing_page.jpg) | ![dashboard](gallery/dashboard.jpg) |
+| *"A meditation app home screen: 'Good evening, Sam', a breathing timer at 4:32, Sleep / Focus / Calm cards, a tab bar, dark purple theme"* | *"A landing page hero for Northwave: navigation, the headline 'Ship product updates your customers actually read', two buttons and a dashboard screenshot"* | *"An analytics dashboard for a subscription app: MRR, active users, churn and NPS tiles, revenue line, sign-ups by channel, plan mix donut"* |
+| ![architecture](gallery/architecture.jpg) | ![flowchart](gallery/flowchart.jpg) | ![sequence](gallery/sequence.jpg) |
+| *"An architecture diagram of a commerce platform: clients, CDN and gateway, services, an event bus with workers, data stores. Dark theme, grouped by tier"* | *"A flowchart of a release pipeline from a merged pull request to production, with test, smoke-test and approval decisions and retry loops"* | *"A sequence diagram of a passkey sign-in between the user, browser, API, auth service and user database, with an alt frame for a failed signature"* |
+
+**Engineering drawings and figures**
+
+| | | |
+|---|---|---|
+| ![bracket drawing](gallery/bracket_drawing.jpg) | ![floor plan](gallery/floor_plan.jpg) | ![stone lantern](gallery/stone_lantern.jpg) |
+| *"An A3 engineering drawing of an aluminium angle bracket: front, top, right and section views, an isometric view, dimensions and a title block"* | *"A floor plan of a two-bedroom apartment: doors with swings, windows, furniture, room names with areas, dimensions, a north arrow and a scale bar"* | *"A textbook figure of a Japanese stone lantern with callouts naming its parts from the jewel on top to the base, and its height"* |
+
+**3D and clay characters**
+
+| | | |
+|---|---|---|
+| ![reading nook](gallery/reading_nook.jpg) | ![clay campsite](gallery/clay_campsite.jpg) | ![earbuds](gallery/earbuds.jpg) |
+| *"An isometric cutaway of a cosy reading nook: armchair, floor lamp, a full bookshelf, a round rug, a cat on the armrest, rain outside"* | *"A clay hiker and her dog at a campsite at night: a glowing orange tent, a campfire with rising sparks, pines and the Milky Way"* | *"A product shot of white wireless earbuds in an open charging case on a pale pink seamless backdrop, soft studio light"* |
+| ![clay cast](gallery/clay_cast.jpg) | ![clay zoo](gallery/clay_zoo.jpg) | ![toy diorama](gallery/toy_diorama.jpg) |
+| *"Meet the cast: ten clay characters in a row, from an explorer to a superhero, each labelled"* | *"A field-guide sheet of thirty clay animals on little stands, each labelled"* | *"Toys on a checker floor: a car, a ball, a puppy, a waving kid, ABC blocks and a rocket"* |
+
+**Illustration, nature and styles**
+
+| | | |
+|---|---|---|
+| ![ukiyo-e wave](gallery/ukiyoe_wave.jpg) | ![animal stickers](gallery/animal_stickers.jpg) | ![campfire](gallery/campfire_lake.jpg) |
+| *"A great wave with Mount Fuji in the distance and two fishing boats, in the style of a ukiyo-e woodblock print"* | *"A sticker sheet of nine cute animals, each with a white die-cut border and a tiny label, on a pastel background"* | *"A campfire on the shore of a mountain lake at night, sparks rising, the moon reflected in the water"* |
+| ![aurora](gallery/aurora_lake.jpg) | ![sea sunset](gallery/sea_sunset.jpg) | ![studio still life](gallery/studio_still_life.jpg) |
+| *"A wide banner: aurora over a mirror lake between pine forests, the title 'pixelcanvas'"* | *"The sun setting over a calm sea, its path of light on the waves"* | *"A studio still life on a marble board: a glass bottle, a terracotta mug, a glass sphere and a gold ball"* |
+| ![art styles](gallery/art_styles.jpg) | ![pictograms](gallery/pictograms.jpg) | ![harbour light](gallery/harbour_light.jpg) |
+| *"The same landscape in twelve media"*: 43 named styles, from oil and watercolour to stained glass and blueprint | 633 pictograms in six styles, ready to place by name | *"A red and white lighthouse at dusk, titled 'Harbour Light'"*: the scene in the next section |
 
 ## Install
 
-| You use | Command |
+Pick the route that fits your agent; each one is a single step.
+
+| Route | Command |
 |---|---|
-| Any supported agent (Claude Code, Codex, Cursor, Gemini CLI, Copilot, …) | `npx skills add treeleaves30760/pixelcanvas` |
-| Claude Code, global, no prompts | `npx skills add treeleaves30760/pixelcanvas -g -a claude-code -y` |
-| Just look at what is inside | `npx skills add treeleaves30760/pixelcanvas --list` |
-| Clone and hack on it | `git clone https://github.com/treeleaves30760/pixelcanvas.git && cd pixelcanvas && pip install -r requirements.txt` |
+| Any Agent Skills tool (Claude Code, Codex, Cursor, Gemini CLI, opencode ...) | `npx skills add treeleaves30760/pixelcanvas` |
+| Claude Code plugin | `/plugin marketplace add treeleaves30760/pixelcanvas` then `/plugin install pixelcanvas@pixelcanvas` |
+| pip, then give the skills to your agent | `pip install pixelcanvas && pixelcanvas install-skill claude` (or `agents`, `codex`, `cursor`, `opencode`) |
+| From a clone | `git clone https://github.com/treeleaves30760/pixelcanvas && cd pixelcanvas && pip install -r requirements.txt && python tools/install_skill.py` |
 
-The installed skill is `SKILL.md` + `references/` + `scripts/bootstrap.py`. On first use the assistant runs the
-bootstrap script, which downloads the renderer (under 1 MB) to `~/.pixelcanvas` and installs numpy + Pillow if they
-are missing. Requires Python 3.9+ and git.
+The skill installs a `scripts/bootstrap.py` that sets up the runtime on first use, so the first request just works.
+`pixelcanvas doctor` checks Python, numpy, Pillow, fonts and write access; `uvx pixelcanvas doctor` runs it without
+installing. Every option, per tool and per project: [docs/INSTALL.md](docs/INSTALL.md).
 
-## Quick start
+## How it works: plan, draw, check, look
+
+**1. Plan.** The agent writes an inventory of the picture in the scene's docstring and copies the request into
+`PROMPT`, word for word.
+
+**2. Draw.** It writes the whole scene in one go. Shapes are placed in fractions of the canvas, with shading,
+outlines, glow and exact text built in:
+
+```python
+"""lighthouse: red and white, on a dark cliff at the right, lamp glowing, beam over the sea; title 'Harbour Light'"""
+from pixelcanvas import Canvas
+from pixelcanvas.illustrate import Sketch, paper, grade
+PROMPT = "a red and white lighthouse at dusk, titled 'Harbour Light'"
+DEFAULT_SIZE = (1600, 900)
+
+def render(width=1600, height=900, seed=1, log=lambda step: None):
+    cv = Canvas(width, height)
+    sk = Sketch(cv, light=(-0.6, -0.4))
+    log("sky and sea")
+    cv.gradient([(0, "#1d2150"), (0.5, "#f29a72"), (0.6, "#6a78b0"), (1, "#1c2a55")])
+    sk.spot(0.3, 0.6, 0.25, 0.012, "#ffd9a8", 0.6)                         # light on the water
+    log("cliff")
+    sk.paint(sk.blob([(0.5, 1.05), (0.6, 0.72), (0.78, 0.64), (1.05, 0.62), (1.05, 1.05)]), "#3c3048", shade=0.5)
+    log("beam")
+    cv.paint("#fff1c4", sk.polygon([(0.81, 0.2), (0.0, 0.3), (0.0, 0.52)]), 0.25)
+    log("lighthouse")
+    with sk.at(0.81, 0.42, 0.44):                                           # local frame: 1 unit = 0.44 of the height
+        sk.paint(sk.polygon([(-0.12, 0.45), (-0.08, -0.35), (0.08, -0.35), (0.12, 0.45)]), "#f4efe6",
+                 shade=0.4, line=True, name="lighthouse")
+        for y in (-0.2, 0.1, 0.38):
+            sk.paint(sk.box(-0.118, y - 0.06, 0.118, y + 0.06), "#d2423c", shade=0.4)
+        sk.paint(sk.box(-0.07, -0.5, 0.07, -0.35, 0.02), "#ffe9a8", glow="#ffd27a")
+        sk.paint(sk.polygon([(-0.11, -0.5), (0, -0.64), (0.11, -0.5)]), "#d2423c", line=True)
+    log("title")
+    cv.text("Harbour Light", box=(0.06, 0.08, 0.56, 0.22), color="#fff4e0", font="serif", bold=True)
+    grade(paper(cv), "golden", 0.6)
+    return cv
+```
+
+**3. Check.** `python tools/render.py gallery/src/harbour_light.py --check` renders it and writes a report: image
+critique, a text audit, every object and where it landed, and the request checked item by item. It ends with a
+FIX block that names what to change, or clears the picture:
+
+```text
+PROMPT "a red and white lighthouse at dusk, titled 'Harbour Light'"
+  every quoted text is drawn
+  COVERAGE (subjects of the request and what answers to them):
+    all 1 subjects of the request are accounted for
+  AS REQUESTED (count, colour, place and text the request spells out, against the picture; ✗ names what to change):
+    lighthouse: 1 drawn, 1 requested ✓; red and white requested, white painted ✓
+    'Harbour Light': drawn ✓
+FIX: nothing flagged - look at the picture once, then deliver
+```
+
+**4. Look.** The agent opens the PNG, and zooms in with `tools/look.py` (guides, zoom, value map, edges, probe)
+where a detail needs a closer look. Here is the picture that scene draws:
+
+![Harbour Light](gallery/harbour_light.jpg)
+
+For structured pictures the agent starts from a template instead of a blank file:
 
 ```bash
-pip install -r requirements.txt                          # numpy, Pillow (scipy optional: faster blur / sampling)
-python tools/render.py --list                            # list scenes
-python tools/render.py mountains_sunset --scale 0.5      # draft 960x540, a few seconds
-python tools/render.py mountains_sunset --check          # full 1920x1080 + diagnostic sheet + warnings
-python -m pytest -q                                      # tests (~5 s)
+pixelcanvas kit find "a corgi sitting under an oak tree at sunset"      # the call for each subject
+pixelcanvas new corgi --prompt "a corgi sitting under an oak tree at sunset" --dir ./art
+pixelcanvas render ./art/corgi.py --scale 0.5 --check
 ```
 
-Output goes to `outputs/` (PNG + `_preview.jpg`).
+## What is in the box
 
-## Why it works for vision models
-
-A VLM judges the overall look of an image well. It is weak at three things: reading exact positions, noticing
-small defects, and seeing tonal structure. It also tends to describe what it meant to draw instead of what is
-actually there. Each tool below targets one of these weaknesses and writes an image for the model to look at:
-
-| Tool | What the model sees | Use it for |
+| Kit | Draws | Reference |
 |---|---|---|
-| `render.py SCENE --check` | 2x2 sheet: coordinate guides, 4-level value map, edge map, 96 px thumbnail, plus printed warnings | the first look after every render |
-| `look.py guides IMG` | labelled fraction grid (0.1 steps) and rule-of-thirds lines | reading positions ("horizon at V 0.60") instead of guessing |
-| `look.py zoom IMG u0 v0 u1 v1` | enlarged crop with nearest-neighbour pixels, labelled in full-image coordinates | aliasing, banding, seams, text edges, missing glyphs |
-| `look.py values IMG` | blurred, posterised luminance (the squint test) | whether the composition still reads and the layers separate |
-| `look.py edges IMG` | gradient magnitude | silhouettes, where detail sits, what pulls the eye |
-| `render.py SCENE --stages` | the canvas after each drawing step, side by side | finding the step where the picture went wrong |
-| `render.py SCENE --sweep NAME v1 v2 v3` / `--seeds 1 2 3 4` | one labelled contact sheet of variants | picking a value in one look instead of tweaking one value at a time |
-| `render.py SCENE --set NAME=EXPR` | — | trying a change without editing the file |
-| `look.py critique IMG` | text warnings: clipping, flat tonal range, centred horizon, focal point at the edge, garish saturation, imbalance | objective checks that are easy to miss by eye |
-| `look.py probe IMG U,V ...` | exact hex / luma / hue at given points | text contrast, checking colour intent |
-| `look.py sheet A B C --labels ...` | labelled comparison of iterations | before / after |
-| `look.py report IMG` | full text description: 3x3 colour, luma and texture; dominant colours; profiles; ASCII luma map | models **without** vision |
+| `illustrate` | freehand drawing: `Sketch` shapes in fractions, local frames, blobs, tapered strokes, shading, stickers, washes; `cv.draw()` gives a supersampled Pillow layer | [illustration.md](skills/pixelcanvas/references/illustration.md) |
+| `text`, `layout` | type in any language with CJK fallback, auto-fit, effects; poster and card templates, themes | [typography.md](skills/pixelcanvas/references/typography.md) |
+| `chart` | charts, KPI tiles and whole dashboards | [charts.md](skills/pixelcanvas/references/charts.md) |
+| `diagram` | flowcharts, architecture, trees, sequences, timelines, tables, callouts, with automatic layout | [diagrams.md](skills/pixelcanvas/references/diagrams.md) |
+| `ui` | app and web screens in device frames, with auto layout | [ui.md](skills/pixelcanvas/references/ui.md) |
+| `drafting` | engineering sheets (views, sections, dimensions, title blocks) and floor plans, to PNG, SVG and DXF | [drafting.md](skills/pixelcanvas/references/drafting.md) |
+| `vector` | shapes, paths, icons and groups to raster and SVG | [vector.md](skills/pixelcanvas/references/vector.md) |
+| `pictograms` | 633 pictograms in six styles, also usable as masks | [pictograms.md](skills/pixelcanvas/references/pictograms.md) |
+| `solid` | numpy ray-marched 3D: prefabs, materials, studio light, perspective and isometric cameras | [solid.md](skills/pixelcanvas/references/solid.md) |
+| `clay` | 3D clay characters in 31 poses, 64 animal species, props | [clay.md](skills/pixelcanvas/references/clay.md) |
+| `figure`, `creature` | posed, dressed people and animals on a skeleton | [figures.md](skills/pixelcanvas/references/figures.md), [creatures.md](skills/pixelcanvas/references/creatures.md) |
+| `flora`, `elements`, `scenery` | trees, flowers, fire, smoke, water, weather, skies, landscapes | [flora.md](skills/pixelcanvas/references/flora.md), [elements.md](skills/pixelcanvas/references/elements.md) |
+| `texture`, `form` | 80 lit materials; 2.5D objects and rooms with one light | [textures.md](skills/pixelcanvas/references/textures.md), [forms.md](skills/pixelcanvas/references/forms.md) |
+| `backdrop`, `palette` | one-call backgrounds and wallpapers that keep a calm area for text; named palettes | [backdrops.md](skills/pixelcanvas/references/backdrops.md) |
+| `stylize` | 43 art styles, chosen from the request with `styles pick` | [styles.md](skills/pixelcanvas/references/styles.md) |
 
-### What the loop looks like
+`pixelcanvas kit find "REQUEST"` searches every kit at once, and 30 starter templates (`pixelcanvas new --list`)
+cover posters, charts, diagrams, UI, floor plans, product shots, people, pets and more.
 
-Real drafts from making the banner above, each round fixing the 2~4 worst problems the tools pointed out:
+## Small local models
 
-![iterations](docs/iterations.jpg)
+A model running on your own machine draws through the **pixelcanvas-lite** skill: it writes one small JSON spec and
+`compose` draws it through the kits, in 16 kinds from posters and wallpapers to dashboards, rooms and 3D scenes.
+Every run ends with one `NEXT:` line that says what to do. No Python to write.
 
-**`--check`**: one sheet with coordinate guides, value map, edges and thumbnail, plus printed warnings
-
-![check](docs/check_aurora_lake.jpg)
-
-**`--stages`**: the canvas after every drawing step
-
-![stages](docs/stages_aurora_lake.jpg)
-
-**`--sweep AURORA_STRENGTH 1.0 1.4 1.8 2.2`**: pick a value in one look
-
-![sweep](docs/sweep_aurora_lake.jpg)
-
-**`zoom`**: enlarged region, labelled in full-image coordinates
-
-![zoom](docs/zoom_neon_poster.jpg)
-
-## Editable layers (PSD / OpenRaster)
-
-`python tools/render.py SCENE --layers` also writes the picture as layers a person can edit: `SCENE.psd`
-(Photoshop, Photopea, GIMP, Affinity), `SCENE.ora` (Krita, GIMP) and `SCENE_layers/` (one PNG per layer +
-`layers.json`). Every `log("step")` in the scene is one layer (sky, each mountain range, river, trees, title, post…).
-Painted objects are solid where they were painted, so moving or hiding one leaves what was behind it intact;
-glows are see-through layers, and the final grading is folded into every layer so hiding an object leaves no ghost.
-An object's soft drop shadow or outer glow is split into a `(halo)` layer grouped with it (a folder in PSD / ORA):
-the object keeps crisp edges, and the group hides or moves as one. The stack composites back to the final render exactly (±2/255).
-`tools/layers.py sheet|compose|export` shows every layer, re-composites with layers hidden, or rebuilds a PSD
-from edited PNGs.
-
-## Text, typography and vector shapes
-
-Image models often misspell text. This project rasterises real fonts, so the text always matches what the user
-asked for, including Chinese and Japanese:
-
-```python
-from pixelcanvas import *
-from pixelcanvas import sdf
-
-cv = Canvas(1080, 1350)
-cv.gradient([(0, "#0b0620"), (1, "#3a1050")])
-cv.text("NEON NIGHTS", box=(60, 120, 1020, 300), color=(1.5, 0.7, 1.3), bold=True,      # auto-fit into a box
-        glow=dict(radius=30, color="#ff3cac"), outline=2, outline_color="#fff0fa")
-cv.text("霓虹之夜", (540, cv.last_bbox[3] + 30), 64, "#ffe66d", anchor="mt", tracking=0.4)  # CJK font picked automatically
-X, Y = cv.xy()
-card = sdf.sd_box(X, Y, 540, 1150, 320, 70, radius=70)                                     # crisp rounded rectangle
-cv.paint("#2a0f4a", sdf.fill(card)).paint("#2bd2ff", sdf.outline(card, 2))
-cv.text("SAT 12.19 · 21:00", box=(220, 1080, 860, 1220), padding=24, color="#e8f9ff", bold=True)
-cv.soft_clip(0.85).save("poster.png")
+```bash
+pixelcanvas install-skill opencode --skill pixelcanvas-lite
+pixelcanvas compose --example poster > poster.json
+pixelcanvas compose poster.json --check
+pixelcanvas compose poster.json --deliver final/
 ```
 
-![typography](docs/typography.jpg)
+The spec format: [spec.md](skills/pixelcanvas/references/spec.md).
 
-- **Text** (`pixelcanvas.text`): cross-platform font lookup (`find_font`, `python tools/fonts.py --sheet`); multi-line
-  text, word / CJK wrapping with line-break rules for punctuation, alignment, letter-spacing; auto-fit into a box;
-  outline, shadow, neon glow, gradient fill; and `text_mask` for filling text with any texture.
-- **Shapes** (`pixelcanvas.sdf`): signed distance fields for circles, ellipses, rounded boxes, capsules, polygons, stars,
-  rings and arcs, with union / intersect / subtract / smooth-union, outlines, glows and bevel shading. Edges are
-  anti-aliased at any resolution.
-- **Curves**: `bezier_points` + `line_mask` for ribbons, arrows and diagram lines.
-- **Layout guidance** (poster, square, story, thumbnail and slide formats; hierarchy; margins; contrast):
-  [`typography.md`](skills/pixelcanvas/references/typography.md).
+## Editable layers, SVG and DXF
 
-## For AI assistants: the pixelcanvas skill
+Every `log("step")` in a scene becomes a layer. `--layers` writes the picture as `SCENE.psd` (Photoshop, Photopea,
+GIMP, Affinity), `SCENE.ora` (Krita, GIMP) and a folder of PNGs, so a person can move, hide or repaint any object.
+`--svg` writes the vector drawings (diagrams, charts, UI, icons) as SVG, and `--dxf` writes drafting sheets for CAD.
 
-`skills/pixelcanvas/` is a standard Agent Skill (`SKILL.md` + `references/`). It teaches a model the full loop:
-plan → scene → draft → look → fix → full size.
-
-- [`SKILL.md`](skills/pixelcanvas/SKILL.md): the workflow, which example to start from, the look-tools table, and drawing principles
-- [`references/api.md`](skills/pixelcanvas/references/api.md): API reference
-- [`references/techniques.md`](skills/pixelcanvas/references/techniques.md): how to draw X (silhouettes, volumetric clouds, normal lighting,
-  perspective ground, reflections, scatter, grid patterns, light shafts, brushes, photo editing, snow) and palette tables
-- [`references/typography.md`](skills/pixelcanvas/references/typography.md): text, effects, legibility, SDF shapes, curves, layout rules
-- [`references/review.md`](skills/pixelcanvas/references/review.md): how to look (protocol for VLMs), checklist, symptom → fix
-
-### Install into your tool
-
-| Tool | How |
-|---|---|
-| Any tool (recommended) | `npx skills add treeleaves30760/pixelcanvas` |
-| Claude Code | works inside this repo (`CLAUDE.md`); global install: `python tools/install_skill.py` → `~/.claude/skills/pixelcanvas` |
-| Codex CLI | `python tools/install_skill.py --tool codex` → `~/.codex/skills/pixelcanvas`; inside the repo it also reads `AGENTS.md` |
-| Other tools that read SKILL.md | `python tools/install_skill.py --dest <that tool's skills dir>` |
-| Cursor / Gemini CLI / Copilot / Aider… | open the repo (they read `AGENTS.md`), or paste `SKILL.md` into the tool's rules file |
-| Chat models with a code sandbox | upload the repo as a zip and paste `SKILL.md` as instructions |
-
-The installer writes this project's path into the installed `SKILL.md`, so a request like "draw a ..." works from
-any folder.
-
-## Things to ask for
-
-- "Draw a 2560x1440 snowy forest at night"
-- "Make a poster for a jazz night on Friday 21:00 with the title 'Blue Hour'"
-- "Change mountains_sunset to sunrise, and turn the river into a lake"
-- "A phone wallpaper: a neon city in the rain"
-- "A YouTube thumbnail that says '10 HOURS OF RAIN' over a dark window"
-- "Add a warm vignette and grain to this photo"
-
-## Project layout
-
-```
-pixelcanvas/              the package
-  color.py                rgb / lerp / mix / hsv / smoothstep ...
-  noise.py                perlin2d / fbm2d / warp2d / fbm1d (ridged, billow, domain warp)
-  masks.py                shape_mask / polygon / circle / rect / band / line_mask / bezier_points / feather
-  brush.py                stamp / stroke
-  text.py                 fonts, layout, wrapping, fitting, styled text (outline / shadow / glow / gradient)
-  sdf.py                  signed distance shapes, boolean ops, outline / glow / bevel
-  filters.py              blend (8 modes) / blur / sample / radial blur / light shafts / bloom / vignette / grain / levels ...
-  canvas.py               Canvas: create / load / pixels / paint / gradients / glow / text / paste / sample / post / save
-  vision.py               inspection views: guides / zoom / value map / edges / contact sheet / render stages
-  layers.py               editable layers: one per drawing step → PSD / ORA / PNG stack, re-composite
-  stylize.py              media: oil painting / watercolour / pencil sketch / cel-shaded anime / canvas texture
-  scenery.py              landscape recipes: Scene, sky, sun, clouds, mountains, mist, rivers, water, trees, god rays, finish
-scenes/                   one file per picture: mountains_sunset, night_sky, still_life, city_dusk, sea_sunset, neon_poster,
-                          aurora_lake
-                          _template.py (landscape) / _template_poster.py (design)
-skills/pixelcanvas/       the Agent Skill (SKILL.md + references/ + scripts/bootstrap.py)
-tools/
-  render.py               render (--scale / --size / --seed / --crop / --check / --stages / --layers / --set / --sweep / --seeds)
-  layers.py               layer stacks: info / sheet / compose (hide, re-composite edits) / export (PSD, ORA)
-  look.py                 inspection: check / guides / zoom / values / edges / sheet / compare / diff / crop / grid /
-                          critique / probe / stats / report
-  fonts.py                list fonts, render a specimen sheet
-  new_scene.py            new scene from a template (--poster for designs)
-  install_skill.py        install the skill for Claude Code / Codex / other tools (offline alternative to npx)
-tests/                    pytest: package, every scene, every code sample in the skill docs, the tools
-gallery/                  finished pictures;   docs/  README images;   outputs/  render output (git-ignored)
-CLAUDE.md / AGENTS.md     instructions for AI assistants
+```bash
+python tools/render.py drafting_bracket --svg --dxf
+python tools/render.py clay_campsite --layers
 ```
 
-## Two API levels
+## MCP server
 
-**Low level** (`from pixelcanvas import *`): you can draw anything from this layer.
+`pixelcanvas mcp` speaks the Model Context Protocol on stdin / stdout with 11 tools (`kinds`, `new_scene`,
+`write_scene`, `read_scene`, `render`, `look`, `find`, `reference`, `ask`, `animate`, `layers`) and every reference
+page as a resource.
 
-```python
-from pixelcanvas import *
-cv = Canvas(640, 360)
-cv.gradient([(0, '#0b1a3a'), (1, '#f6c28f')])          # sky gradient
-X, Y = cv.xy()
-cv.glow(400, 200, 60, '#fff0c0', strength=1.2)          # glow (HDR)
-ridge = 220 - 60 * fbm1d(640, 120, seed=1)              # ridgeline: one y per column
-cv.paint('#223344', clamp01(Y - ridge[None, :] + 0.5))  # paint below the ridge = mountain (1 px anti-aliased)
-cv.text("Evening", (20, 20), 36, "#ffffff")             # text
-cv.soft_clip(0.8).save('demo.png', preview='demo_small.jpg')
+```bash
+claude mcp add --scope project pixelcanvas -- python -m pixelcanvas.mcp_server
+codex mcp add pixelcanvas -- python -m pixelcanvas.mcp_server
 ```
 
-**High-level recipes** (`from pixelcanvas.scenery import *`) build a landscape quickly. Pixel units are based on
-1080p and scaled internally, so a `--scale 0.5` draft looks the same as the full-size render:
+Claude Desktop, Cursor and opencode configs: [docs/INSTALL.md](docs/INSTALL.md#as-an-mcp-server).
 
-```python
-sc = Scene(1920, 1080, seed=7)
-sc.set_horizon(0.62); sc.set_sun(0.6, 0.56, light_dir=(0.9, -0.4)); sc.set_haze(HAZE)
-sky(sc, SKY); disc = sun(sc); clouds = cumulus(sc)
-mountain_layer(sc, dict(base=0.6, amp=0.2, scale=500, seed=11, fog=0.7, shadow='#6e6e9d', lit='#c5b0bd', snow=0.5))
-center, half, t1 = river_course(sc); water, e = water_mask(sc, center, half, t1); water_surface(sc, water, e, t1)
-god_rays(sc, disc, clouds); finish(sc)
-sc.cv.save('out.png', preview='out_preview.jpg')
+## Reference pages
+
+- [SKILL.md](skills/pixelcanvas/SKILL.md): the loop, freehand drawing, checked pictures, art direction, the kit table
+- [api.md](skills/pixelcanvas/references/api.md): the full API index
+- [illustration.md](skills/pixelcanvas/references/illustration.md), [techniques.md](skills/pixelcanvas/references/techniques.md),
+  [typography.md](skills/pixelcanvas/references/typography.md), [review.md](skills/pixelcanvas/references/review.md)
+- one page per kit in [`skills/pixelcanvas/references/`](skills/pixelcanvas/references/)
+- [CHANGELOG.md](CHANGELOG.md): what is new in 0.4
+
+## Contributing
+
+Pictures, kits and fixes are welcome. [`CLAUDE.md`](CLAUDE.md) has the project map and the steps for a new kit (a
+registry, strict options, manifest hooks, a reference page whose code blocks run, a starter template and an example
+scene). Run the tests before a pull request:
+
+```bash
+pip install -r requirements.txt pytest
+python -m pytest -q
 ```
 
-## Conventions
+`python tools/build_gallery.py` rebuilds this gallery from the scenes.
 
-- **Coordinates:** x goes right and y goes down (`arr[y, x]`). Positions are fractions from 0 to 1.
-- **Masks:** float32 (H, W), values 0 to 1.
-- **Colours:** `'#rrggbb'`, `(r, g, b)` in 0–1, `(255, 128, 0)`, or a full (H, W, 3) map. HDR values above 1
-  are allowed; finish with `soft_clip` / `bloom`.
-- **Drawing order:** sky → far → near → water → foreground → light → text → post-processing.
+## Licence
 
+MIT, see [LICENSE](LICENSE).

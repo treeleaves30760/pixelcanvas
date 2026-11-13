@@ -2066,7 +2066,7 @@ def infrared(img, glow=1.0, seed=0):
 
 
 def anime(img, colors=12, shadow="#6e6290", outline=1.0, saturation=1.35, seed=0):
-    """Cel anime: flat base colours, one crisp cool shadow tone and a highlight band, thin dark colour
+    """Cel anime: clean base colours, a crisp cool shadow band and a highlight band, thin dark colour
     outlines, clean saturated palette."""
     img, H, W, S = _prep(img)
     base, pal, lab = _segment(img, colors, S, seed, smooth=4.5, pre=4.0)
@@ -2145,7 +2145,7 @@ STYLES = {
     "manga": _style(manga, "Manga: black-and-white ink lines with cut screentone dots and solid blacks.",
                     ["manga", "screentone", "black and white comic", "黑白漫畫", "日漫", "網點紙", "マンガ", "漫画",
                      "スクリーントーン"]),
-    "cel": _style(anime, "Cel anime: flat colours, one crisp cool shadow tone, highlight band, thin colour outlines.",
+    "cel": _style(anime, "Cel anime: clean base colours with a crisp cool shadow band and a highlight band, thin colour outlines.",
                   ["anime", "cel shaded", "cel-shaded", "cel shading", "ghibli", "cartoon style", "toon", "動畫",
                    "動漫", "卡通", "賽璐璐", "二次元", "アニメ", "セル画", "セルシェーディング"]),
     "gouache": _style(gouache, "Gouache / poster paint: flat opaque matte shapes with paper slivers and a taped margin.",

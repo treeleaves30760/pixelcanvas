@@ -1,248 +1,239 @@
-# pixelcanvas — 讓 AI 用程式畫圖（不需要圖片生成模型）
+# pixelcanvas
 
-![pixelcanvas — aurora over a mountain lake, rendered entirely by code](docs/hero.jpg)
+**讓你的程式代理用程式碼畫出完成度高的圖：海報、圖解、儀表板、3D 場景與插畫，只用 numpy + Pillow。不需要圖片生成模型、
+不需要 GPU、不需要 API key。**
+
+![coding agent 用 pixelcanvas 畫出的作品](gallery/wall.jpg)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Agent Skill](https://img.shields.io/badge/Agent%20Skill-SKILL.md-8A2BE2)
+![MCP server](https://img.shields.io/badge/MCP-server-0a7)
 
 [English](README.md)
 
-> 給 Claude Code、Codex、Cursor、Gemini CLI 等所有讀 `SKILL.md` 的工具用的 **Agent Skill**：只靠 numpy + Pillow
-> 畫海報、桌布、風景圖、縮圖、精確文字排版，修照片，並匯出可編輯的 **PSD / ORA 圖層**。
-> 不需要圖片生成模型、API key 或素材。
+pixelcanvas 是一個 **Agent Skill**，也是一個 **Python 套件**。Claude Code、Codex、opencode、Cursor、Gemini CLI，或任何
+能執行 shell 的代理，讀了 [`SKILL.md`](skills/pixelcanvas/SKILL.md) 之後會先設計畫面、用 Python 畫出來、執行一份會指出
+該修什麼的檢查，再親眼看過結果才交件。每張圖都是一個簡短的場景檔：任何語言的文字都一字不差，圖層可編輯，需要時還能輸出
+SVG 與 DXF。
 
 ```bash
-npx skills add treeleaves30760/pixelcanvas          # 安裝 skill（互動式選擇要裝到哪些工具）
+npx skills add treeleaves30760/pixelcanvas
 ```
 
-裝好後直接說：「畫一張 2560x1440 的夜晚雪林」或「做一張爵士夜海報，標題 Blue Hour」。
+接著就可以說：*「做一張鋼琴之夜 NOCTURNE 的中英雙語海報」*、*「畫出我們電商平台的架構圖」*、*「一個等角視角的閱讀角落，
+扶手椅上有一隻貓」*。
 
-**pixelcanvas** 讓「不能生成圖片」的語言模型也能畫出好看的圖。天空、雲、山、水、城市、星空、光線、海報、文字排版，
-全部用 numpy + Pillow 從噪聲、遮罩、距離場（SDF）、文字點陣化與混合算出來。沒有任何素材圖，也不需要擴散模型。
+## 可以畫什麼
 
-模型的工作方式就像插畫家：**構圖 → 寫場景腳本 → 渲染草稿 → 看圖 → 修正 → 再渲染**。
-「看圖」這一步，本專案給視覺語言模型（VLM）準備了專用工具：座標格線、放大檢視、明度圖、逐步驟快照、參數掃描。
-沒有視覺能力的模型則改看文字報告。
+下面每一張圖都是 pixelcanvas 根據圖下的需求畫出來的，場景檔都在 [`scenes/`](scenes/)。
 
-| | |
-|---|---|
-| ![aurora_lake](gallery/aurora_lake_preview.jpg) | ![mountains_sunset](gallery/mountains_sunset_preview.jpg) |
-| ![sea_sunset](gallery/sea_sunset_preview.jpg) | ![city_dusk](gallery/city_dusk_preview.jpg) |
-| ![night_sky](gallery/night_sky_preview.jpg) | ![still_life](gallery/still_life_preview.jpg) |
+**海報、印刷品與字體**
 
-<p align="center"><img src="gallery/neon_poster_preview.jpg" width="420" alt="neon_poster"></p>
+| | | |
+|---|---|---|
+| ![type poster](gallery/type_poster.jpg) | ![farmers market](gallery/farmers_market.jpg) | ![jazz poster](gallery/jazz_poster.jpg) |
+| *「NOCTURNE 音樂會的中英雙語海報：一輪月亮、『一夜限定』印章、日期、場地與票價」* | *「台北週末小農市集的傳單：標題『週末小農市集』、插畫蔬菜、溫暖的紙質背景」* | *「爵士之夜 'Blue Hour' 的海報，週五 21:00 在 The Velvet Room，一支薩克斯風，深藍配金」* |
+| ![cafe menu](gallery/cafe_menu.jpg) | ![readme banner](gallery/readme_banner.jpg) | ![app icons](gallery/app_icons.jpg) |
+| *「'Fika & Co.' 咖啡館菜單：咖啡、茶、甜點各五項附價格，一個咖啡杯和一個可頌，米色紙上的襯線字」* | *「dotfiles 工具 'driftwood' 的 README 橫幅：粗體名稱、標語 'your shell, everywhere'、一個有三行指令的終端機」* | *「生產力套件的十二個 app 圖示，風格一致：圓角磚、柔和漸層、長陰影，各附名稱」* |
 
-以上每一張（包含最上面的橫幅與它的標題文字）都只是 [`scenes/`](scenes/) 裡的一個 Python 檔。
+**畫面、圖表與圖解**
+
+| | | |
+|---|---|---|
+| ![meditation app](gallery/meditation_app.jpg) | ![landing page](gallery/landing_page.jpg) | ![dashboard](gallery/dashboard.jpg) |
+| *「冥想 app 首頁：'Good evening, Sam'、停在 4:32 的呼吸計時器、Sleep / Focus / Calm 卡片、底部分頁列，深紫主題」* | *「Northwave 的 landing page 首屏：導覽列、標題 'Ship product updates your customers actually read'、兩個按鈕和一張儀表板截圖」* | *「訂閱制 app 的分析儀表板：MRR、活躍用戶、流失率、NPS 指標卡，營收折線、各管道註冊數、方案佔比圓環」* |
+| ![architecture](gallery/architecture.jpg) | ![flowchart](gallery/flowchart.jpg) | ![sequence](gallery/sequence.jpg) |
+| *「電商平台架構圖：用戶端、CDN 與 gateway、各服務、事件匯流排與 worker、資料儲存。深色主題，依層分組」* | *「從合併 PR 到上線的發版流程圖，含測試、smoke test、核准三個判斷與重試迴圈」* | *「passkey 登入的循序圖：使用者、瀏覽器、API、驗證服務與使用者資料庫，簽章失敗的 alt 區塊」* |
+
+**工程圖與教學圖**
+
+| | | |
+|---|---|---|
+| ![bracket drawing](gallery/bracket_drawing.jpg) | ![floor plan](gallery/floor_plan.jpg) | ![stone lantern](gallery/stone_lantern.jpg) |
+| *「鋁製角座的 A3 工程圖：前視、俯視、右視與剖面、等角視圖、尺寸標註與標題欄」* | *「兩房公寓平面圖：門的開啟方向、窗、家具、房間名稱與面積、總尺寸、指北針與比例尺」* | *「日本石燈籠的教科書插圖，用引線標出從頂端寶珠到底座的各部位名稱與高度」* |
+
+**3D 與黏土角色**
+
+| | | |
+|---|---|---|
+| ![reading nook](gallery/reading_nook.jpg) | ![clay campsite](gallery/clay_campsite.jpg) | ![earbuds](gallery/earbuds.jpg) |
+| *「舒適閱讀角落的等角剖面：扶手椅、立燈、滿滿的書架、圓地毯、扶手上的貓、窗外下著雨」* | *「黏土風的登山客和她的狗在夜晚營地：發光的橘色帳篷、火星飛揚的營火、松樹與銀河」* | *「白色無線耳機放在打開的充電盒裡，淡粉色無縫背景、柔和棚拍光的產品照」* |
+| ![clay cast](gallery/clay_cast.jpg) | ![clay zoo](gallery/clay_zoo.jpg) | ![toy diorama](gallery/toy_diorama.jpg) |
+| *「角色介紹：十個黏土角色排成一排，從探險家到超級英雄，各附名稱」* | *「三十種黏土動物站在小底座上的圖鑑頁，各附名稱」* | *「棋盤格地板上的玩具：小汽車、球、小狗、揮手的小孩、ABC 積木和火箭」* |
+
+**插畫、自然與畫風**
+
+| | | |
+|---|---|---|
+| ![ukiyo-e wave](gallery/ukiyoe_wave.jpg) | ![animal stickers](gallery/animal_stickers.jpg) | ![campfire](gallery/campfire_lake.jpg) |
+| *「浮世繪木版畫風格的巨浪，遠方是富士山，還有兩艘漁船」* | *「九隻可愛動物的貼紙頁，每隻都有白色裁切邊和小標籤，粉彩背景」* | *「夜晚山中湖畔的營火，火星上升，月亮倒映在水面」* |
+| ![aurora](gallery/aurora_lake.jpg) | ![sea sunset](gallery/sea_sunset.jpg) | ![studio still life](gallery/studio_still_life.jpg) |
+| *「寬幅橫幅：松林之間鏡面湖上的極光，標題 'pixelcanvas'」* | *「夕陽落在平靜的海面，波浪上一條光帶」* | *「大理石板上的棚拍靜物：玻璃瓶、陶土色馬克杯、玻璃球和一顆金球」* |
+| ![art styles](gallery/art_styles.jpg) | ![pictograms](gallery/pictograms.jpg) | ![harbour light](gallery/harbour_light.jpg) |
+| *「同一幅風景，十二種媒材」*：43 種具名畫風，從油畫、水彩到彩繪玻璃與藍圖 | 633 個圖示，六種樣式，用名稱就能放上畫面 | *「黃昏的紅白燈塔，標題 'Harbour Light'」*：下一節的場景 |
 
 ## 安裝
 
-| 你用的工具 | 指令 |
+選一個適合你代理的方式，每一種都只要一步。
+
+| 方式 | 指令 |
 |---|---|
-| 任何支援的 agent（Claude Code、Codex、Cursor、Gemini CLI、Copilot…） | `npx skills add treeleaves30760/pixelcanvas` |
-| Claude Code 全域安裝、不跳提問 | `npx skills add treeleaves30760/pixelcanvas -g -a claude-code -y` |
-| 先看裡面有什麼 | `npx skills add treeleaves30760/pixelcanvas --list` |
-| clone 下來自己改 | `git clone https://github.com/treeleaves30760/pixelcanvas.git && cd pixelcanvas && pip install -r requirements.txt` |
+| 任何支援 Agent Skills 的工具（Claude Code、Codex、Cursor、Gemini CLI、opencode ...） | `npx skills add treeleaves30760/pixelcanvas` |
+| Claude Code plugin | `/plugin marketplace add treeleaves30760/pixelcanvas` 接著 `/plugin install pixelcanvas@pixelcanvas` |
+| pip，然後把 skill 交給你的代理 | `pip install pixelcanvas && pixelcanvas install-skill claude`（或 `agents`、`codex`、`cursor`、`opencode`） |
+| 從 clone 安裝 | `git clone https://github.com/treeleaves30760/pixelcanvas && cd pixelcanvas && pip install -r requirements.txt && python tools/install_skill.py` |
 
-安裝進去的 skill 是 `SKILL.md` + `references/` + `scripts/bootstrap.py`。第一次使用時 AI 會執行 bootstrap 腳本：
-把渲染器（不到 1 MB）下載到 `~/.pixelcanvas`，缺 numpy / Pillow 就自動安裝。需要 Python 3.9+ 與 git。
+skill 內附 `scripts/bootstrap.py`，第一次使用時會自動準備好執行環境，所以第一個需求就能直接畫。`pixelcanvas doctor`
+會檢查 Python、numpy、Pillow、字型與寫入權限；`uvx pixelcanvas doctor` 不用安裝就能執行。各工具、各專案的完整選項：
+[docs/INSTALL.md](docs/INSTALL.md)。
 
-## 第一次渲染
+## 運作方式：規劃、繪製、檢查、檢視
+
+**1. 規劃。** 代理在場景的 docstring 裡寫下畫面清單，並把需求一字不差地放進 `PROMPT`。
+
+**2. 繪製。** 一次寫完整個場景。形狀用畫布的比例座標擺放，陰影、外框、光暈與精確文字都已內建：
+
+```python
+"""lighthouse: red and white, on a dark cliff at the right, lamp glowing, beam over the sea; title 'Harbour Light'"""
+from pixelcanvas import Canvas
+from pixelcanvas.illustrate import Sketch, paper, grade
+PROMPT = "a red and white lighthouse at dusk, titled 'Harbour Light'"
+DEFAULT_SIZE = (1600, 900)
+
+def render(width=1600, height=900, seed=1, log=lambda step: None):
+    cv = Canvas(width, height)
+    sk = Sketch(cv, light=(-0.6, -0.4))
+    log("sky and sea")
+    cv.gradient([(0, "#1d2150"), (0.5, "#f29a72"), (0.6, "#6a78b0"), (1, "#1c2a55")])
+    sk.spot(0.3, 0.6, 0.25, 0.012, "#ffd9a8", 0.6)                         # light on the water
+    log("cliff")
+    sk.paint(sk.blob([(0.5, 1.05), (0.6, 0.72), (0.78, 0.64), (1.05, 0.62), (1.05, 1.05)]), "#3c3048", shade=0.5)
+    log("beam")
+    cv.paint("#fff1c4", sk.polygon([(0.81, 0.2), (0.0, 0.3), (0.0, 0.52)]), 0.25)
+    log("lighthouse")
+    with sk.at(0.81, 0.42, 0.44):                                           # local frame: 1 unit = 0.44 of the height
+        sk.paint(sk.polygon([(-0.12, 0.45), (-0.08, -0.35), (0.08, -0.35), (0.12, 0.45)]), "#f4efe6",
+                 shade=0.4, line=True, name="lighthouse")
+        for y in (-0.2, 0.1, 0.38):
+            sk.paint(sk.box(-0.118, y - 0.06, 0.118, y + 0.06), "#d2423c", shade=0.4)
+        sk.paint(sk.box(-0.07, -0.5, 0.07, -0.35, 0.02), "#ffe9a8", glow="#ffd27a")
+        sk.paint(sk.polygon([(-0.11, -0.5), (0, -0.64), (0.11, -0.5)]), "#d2423c", line=True)
+    log("title")
+    cv.text("Harbour Light", box=(0.06, 0.08, 0.56, 0.22), color="#fff4e0", font="serif", bold=True)
+    grade(paper(cv), "golden", 0.6)
+    return cv
+```
+
+**3. 檢查。** `python tools/render.py gallery/src/harbour_light.py --check` 會渲染並寫出報告：畫面評析、文字檢查、每個物件
+落在哪裡，以及逐項比對需求。最後的 FIX 區塊會指出要改什麼，或宣告這張圖可以交件：
+
+```text
+PROMPT "a red and white lighthouse at dusk, titled 'Harbour Light'"
+  every quoted text is drawn
+  COVERAGE (subjects of the request and what answers to them):
+    all 1 subjects of the request are accounted for
+  AS REQUESTED (count, colour, place and text the request spells out, against the picture; ✗ names what to change):
+    lighthouse: 1 drawn, 1 requested ✓; red and white requested, white painted ✓
+    'Harbour Light': drawn ✓
+FIX: nothing flagged - look at the picture once, then deliver
+```
+
+**4. 檢視。** 代理打開 PNG 親眼看，需要細看時用 `tools/look.py`（座標格線、放大、明度圖、邊緣、取色）。這就是上面那個場景
+畫出的圖：
+
+![Harbour Light](gallery/harbour_light.jpg)
+
+結構性的圖則從範本開始，而不是空白檔案：
 
 ```bash
-pip install -r requirements.txt                          # numpy、Pillow（scipy 可選，讓模糊 / 取樣更快）
-python tools/render.py --list                            # 列出場景
-python tools/render.py mountains_sunset --scale 0.5      # 草稿 960x540，幾秒
-python tools/render.py mountains_sunset --check          # 全尺寸 1920x1080 + 診斷圖 + 自動警告
-python -m pytest -q                                      # 測試（約 5 秒）
+pixelcanvas kit find "a corgi sitting under an oak tree at sunset"      # 每個主體該用哪個呼叫
+pixelcanvas new corgi --prompt "a corgi sitting under an oak tree at sunset" --dir ./art
+pixelcanvas render ./art/corgi.py --scale 0.5 --check
 ```
 
-輸出在 `outputs/`（PNG + `_preview.jpg`）。
+## 內容一覽
 
-## 為什麼適合視覺模型
-
-VLM 很會判斷整體好不好看，但有三個弱點：讀不準位置、看不到小瑕疵、看不出明暗結構。
-它也常常描述「本來想畫的」，而不是畫面上「實際有的」。下面每個工具對付其中一個弱點，並輸出一張圖讓模型看：
-
-| 工具 | 模型看到什麼 | 用途 |
+| 套件 | 能畫什麼 | 參考頁 |
 |---|---|---|
-| `render.py 場景 --check` | 2x2 診斷圖：座標格線、4 階明度圖、邊緣圖、96px 縮圖，並印出自動警告 | 每次渲染後的第一眼 |
-| `look.py guides 圖` | 標好比例座標的格線（每 0.1 一條）+ 三分線 | 讀出位置（「地平線在 V 0.60」），不要用猜的 |
-| `look.py zoom 圖 u0 v0 u1 v1` | 放大的局部（最近鄰保留像素），標籤沿用整張圖的座標 | 鋸齒、色階斷層、接縫、文字邊緣、缺字 |
-| `look.py values 圖` | 模糊後分階的明度圖（瞇眼測試） | 構圖還讀不讀得出來、層次分不分得開 |
-| `look.py edges 圖` | 梯度強度圖 | 剪影、細節分布、哪裡最搶眼 |
-| `render.py 場景 --stages` | 每個繪圖步驟後的畫面，並排成一張 | 找出畫面在哪一步壞掉 |
-| `render.py 場景 --sweep 名稱 v1 v2 v3` / `--seeds 1 2 3 4` | 一張標好標籤的變體對照圖 | 一次看完再挑值，不用一個值一個值慢慢試 |
-| `render.py 場景 --set 名稱=運算式` | — | 不改檔案就試改動 |
-| `look.py critique 圖` | 文字警告：過曝、明暗範圍太窄、地平線正中央、焦點貼邊、飽和過頭、左右失衡 | 肉眼容易放過的客觀檢查 |
-| `look.py probe 圖 U,V ...` | 指定點的精確 hex / 亮度 / 色相 | 文字對比、確認顏色是否符合意圖 |
-| `look.py sheet A B C --labels ...` | 標好標籤的多版本對照 | 改前改後 |
-| `look.py report 圖` | 完整文字描述：九宮格色彩 / 亮度 / 質感、主色、剖面、ASCII 亮度圖 | **沒有**視覺能力的模型 |
+| `illustrate` | 自由繪製：`Sketch` 以比例座標畫形狀、局部座標系、blob、漸細筆觸、陰影、貼紙、暈染；`cv.draw()` 提供超取樣的 Pillow 圖層 | [illustration.md](skills/pixelcanvas/references/illustration.md) |
+| `text`、`layout` | 任何語言的文字（自動 CJK 字型）、自動縮放、文字特效；海報與卡片範本、主題 | [typography.md](skills/pixelcanvas/references/typography.md) |
+| `chart` | 圖表、KPI 指標卡與整個儀表板 | [charts.md](skills/pixelcanvas/references/charts.md) |
+| `diagram` | 流程圖、架構圖、樹狀圖、循序圖、時間軸、表格、引線標註，自動排版 | [diagrams.md](skills/pixelcanvas/references/diagrams.md) |
+| `ui` | 裝置框中的 app 與網頁畫面，自動排版 | [ui.md](skills/pixelcanvas/references/ui.md) |
+| `drafting` | 工程圖（視圖、剖面、尺寸、標題欄）與平面圖，輸出 PNG、SVG、DXF | [drafting.md](skills/pixelcanvas/references/drafting.md) |
+| `vector` | 形狀、路徑、圖示與群組，輸出點陣圖與 SVG | [vector.md](skills/pixelcanvas/references/vector.md) |
+| `pictograms` | 633 個圖示、六種樣式，也能當遮罩使用 | [pictograms.md](skills/pixelcanvas/references/pictograms.md) |
+| `solid` | numpy ray marching 3D：預製物件、材質、棚拍光、透視與等角相機 | [solid.md](skills/pixelcanvas/references/solid.md) |
+| `clay` | 3D 黏土角色、31 種姿勢、64 種動物、道具 | [clay.md](skills/pixelcanvas/references/clay.md) |
+| `figure`、`creature` | 骨架驅動、有姿勢有穿著的人物與動物 | [figures.md](skills/pixelcanvas/references/figures.md)、[creatures.md](skills/pixelcanvas/references/creatures.md) |
+| `flora`、`elements`、`scenery` | 樹木、花卉、火、煙、水、天氣、天空、風景 | [flora.md](skills/pixelcanvas/references/flora.md)、[elements.md](skills/pixelcanvas/references/elements.md) |
+| `texture`、`form` | 80 種受光材質；有體積感的 2.5D 物件與房間 | [textures.md](skills/pixelcanvas/references/textures.md)、[forms.md](skills/pixelcanvas/references/forms.md) |
+| `backdrop`、`palette` | 一行產生的背景與桌布，保留放文字的安靜區域；具名配色 | [backdrops.md](skills/pixelcanvas/references/backdrops.md) |
+| `stylize` | 43 種畫風，`styles pick` 會依需求挑選 | [styles.md](skills/pixelcanvas/references/styles.md) |
 
-### 迭代實際長這樣
+`pixelcanvas kit find "需求"` 一次搜尋所有套件；30 個起手範本（`pixelcanvas new --list`）涵蓋海報、圖表、圖解、UI、
+平面圖、產品照、人物、寵物等等。
 
-下面是製作最上方橫幅時的真實草稿，每一輪只修工具指出的 2~4 個最嚴重的問題：
+## 小型本地模型
 
-![iterations](docs/iterations.jpg)
+在你自己電腦上跑的模型透過 **pixelcanvas-lite** skill 作畫：它只寫一份小小的 JSON spec，`compose` 再用各個套件畫出來，
+支援 16 種類型，從海報、桌布到儀表板、房間與 3D 場景。每次執行都以一行 `NEXT:` 結尾，告訴模型下一步做什麼。完全不用寫
+Python。
 
-**`--check`**：一張圖看完座標格線、明度圖、邊緣圖、縮圖，並印出自動警告
-
-![check](docs/check_aurora_lake.jpg)
-
-**`--stages`**：每個繪圖步驟後的畫面
-
-![stages](docs/stages_aurora_lake.jpg)
-
-**`--sweep AURORA_STRENGTH 1.0 1.4 1.8 2.2`**：一眼挑出最好的值
-
-![sweep](docs/sweep_aurora_lake.jpg)
-
-**`zoom`**：放大局部，標籤沿用整張圖的座標
-
-![zoom](docs/zoom_neon_poster.jpg)
-
-## 可編輯圖層（PSD / OpenRaster）
-
-`python tools/render.py 場景 --layers` 會另外輸出可讓人修改的圖層檔：`場景.psd`（Photoshop、Photopea、GIMP、
-Affinity）、`場景.ora`（Krita、GIMP）與 `場景_layers/`（每層一張 PNG + `layers.json`）。場景裡每個 `log("步驟")`
-就是一個圖層（天空、每一層山、河、樹、標題、後製…）。有畫上去的物件在它的遮罩範圍內是不透明的，所以移動或隱藏它，
-後面的東西仍然完整；光暈是半透明圖層，最後的調色會併入每一層，隱藏物件時不會留下殘影。
-物件的柔和投影或外光暈會拆成一個 `(halo)` 圖層，跟物件放在同一個群組（PSD / ORA 的資料夾）：物件本身邊緣清晰，
-隱藏或移動群組時投影會一起跟著。全部疊回去與最終渲染完全一致（誤差 ±2/255）。
-`tools/layers.py sheet|compose|export` 可看每一層、隱藏某些層重新合成，或把改過的 PNG 重新打包成 PSD。
-
-## 文字、排版與向量形狀
-
-圖像模型常把字寫錯。本專案用真正的字型點陣化文字，所以文字一定跟使用者要求的一樣，中文、日文也沒問題：
-
-```python
-from pixelcanvas import *
-from pixelcanvas import sdf
-
-cv = Canvas(1080, 1350)
-cv.gradient([(0, "#0b0620"), (1, "#3a1050")])
-cv.text("NEON NIGHTS", box=(60, 120, 1020, 300), color=(1.5, 0.7, 1.3), bold=True,      # 自動縮放塞進框內
-        glow=dict(radius=30, color="#ff3cac"), outline=2, outline_color="#fff0fa")
-cv.text("霓虹之夜", (540, cv.last_bbox[3] + 30), 64, "#ffe66d", anchor="mt", tracking=0.4)  # 自動選用中文字型
-X, Y = cv.xy()
-card = sdf.sd_box(X, Y, 540, 1150, 320, 70, radius=70)                                     # 銳利的圓角矩形
-cv.paint("#2a0f4a", sdf.fill(card)).paint("#2bd2ff", sdf.outline(card, 2))
-cv.text("SAT 12.19 · 21:00", box=(220, 1080, 860, 1220), padding=24, color="#e8f9ff", bold=True)
-cv.soft_clip(0.85).save("poster.png")
+```bash
+pixelcanvas install-skill opencode --skill pixelcanvas-lite
+pixelcanvas compose --example poster > poster.json
+pixelcanvas compose poster.json --check
+pixelcanvas compose poster.json --deliver final/
 ```
 
-![typography](docs/typography.jpg)
+spec 格式：[spec.md](skills/pixelcanvas/references/spec.md)。
 
-- **文字**（`pixelcanvas.text`）：跨平台找字型（`find_font`、`python tools/fonts.py --sheet`）；多行、英文斷字 /
-  中文逐字換行（含標點避頭規則）、對齊、字距；自動塞進框內；描邊、陰影、霓虹光暈、漸層填色；
-  `text_mask` 可以把文字當遮罩填任何材質。
-- **形狀**（`pixelcanvas.sdf`）：圓、橢圓、圓角矩形、膠囊、多邊形、星形、圓環、弧線的距離場，可做聯集 / 交集 /
-  差集 / 平滑聯集，再加描邊、光暈、斜面打光。任何解析度下邊緣都有抗鋸齒。
-- **曲線**：`bezier_points` + `line_mask`，用來畫緞帶、箭頭、圖解線條。
-- **版面指引**（海報、方形、限時動態、影片縮圖、投影片尺寸；層級；邊距；對比）：
-  [`typography.md`](skills/pixelcanvas/references/typography.md)。
+## 可編輯圖層、SVG 與 DXF
 
-## 給 AI 用：pixelcanvas skill
+場景裡每個 `log("step")` 都是一個圖層。`--layers` 會輸出 `SCENE.psd`（Photoshop、Photopea、GIMP、Affinity）、
+`SCENE.ora`（Krita、GIMP）和一個 PNG 資料夾，讓人可以移動、隱藏或重畫任何物件。`--svg` 把向量繪圖（圖解、圖表、UI、
+圖示）存成 SVG，`--dxf` 把工程圖存成 CAD 可用的 DXF。
 
-`skills/pixelcanvas/` 是標準格式的 Agent Skill（`SKILL.md` + `references/`），教模型走完整個流程：
-構圖 → 場景 → 草稿 → 看圖 → 修正 → 全尺寸。
-
-- [`SKILL.md`](skills/pixelcanvas/SKILL.md)：完整流程、該從哪個範例開始、看圖工具表、繪圖心法
-- [`references/api.md`](skills/pixelcanvas/references/api.md)：API 速查
-- [`references/techniques.md`](skills/pixelcanvas/references/techniques.md)：怎麼畫 X（剪影、體積雲、法線光照、透視地面、倒影、撒點、格點圖樣、體積光、筆刷、修圖、雪地）+ 配色表
-- [`references/typography.md`](skills/pixelcanvas/references/typography.md)：文字、特效、可讀性、SDF 形狀、曲線、版面規則
-- [`references/review.md`](skills/pixelcanvas/references/review.md)：怎麼看圖（VLM 流程）、檢查清單、症狀 → 修法
-
-（skill 文件以英文撰寫，對各家模型最通用；觸發詞同時包含中文。）
-
-### 安裝到各種工具
-
-| 工具 | 做法 |
-|---|---|
-| 任何工具（建議） | `npx skills add treeleaves30760/pixelcanvas` |
-| Claude Code | 在本專案裡直接可用（`CLAUDE.md`）；全域安裝：`python tools/install_skill.py` → `~/.claude/skills/pixelcanvas` |
-| Codex CLI | `python tools/install_skill.py --tool codex` → `~/.codex/skills/pixelcanvas`；在本專案裡也會讀 `AGENTS.md` |
-| 其他支援 SKILL.md 的工具 | `python tools/install_skill.py --dest <該工具的 skills 目錄>` |
-| Cursor / Gemini CLI / Copilot / Aider… | 在本專案裡開啟即可（讀 `AGENTS.md`）；或把 `SKILL.md` 內容放進該工具的規則檔 |
-| 有程式執行環境的聊天模型 | 上傳整個專案 zip，並貼上 `SKILL.md` 當指示 |
-
-安裝腳本會把本機專案路徑寫進安裝後的 `SKILL.md`，所以在任何資料夾裡說「畫一張 ○○」，模型都找得到這個專案。
-
-## 可以這樣要求
-
-- 「畫一張 2560x1440 的雪夜森林」
-- 「做一張爵士之夜的海報，週五 21:00，標題『藍調時刻』」
-- 「把 mountains_sunset 改成日出、河改成湖」
-- 「畫一張手機桌布：霓虹城市下雨的夜晚」
-- 「做一張 YouTube 縮圖，大字寫『十小時雨聲』，背景是暗暗的窗戶」
-- 「幫這張照片加暖色暈影和顆粒」
-
-## 專案結構
-
-```
-pixelcanvas/              套件
-  color.py                rgb / lerp / mix / hsv / smoothstep ...
-  noise.py                perlin2d / fbm2d / warp2d / fbm1d（ridged、billow、domain warp）
-  masks.py                shape_mask / polygon / circle / rect / band / line_mask / bezier_points / feather
-  brush.py                stamp / stroke
-  text.py                 字型、排版、換行、自動縮放、文字樣式（描邊 / 陰影 / 光暈 / 漸層）
-  sdf.py                  距離場形狀、布林運算、描邊 / 光暈 / 斜面
-  filters.py              blend（8 種混合模式）/ 模糊 / 取樣 / 放射模糊 / 體積光 / bloom / 暗角 / 顆粒 / levels ...
-  canvas.py               Canvas：建立 / 載入 / 像素 / 上色 / 漸層 / 光暈 / 文字 / 貼圖 / 取樣 / 後製 / 存檔
-  vision.py               看圖用的檢視：格線 / 放大 / 明度圖 / 邊緣 / 對照表 / 渲染步驟快照
-  layers.py               可編輯圖層：每個繪圖步驟一層 → PSD / ORA / PNG 圖層組、重新合成
-  stylize.py              媒材：油畫 / 水彩 / 鉛筆素描 / 動畫賽璐璐 / 畫布紋理
-  scenery.py              風景配方：Scene、天空、太陽、雲、山、霧、河、水面、樹、體積光、後製
-scenes/                   每張圖一個檔：mountains_sunset、night_sky、still_life、city_dusk、sea_sunset、neon_poster、
-                          aurora_lake
-                          _template.py（風景）/ _template_poster.py（設計）
-skills/pixelcanvas/       Agent Skill（SKILL.md + references/）
-tools/
-  render.py               渲染（--scale / --size / --seed / --crop / --check / --stages / --layers / --set / --sweep / --seeds）
-  layers.py               圖層組：info / sheet（每層對照表）/ compose（隱藏、重新合成修改）/ export（PSD、ORA）
-  look.py                 看圖：check / guides / zoom / values / edges / sheet / compare / diff / crop / grid /
-                          critique / probe / stats / report
-  fonts.py                列出字型、輸出字型樣張
-  new_scene.py            從範本建立新場景（--poster 用設計範本）
-  install_skill.py        把 skill 安裝到 Claude Code / Codex / 其他工具
-tests/                    pytest：套件、所有場景、skill 文件裡的每段範例、工具
-gallery/                  定稿；   docs/  README 用圖；   outputs/  渲染輸出（不進 git）
-CLAUDE.md / AGENTS.md     給 AI 助理的專案說明
+```bash
+python tools/render.py drafting_bracket --svg --dxf
+python tools/render.py clay_campsite --layers
 ```
 
-## 兩層 API
+## MCP server
 
-**低階**（`from pixelcanvas import *`）：任何東西都能從這層畫出來。
+`pixelcanvas mcp` 在 stdin / stdout 上說 Model Context Protocol，提供 11 個工具（`kinds`、`new_scene`、`write_scene`、
+`read_scene`、`render`、`look`、`find`、`reference`、`ask`、`animate`、`layers`），每一份參考頁也都是 resource。
 
-```python
-from pixelcanvas import *
-cv = Canvas(640, 360)
-cv.gradient([(0, '#0b1a3a'), (1, '#f6c28f')])          # 天空漸層
-X, Y = cv.xy()
-cv.glow(400, 200, 60, '#fff0c0', strength=1.2)          # 光暈（HDR）
-ridge = 220 - 60 * fbm1d(640, 120, seed=1)              # 山稜線：每一欄的 y
-cv.paint('#223344', clamp01(Y - ridge[None, :] + 0.5))  # 稜線以下上色 = 山（1px 抗鋸齒）
-cv.text("黃昏", (20, 20), 36, "#ffffff")                 # 文字
-cv.soft_clip(0.8).save('demo.png', preview='demo_small.jpg')
+```bash
+claude mcp add --scope project pixelcanvas -- python -m pixelcanvas.mcp_server
+codex mcp add pixelcanvas -- python -m pixelcanvas.mcp_server
 ```
 
-**高階配方**（`from pixelcanvas.scenery import *`）用來快速組一張風景。像素單位以 1080p 為基準並在內部依解析度縮放，
-所以 `--scale 0.5` 的草稿和全尺寸長得一樣：
+Claude Desktop、Cursor 與 opencode 的設定：[docs/INSTALL.md](docs/INSTALL.md#as-an-mcp-server)。
 
-```python
-sc = Scene(1920, 1080, seed=7)
-sc.set_horizon(0.62); sc.set_sun(0.6, 0.56, light_dir=(0.9, -0.4)); sc.set_haze(HAZE)
-sky(sc, SKY); disc = sun(sc); clouds = cumulus(sc)
-mountain_layer(sc, dict(base=0.6, amp=0.2, scale=500, seed=11, fog=0.7, shadow='#6e6e9d', lit='#c5b0bd', snow=0.5))
-center, half, t1 = river_course(sc); water, e = water_mask(sc, center, half, t1); water_surface(sc, water, e, t1)
-god_rays(sc, disc, clouds); finish(sc)
-sc.cv.save('out.png', preview='out_preview.jpg')
+## 參考頁
+
+- [SKILL.md](skills/pixelcanvas/SKILL.md)：作畫流程、自由繪製、需逐項檢查的圖、美術方向、套件表
+- [api.md](skills/pixelcanvas/references/api.md)：完整 API 索引
+- [illustration.md](skills/pixelcanvas/references/illustration.md)、[techniques.md](skills/pixelcanvas/references/techniques.md)、
+  [typography.md](skills/pixelcanvas/references/typography.md)、[review.md](skills/pixelcanvas/references/review.md)
+- 每個套件一頁，都在 [`skills/pixelcanvas/references/`](skills/pixelcanvas/references/)
+- [CHANGELOG.md](CHANGELOG.md)：0.4 的新內容
+
+## 參與貢獻
+
+歡迎貢獻作品、套件與修正。[`CLAUDE.md`](CLAUDE.md) 有專案地圖與新增套件的步驟（registry、嚴格參數、manifest hook、程式碼
+區塊都能執行的參考頁、起手範本與範例場景）。送 pull request 前請先跑測試：
+
+```bash
+pip install -r requirements.txt pytest
+python -m pytest -q
 ```
 
-## 慣例
+`python tools/build_gallery.py` 會從場景重新產生這份作品集。
 
-- **座標**：x 向右、y 向下（`arr[y, x]`）；位置一律用 0~1 的比例。
-- **遮罩**：float32 (H, W)，值 0~1。
-- **顏色**：`'#rrggbb'`、0~1 的 `(r, g, b)`、`(255, 128, 0)`，或整張 (H, W, 3) 顏色圖。允許大於 1 的 HDR 值，
-  最後用 `soft_clip` / `bloom` 收尾。
-- **繪製順序**：天空 → 遠 → 近 → 水 → 前景 → 光線 → 文字 → 後製。
+## 授權
+
+MIT，見 [LICENSE](LICENSE)。

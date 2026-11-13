@@ -32,7 +32,7 @@ except Exception:                                       # noqa: BLE001
 _RES = getattr(Image, "Resampling", Image)
 _AA = 4                                                 # supersampling of Pillow-rasterised shapes
 
-__all__ = ["Sketch", "signed_distance", "grow", "edge", "paper", "limit_palette", "grade", "MOODS"]
+__all__ = ["Sketch", "cel_tone", "signed_distance", "grow", "edge", "paper", "limit_palette", "grade", "MOODS"]
 
 
 # ----------------------------------------------------------------------------------------------- mask helpers
@@ -457,7 +457,9 @@ class Sketch:
 
     def polygon(self, points):
         """Polygon mask with straight sides through ``points`` [(x, y), ...]."""
-        return self._poly_raster([self._pts(points)])
+        s = self._poly_raster([self._pts(points)])
+        s.planar = True                                   # paint(volume=) shades it as a flat face
+        return s
 
     def blob(self, points, tension=0.0):
         """Closed smooth shape through ``points`` (a Catmull-Rom curve): leaves, hair, clouds, bodies.
@@ -685,13 +687,16 @@ class Sketch:
         return full, np.mean([as_color(c) for _, c in stops], 0)
 
     def paint(self, mask, color, *, line=None, line_width=0.005, shade=0.0, highlight=0.0, volume=0.0, shadow=None,
-              glow=None, angle=90, shade_color=None, opacity=1.0, name=None, kind="object"):
+              spec=0.0, glow=None, angle=90, shade_color=None, opacity=1.0, name=None, kind="object"):
         """Paint a shape in one call. ``color``: a colour, or stops ``[(0, c0), (1, c1)]`` for a gradient across
         the shape (``angle`` degrees, 90 = top to bottom, "radial" = round from the lit side).
         ``shade`` 0–1: soft form shadow on the side away from the light; ``highlight`` 0–1: rim light on the lit
         edge; ``volume`` 0–1: a rounded, puffy body (darker towards every edge, most on the far side) in a tinted
-        shadow colour, so whites and pastels stay light (cloth, clouds, snow, a sail); ``line``: outline colour (True = a darker tone of the fill) of ``line_width``; ``shadow``: True or
-        dict(offset=(dx, dy), blur, opacity, color) for a soft drop shadow under it; ``glow``: a colour or
+        shadow colour, so whites and pastels stay light (cloth, clouds, snow, a sail); on a ``sk.polygon`` face it
+        shades the face as a plane, darker away from the light (box sides, roofs); ``spec`` 0–1: a specular hot spot
+        on the lit side (glossy fruit, plastic, glass, metal); ``line``: outline colour (True = a darker tone of the fill) of ``line_width``; ``shadow``: True or
+        dict(offset=(dx, dy), blur, opacity, color) for a soft drop shadow under it, "ground" for a contact shadow on
+        the floor under its bottom edge; ``glow``: a colour or
         dict(color, radius, strength) for light spilling around it (neon, lamps, the moon); ``name``: records the shape
         for ``--check`` (``kind`` defaults to "object"). Returns the mask."""
         ext = extent_of(mask)
@@ -705,6 +710,24 @@ class Sketch:
         R = math.sqrt(max(area, 1.0) / math.pi)
         k = self._detail(area)
         shade, highlight, volume = float(shade) * k, float(highlight) * k, float(volume) * k
+        spec = float(spec)                              # cues a small thing needs too: not scaled by detail
+        H_, W_ = m.shape
+
+        def oval(cx, cy, a, b, edge=0.0):              # soft oval alpha in canvas pixels, full frame
+            a, b = max(a, 0.5), max(b, 0.5)
+            y0, y1 = max(int(cy - b) - 2, 0), min(int(cy + b) + 3, H_)
+            x0, x1 = max(int(cx - a) - 2, 0), min(int(cx + a) + 3, W_)
+            out = np.zeros((H_, W_), F32)
+            if y1 > y0 and x1 > x0:
+                Y, X = np.mgrid[y0:y1, x0:x1].astype(F32)
+                r = np.sqrt(((X - cx) / a) ** 2 + ((Y - cy) / b) ** 2)
+                out[y0:y1, x0:x1] = 1.0 - smoothstep(edge, 1.0, r)
+            return out
+        if isinstance(shadow, str) and shadow == "ground":   # contact shadow on the floor under the bottom edge
+            w = bb[3] - bb[2]
+            cx = (bb[2] + bb[3]) / 2 - self.light[0] * 0.12 * w
+            self._blend("#1d1830", oval(cx, bb[1] - 0.015 * w, 0.62 * w, max(0.1 * w, 2.0)), 0.5 * opacity)
+            shadow = None
         if shadow:
             sh = dict(offset=None, blur=0.012, opacity=0.3, color="#1d1830")
             if isinstance(shadow, dict):
@@ -733,6 +756,14 @@ class Sketch:
         lx, ly = self.light
         from .masks import shift
         dark = as_color(shade_color) if shade_color is not None else _shadow_of(base)
+        if (volume or shade) and getattr(mask, "planar", False):   # a flat face: a plane, darker away from the light
+            y0, y1, x0, x1 = bb
+            Y, X = np.mgrid[y0:y1, x0:x1].astype(F32)
+            t = ((X - (x0 + x1) / 2) * lx + (Y - (y0 + y1) / 2) * ly) / max(R, 1.0)
+            g = np.zeros_like(m)
+            g[y0:y1, x0:x1] = m[y0:y1, x0:x1] * (0.35 * clamp01(0.5 - 0.5 * t))
+            self._blend(dark, g * F32(min(max(float(volume), float(shade)), 1.0)), opacity)
+            volume = shade = 0.0
         if volume:
             reach = 0.9 * R
 
@@ -756,6 +787,12 @@ class Sketch:
                 to = _f.gaussian_blur(shift(sub, -lx * k, -ly * k), 0.12 * R)
                 return sub * clamp01(1.0 - to)
             self._blend(light, _windowed(m, R, fh) * F32(min(float(highlight), 1.0)), opacity)
+        if spec:
+            y0, y1, x0, x1 = bb
+            hw, hh = (x1 - x0) / 2, (y1 - y0) / 2
+            a = 0.16 * min(hw, hh)
+            sp = oval((x0 + x1) / 2 + lx * 0.5 * hw, (y0 + y1) / 2 + ly * 0.5 * hh, a, 0.75 * a, 0.25) * m
+            self._blend((1.0, 0.99, 0.96), sp * F32(min(float(spec), 1.0) * 0.9), opacity)
         if line is not None and line is not False:
             lw = line_width
             if isinstance(line, str) and line == "ink":                 # comic / ink styles: bold near-black line
@@ -1085,6 +1122,214 @@ class Sketch:
             out.append((x0 + (c + shift + 0.5) * cw, y0 + (r + 0.5) * ch, size))
         return out
 
+    # ---- soft cel (anime, cel-shaded games): defined tone bands, sheen, eyes, coloured line art
+    def cel(self, mask, color, *, bands=1, shift=(-0.12, None), depth=0.4, softness=0.003, highlight=0.0,
+            rim=None, bounce=None, line=None, line_width=0.005, weight=0.5, shade_color=None, angle=90,
+            shadow=None, glow=None, opacity=1.0, name=None, kind="object"):
+        """Soft-cel paint: the base colour, then ``bands`` (1 or 2) hard-edged shadow tones on the side away from
+        the light. Each band edge follows the shape's form with a small ``softness`` (frame units); ``depth`` is
+        the first band's reach as a share of the shape's radius (the second band reaches half as far).
+        ``shift`` = (lightness, hue degrees) of the shadow tone in OKLab: (-0.12, None) = darker and turned
+        towards violet (tools/match.py prints the reference's own pair); ``shade_color`` sets it directly.
+        ``highlight`` 0–1: a hard light band inside the lit edge; ``rim``: True or a colour, a thin back-light
+        on the shadow-side edge; ``bounce``: True or a colour, soft reflected light inside the shadow;
+        ``line``: True (a dark tone of the base, never black) or a colour, ``line_width`` thick and heavier on
+        the shadow side by ``weight``. ``color`` may be stops ``[(0, c0), (1, c1)]`` (``angle``, ``shadow``,
+        ``glow``, ``opacity``, ``name`` as in paint). Returns the mask."""
+        _choice("cel", "bands", int(bands), (0, 1, 2))
+        ext = extent_of(mask)
+        m = np.asarray(mask, F32)
+        bb = _bbox(m)
+        if bb is None:
+            return Shape(m, ext)
+        self.paint(mask, color, angle=angle, shadow=shadow, glow=glow, opacity=opacity)
+        base = self._fill_color(m, color, angle, bb)[1]
+        area = float(m[bb[0]:bb[1], bb[2]:bb[3]].sum())
+        R = math.sqrt(max(area, 1.0) / math.pi)
+        lx, ly = self.light
+        soft = max(self.size(softness), 0.6)
+        from .masks import shift as _shift
+        dl, dh = (tuple(shift) + (None,))[:2]
+        dark = as_color(shade_color) if shade_color is not None else as_color(cel_tone(base, dl, dh, 1.12))
+
+        def band(d, lit=False):
+            sgn = -1.0 if lit else 1.0
+
+            def fn(sub):
+                moved = _f.gaussian_blur(_shift(sub, sgn * lx * d, sgn * ly * d), soft)
+                return sub * (1.0 - smoothstep(0.35, 0.65, moved))
+            return _windowed(m, d + 3 * soft + 3, fn)
+
+        if bands >= 1:
+            b1 = band(depth * R)
+            self._blend(dark, b1, opacity)
+            if bounce:
+                bc = as_color(cel_tone(base, -0.02, dh, 1.25)) if bounce is True else as_color(bounce)
+                w = 0.22 * R
+                sub = _windowed(m, w + 6, lambda s: _f.gaussian_blur(
+                    s * (1.0 - _shift(s, lx * w, ly * w)), max(0.12 * R, 1.0)) * s)
+                self._blend(bc, sub * b1, 0.55 * opacity)
+            if bands >= 2:
+                dark2 = as_color(cel_tone(dark, (dl if dl is not None else -0.12) * 0.8, dh, 1.08))
+                self._blend(dark2, band(depth * R * 0.45), opacity)
+        if highlight:
+            lite = as_color(cel_tone(base, 0.09, 0.0, 0.92))
+            inset = 0.05 * R
+
+            def fh(sub):
+                inner = grow(sub, -inset)
+                moved = _f.gaussian_blur(_shift(inner, -lx * 0.12 * R, -ly * 0.12 * R), soft)
+                return inner * (1.0 - smoothstep(0.35, 0.65, moved))
+            self._blend(lite, _windowed(m, 0.2 * R + 4, fh), min(float(highlight), 1.0) * opacity)
+        if rim:
+            rc = as_color(cel_tone(base, 0.16, 0.0, 0.7)) if rim is True else as_color(rim)
+            self._blend(rc, band(max(0.06 * R, 1.2)), 0.9 * opacity)
+        if line is not None and line is not False:
+            lc = as_color(cel_tone(base, -0.4, dh, 0.8)) if line is True else as_color(line)
+            self._blend(lc, self._weighted_line(m, self.size(line_width), weight), opacity)
+        if name:
+            _manifest.note(self.cv, kind, name, mask=m, extent=ext)
+        return Shape(m, ext)
+
+    def _weighted_line(self, m, w, weight=0.5):
+        """An outline of mean width ``w`` px, thinner on the lit side and heavier on the shadow side."""
+        from .masks import shift as _shift
+        lx, ly = self.light
+        s = float(weight) * w
+
+        def fn(sub):
+            outer = grow(sub, w / 2.0)
+            inner = _shift(grow(sub, -w / 2.0), lx * s, ly * s)
+            return clamp01(outer - np.minimum(inner, sub))
+        return _windowed(m, w + s + 4, fn)
+
+    def ink(self, points, width=0.006, color="#3b2633", taper="both", shadow=None, glow=None, opacity=1.0,
+            name=None, kind="object"):
+        """Coloured line art: a smooth stroke through ``points`` that swells in the middle and tapers to points
+        (``taper`` = both / start / end / None), in a dark coloured ink rather than black; ``shadow``, ``glow``,
+        ``opacity``, ``name`` as in paint. Returns the mask."""
+        return self.paint(self.stroke(points, width, taper=taper), color, shadow=shadow, glow=glow,
+                          opacity=opacity, name=name, kind=kind)
+
+    def ramp(self, mask, colors, angle=90, steps=0, line=None, line_width=0.005, shadow=None, glow=None,
+             opacity=1.0, name=None, kind="object"):
+        """A gradient fill mixed in OKLab through ``colors`` (evenly spaced, or stops [(t, c), ...]) across the
+        shape: skies, hair, cloth. ``angle`` 90 = top to bottom, 0 = left to right. ``steps`` > 1 cuts it into
+        that many hard bands (anime skies, cel hair). ``line``, ``shadow``, ``glow``, ``opacity``, ``name`` as in
+        paint. Returns the mask."""
+        from .palette import srgb_to_oklab, oklab_to_srgb
+        m = np.asarray(mask, F32)
+        bb = _bbox(m)
+        if bb is None:
+            return Shape(m, extent_of(mask))
+        if colors and isinstance(colors[0], (list, tuple)) and len(colors[0]) == 2 and \
+                not isinstance(colors[0][0], (list, tuple)) and isinstance(colors[0][1], (str, tuple, list)):
+            ts = [float(t) for t, _ in colors]
+            cs = [c for _, c in colors]
+        else:
+            cs = list(colors)
+            ts = list(np.linspace(0.0, 1.0, len(cs))) if len(cs) > 1 else [0.0]
+        labs = srgb_to_oklab(np.array([as_color(c)[:3] for c in cs], F32))
+        y0, y1, x0, x1 = bb
+        yy, xx = np.mgrid[y0:y1, x0:x1].astype(F32)
+        a = math.radians(self._angle(angle))
+        dx, dy = math.cos(a), math.sin(a)
+        cx, cy, hw, hh = (x0 + x1) / 2.0, (y0 + y1) / 2.0, max((x1 - x0) / 2.0, 1), max((y1 - y0) / 2.0, 1)
+        ext = max(abs(dx) * hw + abs(dy) * hh, 1e-6)
+        t = clamp01(((xx - cx) * dx + (yy - cy) * dy) / ext * 0.5 + 0.5)
+        n = int(steps)
+        if n > 1:
+            f = t * n
+            i = np.minimum(np.floor(f), n - 1)
+            w = n / (2.0 * ext)                                    # one pixel in band units: anti-aliased steps
+            s = clamp01((f - i - 1.0 + w) / w) * (i < n - 1)
+            t = (i + s) / (n - 1)
+        lab = np.stack([np.interp(t, ts, labs[:, k]) for k in range(3)], -1)
+        full = np.zeros((self.H, self.W, 3), F32)
+        full[y0:y1, x0:x1] = oklab_to_srgb(lab)
+        return self.paint(mask, full, line=line, line_width=line_width, shadow=shadow, glow=glow, opacity=opacity,
+                          name=name, kind=kind)
+
+    def sheen(self, mask, color=None, y=0.3, width=0.035, teeth=9, bend=0.22, opacity=0.85):
+        """Hair sheen (the angel ring): a light band with jagged teeth across ``mask`` at ``y`` (0 = top of the
+        mask's box, 1 = bottom) that dips at the sides like a ring round the head. ``width`` = band height
+        (frame units), ``teeth`` = spikes across, ``bend`` = how far the ends dip (share of the box height).
+        ``color`` defaults to a light, less saturated tone of what is painted under the mask. Returns its alpha."""
+        m = np.asarray(mask, F32)
+        bb = _bbox(m)
+        if bb is None:
+            return m
+        y0, y1, x0, x1 = bb
+        if color is None:
+            wm = m[y0:y1, x0:x1, None]
+            under = (np.clip(self.cv.buf[y0:y1, x0:x1, :3], 0, 1) * wm).sum((0, 1)) / max(float(wm.sum()), 1e-6)
+            color = cel_tone(under, 0.2, 0.0, 0.75)
+        yy, xx = np.mgrid[y0:y1, x0:x1].astype(F32) + 0.5
+        h = float(y1 - y0)
+        u = (xx - (x0 + x1) / 2.0) / max((x1 - x0) / 2.0, 1.0)
+        vc = y0 + h * (float(y) + float(bend) * u * u)
+        hw = max(self.size(width) / 2.0, 1.0)
+        tri = np.abs(2.0 * ((u + 1.0) * float(teeth) / 2.0 % 1.0) - 1.0)        # 0..1 triangle wave across
+        lower = vc + hw * (0.2 + 2.6 * (1.0 - tri) ** 1.5)                 # long teeth hanging down
+        upper = vc - hw * (0.8 + 0.3 * tri)
+        al = clamp01(yy - upper + 0.5) * clamp01(lower - yy + 0.5) * (1.0 - smoothstep(0.7, 1.0, np.abs(u)))
+        al = self._place((y0, y1, x0, x1), al.astype(F32)) * grow(m, -1.5)
+        self._blend(color, al, opacity)
+        return al
+
+    def blush(self, x, y, rx=0.035, ry=None, color="#ff7d8c", opacity=0.45, lines=3, clip=None):
+        """Anime blush: a soft gradient oval plus ``lines`` short diagonal hatch strokes. Returns its alpha."""
+        ry = rx * 0.55 if ry is None else ry
+        al = self.spot(x, y, rx, ry, color, opacity, clip=clip)
+        n = int(lines)
+        for i in range(n):
+            ox = x + (i - (n - 1) / 2.0) * rx * 0.55
+            m = self.stroke([(ox + rx * 0.12, y - ry * 0.35), (ox - rx * 0.12, y + ry * 0.35)],
+                            max(rx * 0.09, 0.0015), taper="both")
+            self._blend(cel_tone(color, -0.08, 0.0, 1.1), m * (np.asarray(clip, F32) if clip is not None else 1.0),
+                        min(1.0, opacity * 1.5))
+        return al
+
+    def eye(self, x, y, size=0.06, iris="#3f7fd0", look=(0.0, 0.0), lash=None, white="#fbf8ff", mirror=False,
+            lid=0.0, name=None):
+        """A multi-tone anime eye in one call, ``size`` = its height: sclera with the upper lid's shadow, a tall
+        iris graded dark (top) to light (bottom) with a darker rim, pupil, lid shadow across the iris, a light
+        crescent low in the iris, two highlights on the lit side, a heavy tapered upper lash line and a light lower
+        one. The outer corner is on the right; draw the left-hand eye with ``mirror=True``. ``look`` = (dx, dy)
+        moves the iris (fractions of the eye, about ±0.15); ``lid`` 0–0.6 lowers the upper lid (sleepy, smiling);
+        ``lash`` defaults to a very dark tone of the iris. Returns the eye's mask."""
+        lash = cel_tone(iris, -0.62, 0.0, 0.45) if lash is None else lash
+        lx, ly = float(look[0]), float(look[1])
+        lit_x = self.light[0] * (-1.0 if mirror else 1.0)
+        top = -0.42 + 0.7 * float(lid)
+        with self.at(x, y, size, mirror=mirror):
+            outline = [(-0.36, 0.12), (-0.3, top + 0.12), (0.0, top), (0.32, top + 0.08), (0.44, 0.0),
+                       (0.3, 0.38), (-0.18, 0.4)]
+            white_m = self.blob(outline)
+            self._blend(white, white_m)
+            from .masks import shift as _shift
+            d = self.size(0.2)
+            lid_sh = white_m * (1.0 - _shift(white_m, 0.0, d))
+            self._blend(cel_tone(white, -0.16, 0.0, 1.0) if as_color(white).mean() < 0.9 else "#c9c6e6", lid_sh)
+            ix, iy = 0.02 + lx, 0.02 + ly
+            iris_e = self.ellipse(ix, iy, 0.25, 0.37)
+            ir = iris_e * white_m
+            self.ramp(ir, [cel_tone(iris, -0.24, 0.0, 1.0), iris, cel_tone(iris, 0.14, 0.0, 1.15)])
+            self._blend(cel_tone(iris, -0.3, 0.0, 0.9), self.outline(iris_e, 0.045, "inside") * white_m)
+            self._blend(cel_tone(iris, -0.42, 0.0, 0.8), self.ellipse(ix, iy + 0.04, 0.1, 0.16) * white_m)
+            self._blend(cel_tone(iris, -0.3, 0.0, 0.9), ir * (1.0 - _shift(white_m, 0.0, self.size(0.24))), 0.75)
+            self.spot(ix, iy + 0.24, 0.17, 0.09, cel_tone(iris, 0.3, 0.0, 1.1), 0.85, clip=ir)
+            self._blend("#ffffff", self.ellipse(ix + 0.1 * lit_x, iy - 0.14, 0.085, 0.1, angle=-20) * white_m)
+            self._blend("#ffffff", self.circle(ix - 0.1 * lit_x, iy + 0.16, 0.04) * white_m, 0.9)
+            upper = self.stroke([(-0.38, top + 0.2), (-0.28, top + 0.1), (0.0, top - 0.02), (0.3, top + 0.06),
+                                 (0.48, top + 0.2), (0.56, top + 0.3)], [0.035, 0.08, 0.11, 0.1, 0.07, 0.02])
+            flick = self.stroke([(0.42, top + 0.12), (0.56, top + 0.04)], [0.05, 0.01])
+            self._blend(lash, np.maximum(upper, flick))
+            self._blend(lash, self.stroke([(0.06, 0.41), (0.26, 0.38), (0.4, 0.22)], [0.012, 0.03, 0.012]), 0.8)
+        if name:
+            _manifest.note(self.cv, "object", name, mask=white_m, extent=extent_of(white_m))
+        return white_m
+
     # ---- groups
     @contextlib.contextmanager
     def layer(self, name=None, kind="object", opacity=1.0, paste=True):
@@ -1136,6 +1381,30 @@ class Sketch:
 
 
 # ----------------------------------------------------------------------------------------------- finishing
+
+def cel_tone(color, light=-0.12, hue=None, chroma=1.0):
+    """A related tone of ``color`` in OKLab -> '#rrggbb': ``light`` added to the lightness (-0.12 = a cel shadow,
+    +0.1 = a highlight), ``hue`` degrees turned (+ = counter-clockwise: red -> yellow -> green -> blue; None =
+    up to 15 degrees towards violet, the usual anime shadow), ``chroma`` multiplied. Near-greys get a cool tint
+    when darkened, so white cloth shades lavender."""
+    from .palette import srgb_to_oklab, oklab_to_srgb, to_hex
+    lab = srgb_to_oklab(np.clip(np.asarray(as_color(color), F32)[:3], 0, 1)).astype(np.float64)
+    L, a, b = float(lab[0]), float(lab[1]), float(lab[2])
+    C = math.hypot(a, b)
+    h = math.degrees(math.atan2(b, a)) % 360
+    dl = -0.12 if light is None else float(light)
+    if hue is None:
+        turn = ((300.0 - h + 180.0) % 360.0) - 180.0
+        dh = max(-15.0, min(15.0, turn)) if dl < 0 else 0.0
+    else:
+        dh = float(hue)
+    C2 = C * float(chroma)
+    if C < 0.03 and dl < 0:                                 # greys and whites: a cool lavender shadow
+        C2, h, dh = max(C2, min(0.045, -dl * 0.35)), 290.0, 0.0
+    h2 = math.radians(h + dh)
+    out = oklab_to_srgb(np.array([min(max(L + dl, 0.0), 1.0), C2 * math.cos(h2), C2 * math.sin(h2)]))
+    return to_hex(out)
+
 
 def paper(cv, color=None, grain=0.03, fibres=0.02, blotch=0.02, seed=0):
     """Paper under the picture: tints towards ``color`` (optional), then multiplies fine grain, horizontal
@@ -1198,7 +1467,7 @@ def grade(cv, mood="warm night", amount=1.0):
 
 
 _strict_methods(Sketch, skip=("px", "size"))
-for _n in ("grow", "edge", "paper", "limit_palette", "grade", "signed_distance"):
+for _n in ("grow", "edge", "paper", "limit_palette", "grade", "signed_distance", "cel_tone"):
     globals()[_n] = _strict(globals()[_n])
 
 from ._args import module_getattr as _module_getattr  # noqa: E402

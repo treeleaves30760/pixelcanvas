@@ -388,7 +388,8 @@ class Canvas:
 class _LayerBase:
     """Shared by PillowLayer / CairoLayer: coordinate helpers and the composite on exit."""
 
-    _FINISH = ("shadow", "shade", "highlight", "line", "line_width", "glow", "light", "shade_color")
+    _FINISH = ("shadow", "shade", "highlight", "volume", "spec", "line", "line_width", "glow", "light",
+               "shade_color")
 
     def __init__(self, cv, ss, name, kind, opacity, finish=None):
         from ._args import reject_unknown

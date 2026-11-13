@@ -2257,6 +2257,126 @@ def test_one_object_crowding_the_frame_is_an_item_line():
                                      r"every item room", w[0]["short"])
 
 
+# (phrase COVERAGE could list, request, is it a confident thing a missing-thing line may name)
+CONFIDENT_CASES = [
+    # function words, pronouns, conjunctions
+    ("if", "If the kettle is red, put a mug beside it.", False),
+    ("you", "Show how you would pack a lunch box with an apple.", False),
+    ("we", "We see a fox and a hen in a yard.", False),
+    ("since", "Paint a bench, since the park is empty.", False),
+    ("within", "A pearl rests within an open shell.", False),
+    # verbs and verb-like leftovers
+    ("leads", "Each gate leads to a different garden.", False),
+    ("stands", "A heron stands in the reeds.", False),
+    ("quirky rule states", "A quirky rule states that red things float.", False),
+    ("plate displays crumbs", "The cake plate displays crumbs and a fork.", False),
+    ("lay", "Lay out a ruler, a compass and a pencil.", False),
+    # adjectives and adverbs
+    ("rustic", "Draw a rustic wooden gate.", False),
+    ("dreamy", "A dreamy lake with a canoe.", False),
+    ("upwards", "Smoke curls upwards from a chimney.", False),
+    ("taller", "The left tower is taller than the right tower.", False),
+    # abstract and framing words
+    ("history", "A castle with a long history on a cliff.", False),
+    ("action", "A goalkeeper in action diving for a ball.", False),
+    ("scene", "A quiet scene of a harbour with two boats.", False),
+    ("style", "A teapot in a flat style.", False),
+    ("idea", "Show the idea of balance with a scale and two weights.", False),
+    ("conditional rules", "Use these conditional rules to place a cup and a saucer.", False),
+    # generic words answered by the named thing
+    ("creature", "Each house has a different creature: a dragon, an owl and a toad.", False),
+    ("pet", "A girl walks her pet, a small grey rabbit.", False),
+    ("object", "Any object made of glass glows green.", False),
+    # body parts and worn things of a named figure
+    ("arms", "A dancer with her arms raised above a stage.", False),
+    ("eyes", "A cat with green eyes on a stool.", False),
+    ("shirt", "A boy in a striped shirt flies a kite.", False),
+    ("ponytail", "A runner with a long ponytail on a track.", False),
+    ("fingers", "A pianist with long fingers at a piano.", False),
+    # parts of a recorded whole
+    ("wheels", "A wagon with four wooden wheels.", False),
+    ("handle", "A kettle with a black handle on a stove.", False),
+    ("branches", "An oak with bare branches beside a pond.", False),
+    # settings drawn as the place
+    ("room", "A lamp and a sofa in a small room.", False),
+    ("park", "Two dogs chase a ball in a park.", False),
+    ("street", "A tram rolls down a narrow street.", False),
+    # compounds and words the request never wrote
+    ("forest", "一只猫坐在窗台上", False),
+    ("tool box", "A toolbox on a shelf.", False),
+    # confident things
+    ("kettle", "A red kettle on a stove next to a mug.", True),
+    ("mug", "A red kettle on a stove next to a mug.", True),
+    ("straw broom", "Lean a straw broom against the shed.", True),
+    ("lamp", "A lamp hanging above the table.", True),
+    ("bicycles", "Three bicycles lean on a fence.", True),
+    ("lighthouse", "Paint a lighthouse, a gull and a rowing boat.", True),
+    ("gull", "Paint a lighthouse, a gull and a rowing boat.", True),
+    ("rowing boat", "Paint a lighthouse, a gull and a rowing boat.", True),
+    ("violin", "A street musician plays a violin under an arch.", True),
+    # a part or a worn thing the request asks for on its own is the requested thing
+    ("wheel", "a black wheel", True),
+    ("hat", "a red hat on a peg", True),
+    ("door handle", "a brass door handle", True),
+    ("branch", "a bare branch, drawn in ink", True),
+]
+
+
+def test_a_part_is_answered_by_its_whole_only_when_the_whole_is_there():
+    import render
+    from pixelcanvas.illustrate import Sketch
+    cv = Canvas(480, 270, "#dfe7ef")
+    sk = Sketch(cv)
+    sk.paint(sk.circle(0.02, 0.5, 0.15), "#1b1b22", name="wheel")              # half outside the left edge
+    w = [x["short"] for x in manifest.prompt_checks(cv, "a black wheel") if x["rule"] == "prompt_cut"]
+    assert w == ["wheel: cut off at the left edge - move it inside the frame"]
+    cv2 = Canvas(480, 270, "#dfe7ef")
+    sk2 = Sketch(cv2)
+    sk2.paint(sk2.box(0.3, 0.3, 0.8, 0.6), "#c8372d", name="cart")
+    sk2.paint(sk2.circle(0.02, 0.5, 0.15), "#1b1b22", name="wheel")
+    w = [x for x in manifest.prompt_checks(cv2, "a red cart with a black wheel") if x["rule"] == "prompt_cut"]
+    assert w == []                                                               # the cart answers for its wheel
+    # a hat asked for alone and never drawn is missing; on a recorded person it is part of the figure
+    cv3 = _scene_of([("vase", 200, 130, 40, "#2d5fd0")])
+    data, _ = render.build_report(cv3, types_ns(PROMPT="a red hat beside a blue vase", KIND="painting"), [])
+    assert any("the request names a red hat" in l or "names a hat" in l for l in data["fix"]), data["fix"]
+    cv4 = _scene_of([("woman", 200, 130, 60, "#c8a27a")])
+    data, _ = render.build_report(cv4, types_ns(PROMPT="a woman in a red hat and a blue scarf", KIND="painting"), [])
+    assert not any("hat" in l or "scarf" in l for l in data["fix"]), data["fix"]
+
+
+def test_a_missing_thing_line_names_only_confident_things():
+    bad = [(ph, p) for ph, p, want in CONFIDENT_CASES if manifest.confident_thing(ph, p) != want]
+    assert not bad, bad
+
+
+def test_the_scene_words_answer_a_thing_drawn_under_another_name():
+    rows = [{"name": "delivery van", "kind": "object", "aliases": ["truck"]}]
+    src = 'PROMPT = "a van, a workbench and a sign"\n# workbench: two boxes and four legs\nsk.paint(m, "#7a4a2a")\n'
+    words = manifest.scene_words(None, rows, src)
+    assert manifest.answered_by_words("van", words) and manifest.answered_by_words("truck", words)
+    assert manifest.answered_by_words("workbenches", words)
+    assert not manifest.answered_by_words("sign", words)               # the PROMPT line is not the scene's words
+
+
+def test_few_recorded_things_give_one_summary_line():
+    import render
+    cv = _scene_of([("kettle", 100, 130, 30, "#c8372d")])
+    p = "a red kettle, a blue mug, a green tray, a yellow spoon and a brown loaf"
+    data, _ = render.build_report(cv, types_ns(PROMPT=p, KIND="painting"), [])
+    un = [l for l in data["fix"] if "recorded" in l]
+    assert len(un) == 1 and un[0].startswith("[warn] the request names 5 things, 1 are recorded: record each with "
+                                             "name= so they can be checked (not found: mug, tray, spoon +1 more)")
+
+
+def test_staging_is_not_a_covered_or_hidden_thing():
+    cv = _scene_of([("woman", 240, 150, 60, "#c8a27a"), ("jacket", 240, 160, 40, "#2d5fd0"),
+                    ("chair", 240, 170, 50, "#7a4a2a"), ("sign", 380, 120, 30, "#2e9e4f")])
+    p = "a woman in a blue jacket sitting on a chair, and a sign"
+    w = [x for x in manifest.prompt_checks(cv, p) if x["rule"] in ("prompt_covered", "prompt_hidden")]
+    assert w == []
+
+
 def test_header_says_still_unconfirmed_or_deliver():
     import render
     item = {"rule": "prompt_count", "severity": "warn", "message": "m", "fix": "f",

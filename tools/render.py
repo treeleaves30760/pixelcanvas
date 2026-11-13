@@ -372,6 +372,8 @@ def build_parser():
     ap.add_argument("--styles", default=None, metavar="A,B,C", help="contact sheet of the scene in several styles")
     ap.add_argument("--prompt", default=None, metavar="TEXT", help="the request to check against (overrides PROMPT)")
     ap.add_argument("--kind", default=None, choices=KINDS, help="picture kind for the critique (overrides KIND)")
+    ap.add_argument("--ref", default=None, metavar="REF.png",
+                    help="--check: append the gaps to this style reference (REFERENCE block; scene: REFERENCE = ...)")
     ap.add_argument("--animate", nargs="+", metavar="NAME START END",
                     help="one frame per step with a constant swept START -> END: outputs/<scene>.gif + "
                          "<scene>_frames.jpg (NAME defaults to T; several: \"SUN_X:0.2:0.8,SUN_Y:0.7:0.3\")")
@@ -688,8 +690,9 @@ _FIX_ORDER = ("prompt_text_missing", "prompt_unrecorded", "prompt_small", "promp
               "prompt_hidden", "prompt_crowded", "prompt_style_missing")
 # a requested item the report cannot confirm (a checked request lists these first, in the request's order)
 ITEM_RULES = {"prompt_text_missing", "prompt_unrecorded", "prompt_small", "prompt_cut", "prompt_count",
-              "prompt_colour", "prompt_relation", "prompt_covered", "prompt_text_place", "prompt_text_small",
-              "prompt_hidden", "prompt_crowded"}
+              "prompt_colour", "prompt_relation", "prompt_covered", "prompt_text_place", "prompt_text_small"}
+# request issues a checked request keeps above the block as info (too often staging, not a fault)
+_ITEM_SOFT = {"prompt_hidden", "prompt_crowded", "prompt_style_missing"}
 # critiques of the picture itself: never in the FIX block of a checked request (kept above as info)
 _CRITIQUE_OFF = {"object_at_edge", "subject_cropped", "object_tiny", "object_hidden"}
 REMINDER = ("the report confirms places, counts, sizes and colours, not that a shape reads as the thing: look at "
@@ -780,14 +783,29 @@ def _names_in(w, names):
     return any(msg.startswith(n + " (") or f" of {n} is visible" in msg for n in names)
 
 
-def _unrecorded_items(cov, prompt, rows):
-    """A checked request: one issue per thing nothing recorded answers to, in the request's order: "the request
-    names a brass key: nothing recorded answers to it - draw it and pass name="key". A warn when the scene records
-    its things (so a missing one is likely missing), else info."""
+def _unrecorded_items(cov, prompt, rows, words=None):
+    """A checked request: one issue per confident thing (``manifest.confident_thing``) that nothing recorded, no
+    label and no word of the scene answers to, in the request's order: "the request names a brass key: nothing
+    recorded answers to it - draw it and pass name="key". When the scene records fewer things than the request
+    names, one line instead: "the request names 6 things, 2 are recorded: ..."."""
     from pixelcanvas import manifest, vision
     records = any(r.get("kind") in ("object", "plant", "creature", "person") and not r.get("backdrop") for r in rows)
+    sure = [c for c in cov if manifest.confident_thing(c["phrase"], prompt, rows)]
+    miss = [c for c in sure if c["status"] == "missing" and not manifest.answered_by_words(c["phrase"], words or set())]
+    rec = {r["name"].split(" #")[0].lower() for r in rows
+           if r.get("kind") in ("object", "plant", "creature", "person") and not r.get("backdrop")}
+    if len(miss) >= 2 and len(rec) < len(sure):
+        shown = ", ".join(c["phrase"] for c in miss[:3]) + (f" +{len(miss) - 3} more" if len(miss) > 3 else "")
+        w = vision._warn("prompt_unrecorded", "warn" if records else "info",
+                         f"The request names {len(sure)} things and the scene records {len(rec)}; nothing answers to "
+                         f"{shown}.", None, [c["phrase"] for c in miss], None,
+                         "pass name= to the call that paints each thing (or manifest.note) so the report can check it")
+        w["short"] = (f"the request names {len(sure)} things, {len(rec)} are recorded: record each with name= so they "
+                      f"can be checked (not found: {shown})")
+        w["item"] = miss[0]["phrase"]
+        return [w]
     out = []
-    for c in cov:
+    for c in miss:
         if c["status"] != "missing":
             continue
         name = manifest._one(c["phrase"].split()[-1])
@@ -809,11 +827,12 @@ def _unrecorded_items(cov, prompt, rows):
     return out
 
 
-def _unrecorded_issue(cov, rows):
-    """One issue naming every thing of the request that nothing recorded answers to (COVERAGE "not recorded"):
-    a warn when the scene records its things (so a missing one is likely missing), else info."""
-    from pixelcanvas import vision
-    miss = [c["phrase"] for c in cov if c["status"] == "missing"]
+def _unrecorded_issue(cov, rows, prompt=None, words=None):
+    """One issue naming every confident thing of the request that nothing recorded, no label and no word of the
+    scene answers to: a warn when the scene records its things (so a missing one is likely missing), else info."""
+    from pixelcanvas import manifest, vision
+    miss = [c["phrase"] for c in cov if c["status"] == "missing" and manifest.confident_thing(c["phrase"], prompt, rows)
+            and not manifest.answered_by_words(c["phrase"], words or set())]
     if not miss:
         return None
     records = any(r.get("kind") in ("object", "plant", "creature", "person") and not r.get("backdrop") for r in rows)
@@ -856,8 +875,14 @@ def build_report(cv, mod, warns, sheet_path=None, image=None, preview=None, mode
         pr = [w for w in pr if w["rule"] not in ("prompt_small", "prompt_hidden", "prompt_cut", "prompt_covered",
                                                  "prompt_crowded")]
     checked = bool(prompt) and manifest.checked_request(prompt)
+    try:
+        source = open(mod.__file__, encoding="utf-8").read() if getattr(mod, "__file__", None) else None
+    except (OSError, UnicodeDecodeError):
+        source = None
+    words = manifest.scene_words(cv, rows, source) if prompt else set()
     if checked:
-        pr = _sorted(pr + _unrecorded_items(cov, prompt, rows))
+        pr = [dict(w, severity="info") if w["rule"] in _ITEM_SOFT and w.get("severity") == "warn" else w for w in pr]
+        pr = _sorted(pr + _unrecorded_items(cov, prompt, rows, words))
         soft = []                                       # the picture critique stays above, as info
         for w in warns:
             soft.append(dict(w, severity="info") if w.get("severity") in ("warn", "fail") and
@@ -866,7 +891,7 @@ def build_report(cv, mod, warns, sheet_path=None, image=None, preview=None, mode
         obj = [dict(w, severity="info") if w["rule"] in _CRITIQUE_OFF and w.get("severity") == "warn" else w
                for w in obj]
     else:
-        unrec = _unrecorded_issue(cov, rows) if prompt else None
+        unrec = _unrecorded_issue(cov, rows, prompt, words) if prompt else None
         if unrec:
             pr = _sorted(pr + [unrec])
     named = {n for w in pr if w["rule"] in ("prompt_small", "prompt_hidden") for n in w.get("names", [])}
@@ -1360,6 +1385,8 @@ def run(args, rec):
     if need_warnings:
         data, report = build_report(cv, mod, warns, _rel(sheet_path) if sheet_path else None, image=picture,
                                     preview=preview, png=out, round_=_check_round(args) if args.check else 1)
+        report = __import__("pixelcanvas.reference", fromlist=["add_to_report"]).add_to_report(
+            report, args.ref or getattr(mod, "REFERENCE", None), out, scene=getattr(mod, "__file__", None))
         warns = data["warnings"]
         rec.update({k: v for k, v in data.items() if k != "warnings"})
     rec["warnings"] = warns

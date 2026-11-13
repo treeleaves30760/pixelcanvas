@@ -83,7 +83,7 @@ sk.shards((0.5, 0.9), size=0.08); sk.spill((0.8, 0.9), size=0.08, on=0.9)
 | paper cut | far-to-near silhouettes, each `sk.paint(m, c, shadow=dict(offset=(0.004, 0.008), blur=0.01, opacity=0.45), highlight=0.3)` |
 | watercolour | `sk.wash(m, c)` light washes first, darker on top; edges pool, pigment granulates; `paper(cv, blotch=0.04)` |
 | comic | `Sketch(cv, finish="flat")`, `line="ink"` on every shape, flat bright fills, `sk.pattern(m, "dots", ...)` halftone, a jagged burst behind a sound word (recipe below) |
-| sticker | shapes inside `with sk.sticker(border=0.1, ink="#3d3350"):` get an ink line, a white die-cut and a shadow |
+| anime / soft-cel | defined bands, never flat fill: `sk.cel(m, c, bands=2, line=True)` on skin, hair, cloth; `sk.sheen(hair)`, `sk.eye(...)`, `sk.blush`, `sk.ink` coloured lines, `sk.ramp` sky ([techniques.md](techniques.md) §13); with a reference image, its numbers first ([reference.md](reference.md)) |
 | storybook | soft `shade` and `highlight` on every part, `line=True`, cheeks with `spot`, `grade(cv, "cosy")` |
 
 ## Calls
@@ -93,20 +93,20 @@ sk.shards((0.5, 0.9), size=0.08); sk.spill((0.8, 0.9), size=0.08, on=0.9)
 | shape | `sk.circle(x, y, r)` · `ellipse(x, y, rx, ry, angle)` · `box(x0, y0, x1, y1, radius)` · `polygon(pts)` · `blob(pts, tension=0)` closed smooth shape through points |
 | line | `sk.stroke(pts, width, taper=None, smooth=True, cap="round")`: width per point for a variable line; `taper="end"/"start"/"both"` · `sk.arc(x, y, r, start, end, width)` · `sk.curve(pts)` dense points to join into a `polygon` |
 | fill | `sk.paint(m, color)`; gradient: `color=[(0, c0), (1, c1)]`, `angle=90` (degrees) or `"radial"` |
-| shade | `paint(..., shade=0.4, highlight=0.3)`: form shadow away from the light, rim light towards it · `volume=0.6`: a rounded body that keeps whites white (cloth, clouds, snow) · `sk.spot(x, y, rx, ry, color, opacity, clip=m)` soft oval |
+| shade | `paint(..., shade=0.4, highlight=0.3)`: form shadow away from the light, rim light towards it · `volume=0.6`: a rounded body that keeps whites white (cloth, clouds, snow), on a `polygon` face a flat plane darker away from the light · `spec=0.8`: a glossy hot spot on the lit side · `sk.spot(x, y, rx, ry, color, opacity, clip=m)` soft oval · soft-cel: `sk.cel(m, c, bands=1, shift=(-0.12, None), highlight=, rim=, bounce=, line=)`, `cel_tone(c, light, hue)`, `sk.ramp(m, colors, steps=0)` |
 | pattern | `sk.pattern(m, "seigaiha" / "scales" / "stripes" / "dots" / "speckle" / "checker" / "tiles", color, size=0.05, width=None, angle=0)`: a motif clipped to the shape; stripes run along `angle`, speckle = soil, sand, stone |
 | see-through | `sk.glass(m, tint="#cfe8ff", alpha=0.22, line="#5b7a99")` · `sk.level(m, frac=0.5, color)` liquid inside |
 | state | `sk.crack(m, start=None, branches=2)` · `shards(at, size, glass=True)` · `spill(at, color, size, on=y)` · `steam(at, size, n=3)` · `drops(at, n=5, spread)` · `stain(m, color, amount)` rust, mud, dust |
 | layout | `sk.row(n, box, gap)` · `sk.grid(n, box, cols=None, gap)`: frames `(x, y, size)` for `with sk.at(*f):`, draw in -0.5..0.5 |
 | outline | `paint(..., line=True or colour or "ink", line_width=0.005)`: `"ink"` is a bold near-black comic line · `sk.outline(m, width, where="outside")` · `sk.grow(m, by)` |
-| shadow, glow | `paint(..., shadow=True or dict(offset, blur, opacity, color), glow=colour or dict(color, radius, strength))` · contact shadow: `sk.spot(x, y, 0.2, 0.03, "#000", 0.35)` |
+| shadow, glow | `paint(..., shadow=True or dict(offset, blur, opacity, color), glow=colour or dict(color, radius, strength))` · `shadow="ground"`: a contact shadow on the floor under the shape's bottom edge |
 | arrow | `sk.arrow(p0, p1, via=None, width=0.006, head=None, style="filled" / "open", color, outline=None, both=False)`: straight, or curved through `via`; `outline` makes it read on any ground |
 | label | `sk.label("Answer: ice melts", at=(0.5, 0.1), to=(0.5, 0.45), box="pill", arrow=False)`: a caption on a contrasting plate with a leader line, kept inside the canvas, recorded as text |
 | text | `sk.text(s, x, y, size, color, anchor="mm", tracking=0.2, outline=3, shadow=True, font="serif", case="upper", vertical=True)` |
 | clip, combine | masks are arrays: `a * b` clip, `np.maximum(a, b)` union, `a * (1 - b)` cut |
 | repeat, mirror | `with sk.at(x, y, size, rotate=deg, mirror=True):` then local coordinates; loop it for rows, pairs, crowds |
 | group | `with sk.layer(name="cat") as g:` → `g.mask` · `with sk.sticker(...):` · `paint(..., name="cat", kind="creature")` records it |
-| Pillow / cairo | `with cv.draw(ss=2, name=..., shade=, highlight=, line=, shadow=, glow=) as d:` `d.p(u, v)` `d.k(len)` `d.font(size)` · `with cv.cairo() as d: d.ctx` |
+| Pillow / cairo | `with cv.draw(ss=2, name=..., shade=, highlight=, volume=, spec=, line=, shadow=, glow=) as d:` `d.p(u, v)` `d.k(len)` `d.font(size)` · `with cv.cairo() as d: d.ctx` |
 | finish | `Sketch(cv, finish="auto" / "full" / "flat")` modelling by size · `paper(cv)` · `grade(cv, mood)` · `limit_palette(cv, colors, amount)` · `cv.vignette(0.3)` |
 
 ## Characters that match

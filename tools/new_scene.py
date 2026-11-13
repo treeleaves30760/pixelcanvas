@@ -15,9 +15,9 @@ Where the file goes: --dir DIR, else $PIXELCANVAS_WORK, else scenes/ when run in
 the current folder. render.py finds it by name from the same folder, or by path from anywhere.
 
 A picture starts from the illustration template: its plan docstring is the art direction, and you draw each
-subject yourself (Sketch, cv.draw). A format template (chart, diagram, ui, drawing ...) already draws the request's
-data: edit the values. Keep the structure (plan docstring, PROMPT, UPPER_CASE tunables, one log("step") per object,
-post last).
+subject yourself as a shaded form (Sketch, cv.draw; animals: creature; solids: form). A format template (chart,
+diagram, ui, drawing ...) already draws the request's data: edit the values. Keep the structure (plan docstring,
+PROMPT, UPPER_CASE tunables, one log("step") per object, post last).
 Kinds are discovered from scenes/_template_<kind>.py: drop a new template file there and its kind appears here.
 """
 import argparse

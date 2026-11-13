@@ -15,7 +15,14 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.9", "3.13"]
         scipy: [false]
+        # ubuntu-latest no longer ships Python 3.9; the 3.9 run on Linux uses the previous LTS image.
+        exclude:
+          - os: ubuntu-latest
+            python: "3.9"
         include:
+          - os: ubuntu-24.04
+            python: "3.9"
+            scipy: false
           - os: ubuntu-latest
             python: "3.13"
             scipy: true

@@ -2233,10 +2233,10 @@ _WORN = {"jacket", "coat", "hat", "cap", "apron", "shirt", "t-shirt", "dress", "
          "gloves", "tie", "helmet", "hair", "beard", "moustache", "face", "smile", "eye", "eyes", "hand", "hands",
          "arm", "arms", "leg", "legs", "expression", "pose", "outfit", "clothes", "clothing", "costume", "backpack",
          "bag", "necklace", "earring", "earrings", "collar", "stripes", "stripe", "coat", "fur", "tail", "paw",
-         "paws", "whiskers", "ears", "ear", "wing", "wings", "beak", "feather", "feathers", "ponytail", "bun",
-         "braid", "braids", "hairstyle", "haircut", "suit", "robe", "gown", "kimono", "armour", "armor", "attire",
-         "sleeve", "sleeves", "zipper", "zippers", "finger", "fingers", "neck", "chest", "elbow", "knee", "foot",
-         "feet", "head", "mouth", "nose", "teeth", "lips", "body", "mask", "shoes", "sneakers", "jersey"}
+         "paws", "whiskers", "ears", "ear", "wing", "wings", "beak", "feather", "feathers"}
+# more worn things: never a missing thing, never a place to put someone "in"
+_WORN_MORE = {"ponytail", "braid", "braids", "hairstyle", "haircut", "suit", "robe", "gown", "kimono", "armour",
+              "armor", "attire", "sleeve", "sleeves", "zipper", "zippers", "shoes", "sneakers", "jersey"}
 # a request word -> words of things that answer to it (a part answers to its whole, near-synonyms)
 _ANSWERED_BY = {"cup": ("mug", "teacup", "cup"), "mug": ("cup", "mug"), "sea": ("ocean", "sea", "water"),
                 "ocean": ("sea", "ocean", "water"), "water": ("lake", "sea", "ocean", "pond", "river", "water",
@@ -2613,7 +2613,8 @@ def style_requested(prompt, name):
                 return True
             if before and before[-1] in ("and", "or") or after and after[0] in ("and", "or") and                     len(after) > 1 and after[1] in _COLOURS:
                 continue                                  # a colour pair
-            if before and before[-1] in ("in", "as", "using", "with", "of") or                     len(before) > 1 and before[-2] in ("in", "as", "using", "with", "of") and before[-1] in ("a", "an", "the"):
+            if before and before[-1] in ("in", "as", "using", "with", "of") or \
+                    len(before) > 1 and before[-2] in ("in", "as", "using", "with", "of") and before[-1] in ("a", "an", "the"):
                 if after and after[0] in _COLOURS:
                     continue
                 return True
@@ -3549,7 +3550,7 @@ def place_requests(prompt):
         if not (a["head"] and b["head"]) or not _is_thing(a["head"]) or not _is_thing(b["head"]) or \
                 a["head"] in _PRONOUNS or b["head"] in _PRONOUNS:
             continue
-        if rel in _CONTACT_RELS and set(_singular(b["head"])) & (_NOT_CONTAINER | _WORN):
+        if rel in _CONTACT_RELS and set(_singular(b["head"])) & (_NOT_CONTAINER | _WORN | _WORN_MORE):
             continue                                     # "a knight in armour", "a cat in the rain"
         spans.append(m.span())
         out.append({"kind": "rel", "a": a, "b": b, "rel": rel})
@@ -3772,7 +3773,8 @@ def size_checks(cv, prompt, rows=None, cov=None, checked=None):
             continue                                     # a shadow or a glow is light, not a thing to enlarge
         named.append((thing, name, inst, area))
         hw = _one(thing.lower().split()[-1])
-        if area < 0.5 and side < 0.1 and hw not in _PART_WORDS and hw not in _WORN and \
+        if area < 0.5 and side < 0.1 and not _part_here(hw, prompt, S) and hw not in _SCATTER and \
+                hw not in _DETAIL and confident_thing(thing, prompt, S) and \
                 hw not in {"drop", "droplet", "crumb", "bead", "seed", "spark", "candle", "dot", "speck", "bubble"}:                    # small and short: a thin tall lamp still reads
             w = _issue("prompt_small", "warn",
                        f"The request names the {thing}, drawn at {area:.2f} % of the canvas: too small to be seen.",
@@ -3784,8 +3786,8 @@ def size_checks(cv, prompt, rows=None, cov=None, checked=None):
             continue
         vis = max(s["visible_pct"] for s in inst)
         hb = next((s["hidden_by"] for s in inst if s["hidden_by"]), None)
-        if vis < 50 and not any(s.get("see_through") for s in inst) and \
-                not (hb and _staged(max(inst, key=lambda s: s["visible_pct"]), hb, S, thing)):
+        if vis < 50 and not any(s.get("see_through") for s in inst) and confident_thing(thing, prompt, S) and \
+                not (hb and _staged(max(inst, key=lambda s: s["visible_pct"]), hb, S, thing, narrow=True, prompt=prompt)):
             w = _issue("prompt_hidden", "warn",
                        f"The request names the {thing}, but only {vis:.0f} % of it is visible"
                        + (f" (behind {hb})." if hb else "."), inst[0]["bbox"], round(vis / 100, 3), 0.5,
@@ -3807,10 +3809,10 @@ def size_checks(cv, prompt, rows=None, cov=None, checked=None):
                  if hit and run >= 0.05]                 # touching an edge along more than a sliver
         whole = cut["kind"] != "plant" and max(cut["size"]) < 0.5      # one object, not a group, a plant or ground
         hw = thing.lower().split()[-1]
-        group = _one(hw) != hw or len(inst) > 1 or hw in _CUT_OK or _one(hw) in _WORN
-        portrait = cut["kind"] in ("person", "creature") and set(sides) <= {"bottom"}
+        group = _one(hw) != hw or len(inst) > 1 or hw in _CUT_OK or _part_here(hw, prompt, S)
+        portrait = (cut["kind"] in ("person", "creature") or _one(hw) in _FIGURE_WORDS) and set(sides) <= {"bottom"}
         if (cut["clipped_pct"] > 3 or sides and whole) and not _is_band(cut) and not group and not portrait and \
-                confident_thing(thing, prompt):
+                confident_thing(thing, prompt, S):
             sides = sides or ["edge"]
             w = _issue("prompt_cut", "warn", f"The request names the {thing}, and {cut['clipped_pct']:.0f} % of it is "
                        f"outside the canvas ({'/'.join(sides)} edge).", b, cut["clipped_pct"] / 100, 0.03,
@@ -3826,7 +3828,7 @@ def size_checks(cv, prompt, rows=None, cov=None, checked=None):
                 continue
             if _related(prompt, name, hb.split(" #")[0]):
                 continue                                 # "a cat on the table", "a girl holding a sign": meant
-            if _staged(s, hb, S, thing) or not confident_thing(thing, prompt):
+            if _staged(s, hb, S, thing, prompt=prompt) or not confident_thing(thing, prompt, S):
                 continue                                 # a chef in front of the shelves: staging, not a clash
             w = _issue("prompt_covered", "warn", f"The request names the {thing}, and {cover:.0f} % of it is covered "
                        f"by {hb}.", s["bbox"], round(cover / 100, 3), 0.1, f"move the {thing} or {hb} so both are whole")
@@ -3855,7 +3857,7 @@ _STEPS = re.compile(r"\b(?:steps?|rules?|stages?|first\b.*\bthen|label(?:led|ed)
 
 
 # confident things: what a missing-thing line may name (precision first)
-_NOT_THINGS = set("""way side moment sense kind idea scene view style mood light air time part piece lot rest image
+_NOT_CONFIDENT = set("""way side moment sense kind idea scene view style mood light air time part piece lot rest image
 picture photo photograph illustration drawing painting render rendering composition background foreground setting
 atmosphere vibe feel look design layout format thing object item creature pet character animal stuff element beast
 critter action order history story rule rules principle analogy physics warmth expression terror resemblance form
@@ -3872,12 +3874,16 @@ note notes beat beats viewer focus manner spirit word words name names label lab
 version copy example examples sample samples case cases fact facts reason result results answer question problem
 solution method methods way ways use purpose goal value values level levels degree degrees unit units point points
 total sum average shape shapes line lines edge edges corner corners centre center middle top bottom front back left
-right inside outside surface everything something anything nothing everyone someone anyone people folk folks""".split())
+right inside outside surface everything something anything nothing everyone someone anyone people folk folks
+workday temperature ambiance ambience setup release grip visual visuals boundary screenshot broadcast stretch
+precision tableau casual longer closer taller shorter bigger smaller wider higher lower larger farther further
+nearer adjacent sideways overview depiction rendition close-up closeup portrait being beings attire outfit outfits clothing clothes costume garment garments""".split())
 # parts of a recorded whole: the whole answers for them
 _PART_WORDS = set("""wheel wheels handle handles roof trunk branch branches leaf leaves seat seats slat slats base lid rim
 spout petal petals stem stems fin fins headlight headlights thruster thrusters exhaust bumper blade blades knob hinge
 strap straps sole laces button buttons pocket pockets cuff buckle chimney engine grille tire tires tyre tyres pedal
-pedals spoke spokes mane horn horns antler antlers hoof hooves claw claws scale scales shell""".split())
+pedals spoke spokes mane horn horns antler antlers hoof hooves claw claws scale scales shell finger fingers neck chest
+elbow knee knees foot feet head mouth nose teeth lips body""".split())
 # a place the picture is set in: drawn as the setting, never a missing thing
 _SETTING_WORDS = set("""room hall hallway kitchen bathroom bedroom office studio street alley park garden yard field
 landscape city town village sky ground floor ceiling wall walls interior exterior station platform beach shore desert
@@ -3888,14 +3894,49 @@ _VERBISH = set("""displays display creates create evoke evokes captures capture 
 become becomes could would should might swung used frame frames leads lead jut extends extend states lay having begin
 introduce organize indicate passes looking standing follows following after before since rather within upwards
 downwards ajar visible apparent radiate maintain went came forgive travels makes make shows show gives give takes take
-holds hold uses features feature includes include contains contain depicts depict reads read says""".split())
+holds hold uses features feature includes include contains contain depicts depict reads read says flew flies fell
+falls adjacent sideways found containing holding showing""".split())
 _DET_RE = (r"(?:a|an|the|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+|several|some|many|few|"
            r"both|each|every|another|his|her|their|its|my|our|your)")
 _FOLLOW_OK = {"is", "are", "was", "were", "has", "have", "had", "that", "which", "who", "whose", "with", "and", "or",
               "but", "while", "as", "than", "so", "then", "each", "all", "both", "one"}
 
 
-def confident_thing(phrase, prompt):
+_WEARERS = _FIGURE_WORDS_BASE = {"woman", "man", "girl", "boy", "person", "child", "lady", "gentleman", "figure",
+                                  "kid", "baby", "people", "dancer", "player", "runner", "rider", "knight", "king",
+                                  "queen", "chef", "cat", "dog", "bird", "horse", "bear", "fox", "rabbit", "owl",
+                                  "robot", "doll", "statue", "monkey", "lion", "tiger", "cow", "pig", "sheep", "duck"}
+
+
+def _part_here(word, prompt, rows=None):
+    """True when ``word`` names a part or a worn thing whose whole is also there: named in the request or recorded
+    in the scene ("a cat with green eyes", a recorded "bicycle" for "wheels"). A part the request asks for on its
+    own ("a black wheel", "a red hat") is the requested thing itself."""
+    w = str(word or "").lower()
+    one = _one(w)
+    worn = bool({w, one} & (_WORN | _WORN_MORE))
+    part = bool({w, one} & _PART_WORDS)
+    if not (worn or part):
+        return False
+    skip = _PART_WORDS | _WORN | _WORN_MORE | _SETTING_WORDS
+    kinds, heads = set(), set()
+    for r in rows or []:
+        if r.get("kind") in ("object", "plant", "creature", "person") and not r.get("backdrop"):
+            h = r["name"].split(" #")[0].lower().split()
+            if h and _one(h[-1]) != one and h[-1] not in skip and _one(h[-1]) not in skip:
+                kinds.add(r["kind"])
+                heads.add(_one(h[-1]))
+    try:
+        subj = {_one(x["thing"].lower().split()[-1]) for x in subjects(prompt) if x["thing"].split()}
+    except Exception:
+        subj = set()
+    subj = {x for x in subj if x != one and x not in skip}
+    if worn:
+        return bool(kinds & {"person", "creature"}) or bool(subj & (_WEARERS | _FIGURE_WORDS))
+    return bool(heads or subj)
+
+
+def confident_thing(phrase, prompt, rows=None):
     """True when ``phrase`` (a thing COVERAGE lists) is surely a concrete thing the request asks to draw: written in
     the request after a determiner or a count, its head a noun (no function word, verb, adjective, abstract or
     framing word, body part, worn thing, part of a whole or setting), ending its noun phrase. A missing-thing line
@@ -3907,10 +3948,13 @@ def confident_thing(phrase, prompt):
         return False
     head = ws[-1]
     one = _one(head)
-    if len(one) < 3 or {head, one} & (_NOT_THINGS | _WORN | _PART_WORDS | _SETTING_WORDS | _PRONOUNS):
+    if len(one) < 3 or {head, one} & (_NOT_CONFIDENT | _SETTING_WORDS | _PRONOUNS) or _part_here(head, prompt, rows):
         return False
-    if any(w in _VERBISH or w in _PRONOUNS or w in _NOT_THINGS and w != head for w in ws):
+    if any(w in _VERBISH or w in _PRONOUNS or w in _NOT_CONFIDENT and w != head for w in ws):
         return False
+    if head.endswith("s") and (head in _SCENE_VERB_FORMS or head in _VERBS) or \
+            head in {"stands", "sits", "hangs", "lies", "rests", "leans", "floats", "flies", "sleeps", "walks"}:
+        return False                                     # "a heron stands": a verb, not a thing
     if head.endswith(("ly", "ous", "ful", "ive", "ish", "less", "est")) or head.endswith("ed") and len(head) > 4 or \
             head.endswith("ing") and head not in _ING_NOUNS:
         return False
@@ -3918,7 +3962,8 @@ def confident_thing(phrase, prompt):
     for m in re.finditer(r"\b" + _DET_RE + r"\s+(?:[a-z'-]+\s+){0,2}?" + re.escape(" ".join(ws)) + r"\b", low):
         nxt = low[m.end():].split()[:1]
         if not nxt or not re.match(r"[a-z]", nxt[0]) or nxt[0] in _NP_END or nxt[0] in _FOLLOW_OK or \
-                nxt[0] in _SCENE_VERB_FORMS or nxt[0] in _VERBS or nxt[0] in _VERBISH:
+                nxt[0] in _SCENE_VERB_FORMS or nxt[0] in _VERBS or nxt[0] in _VERBISH or \
+                        re.fullmatch(r"[a-z]{2,}(?:ing|ed)", nxt[0]) and nxt[0] not in _ING_NOUNS:
             return True
     return False
 
@@ -3970,6 +4015,8 @@ def answered_by_words(phrase, words):
     if cand & words:
         return True
     stem = _one(head)
+    if any(len(w) >= 4 and stem.endswith(w) for w in words):
+        return True                                      # "workbench" answered by "bench"
     return len(stem) >= 6 and any(w.startswith(stem[:5]) and abs(len(w) - len(stem)) <= 3 for w in words)
 
 
@@ -3980,12 +4027,12 @@ def _inside(a, b, frac=0.8):
     return ix * iy / max(1e-9, (a[2] - a[0]) * (a[3] - a[1])) >= frac
 
 
-def _staged(s, hb, S, thing):
+def _staged(s, hb, S, thing, narrow=False, prompt=None):
     """True when ``hb`` in front of ``s`` is staging, not a clash: worn things and parts, a figure in front of
     things, a thing in front of a wider one, one inside the other, or two entries of one thing."""
     fn = hb.split(" #")[0]
     head = _one(thing.lower().split()[-1])
-    if head in _WORN or head in _PART_WORDS or head in _SETTING_WORDS:
+    if head in _SETTING_WORDS or _part_here(head, prompt, S) or prompt is None and head in _PART_WORDS | _WORN:
         return True
     a = {_one(w) for w in s["name"].split(" #")[0].lower().split()}
     if a & {_one(w) for w in fn.lower().split()}:
@@ -3994,10 +4041,13 @@ def _staged(s, hb, S, thing):
         next((r for r in S if r["name"].split(" #")[0] == fn), None)
     if front is None:
         return False
-    return front["kind"] in ("person", "creature") or s["size"][0] > front["size"][0] or \
-        _inside(s["bbox"], front["bbox"]) or _inside(front["bbox"], s["bbox"])
+    if front["kind"] in ("person", "creature") or _inside(front["bbox"], s["bbox"]):
+        return True                                      # a figure in front; a part or a thing set on it
+    return not narrow and (s["size"][0] > front["size"][0] or _inside(s["bbox"], front["bbox"]))
 
 
+_FIGURE_WORDS = {"woman", "man", "girl", "boy", "person", "child", "lady", "gentleman", "figure", "kid", "baby",
+                 "teenager", "student", "worker", "chef", "dancer", "player", "musician", "farmer", "doctor"}
 _CUT_OK = set("""steam smoke mist fog haze light glow spray splash cloud clouds rain snow water sky ground floor wall
 road river sea ocean field grass forest beam beams ray rays shadow wave waves trail fire flame flames""".split())
 
@@ -4008,7 +4058,8 @@ def checked_request(prompt):
     if not prompt:
         return False
     it = request_items(prompt)
-    return len(it["things"]) >= 3 or bool(it["counts"] or it["colours"] or it["places"] or it["text"]) or         bool(_STEPS.search(prompt))
+    return len(it["things"]) >= 3 or bool(it["counts"] or it["colours"] or it["places"] or it["text"]) or \
+            bool(_STEPS.search(prompt))
 
 
 _RELATING = re.compile(r"\b(?:on|onto|in|inside|into|holding|holds|hold|wearing|wears|carrying|carries|riding|rides|"

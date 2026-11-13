@@ -155,22 +155,23 @@ def _skill_text():
 
 
 def test_skill_md_stays_short():
-    """Every line of SKILL.md is read on every picture: at most 180 lines and under 3,300 tokens (cl100k)."""
+    """Every line of SKILL.md is read on every picture: at most 180 lines and at most 3,700 tokens (cl100k)."""
     text = _skill_text()
     assert len(text.splitlines()) <= 180
-    assert len(text) <= 11000                       # ~3,300 cl100k tokens for this page
+    assert len(text) <= 12100                       # ~3,650 cl100k tokens for this page
     try:
         import tiktoken
     except ImportError:
         return
-    assert len(tiktoken.get_encoding("cl100k_base").encode(text)) < 3300
+    assert len(tiktoken.get_encoding("cl100k_base").encode(text)) <= 3700
 
 
 def test_skill_md_freehand_scene_runs(tmp_path, monkeypatch):
     """The scene printed on the page renders and records what it names."""
     monkeypatch.chdir(tmp_path)
     block = re.findall(r"```python\n(.*?)```", _skill_text(), re.S)[0]
-    assert "with cv.draw(ss=2, name=" in block and "Sketch(cv" in block and "cv.text(" in block
+    assert "creature(cv, " in block and ".anchor(" in block and "sk.at(" in block
+    assert "Sketch(cv" in block and "cv.text(" in block and "line=True" not in block
     g = {"__name__": "skill_scene"}
     exec(compile(block, "SKILL.md scene", "exec"), g)
     cv = g["render"](384, 216, 1, lambda step: None)

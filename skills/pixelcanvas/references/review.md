@@ -27,12 +27,14 @@ FIX: 6 requested items unconfirmed - fix these, render once more, look
 [warn] the request names a lamp: nothing recorded answers to it - draw it and pass name="lamp"
 ```
 
-From the second render on the header reads `FIX: N requested items still unconfirmed - fix these and render once
-more`; when all of them hold it reads `FIX: every requested item is confirmed - deliver`. Item lines: a thing cut by
-the frame, covered by another named thing it has no relation to, under 3 % of the canvas, crowded out by one thing
-over a third of the frame, a count, a colour (a colour on a fifth of the thing passes as "partly"), a place, quoted
-text missing or misplaced, a named thing nothing records (draw it and pass `name=`). States stay with their noun:
-"cups, one of them broken: drawn as "cup" - show the break".
+The block lists only what the report is sure is wrong. From the second render on the header reads `FIX: N requested
+items still unconfirmed - fix these and render once more`; when all of them hold it reads `FIX: every requested item
+is confirmed - deliver`, and that header (or `FIX: nothing flagged`) means deliver. Item lines: a thing cut by the
+frame, covered by another named thing it has no relation to, under 3 % of the canvas, crowded out by one thing over a
+third of the frame, a count, a colour (a colour on a fifth of the thing passes as "partly"), a place, quoted text
+missing or misplaced, a named thing nothing records (draw it and pass `name=`). When two or more named things are
+unrecorded and the scene records fewer, one summary line: `the request names 6 things, 2 are recorded: record each
+with name= so they can be checked (not found: ...)`. States stay with their noun ("show the break").
 
 Any other request gets `FIX (worst first): 0 fail, 2 warn - change these, render once more, look`: `[fail]` before
 `[warn]`, the request's things first, then text, objects and the picture critique (`[warn] sparse_composition: ...`).

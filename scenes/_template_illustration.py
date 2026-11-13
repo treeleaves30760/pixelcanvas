@@ -4,7 +4,8 @@
 * Mood and light: <cosy evening, one warm lamp glow from the upper left>
 * Palette, 4-6 colours + one accent: <cream wall, walnut floor, orange fox, teal accent, plum ink>
 * Subject and frame: <a fox sitting at the centre, filling 55% of the height>
-* Style, built not filtered: <storybook: soft shading, darker-tone outlines, paper grain>
+* Medium: <a photo / 3D / no style named = lit solids, no outlines; a named style = that style's parts>
+* Style, built not filtered: <storybook: soft shading, paper grain>
 * Exact text: <none>
 """
 # Read skills/pixelcanvas/references/illustration.md (art direction, styles, shapes, Pillow layer, recipes).
@@ -37,19 +38,21 @@ def render(width=DEFAULT_SIZE[0], height=DEFAULT_SIZE[1], seed=DEFAULT_SEED, log
 
     # >>> subjects: the request's subjects; draw each yourself, one log() step each, like the two below
     # draw: <subject>                          (an optional ingredient call from kit.py find goes here)
+    # an animal in one call: from pixelcanvas.creature import creature
+    #   fox = creature(cv, "fox", at=(0.45, 0.9), size=0.4, pose="sit", facing="left"); fox.anchor("mouth") -> px
     # <<< subjects
 
     log("subject")                             # design in a local frame, place it with sk.at, reuse the parts
     with sk.at(*SUBJECT_AT, SUBJECT_SIZE):
-        sk.spot(0, 0.95, 0.8, 0.12, P["ink"], 0.35)                              # contact shadow
-        sk.paint(sk.ellipse(0, 0.4, 0.62, 0.58), P["body"], shade=0.4, highlight=0.3, line=True, name="subject")
-        head = sk.paint(sk.circle(0, -0.45, 0.45), P["body"], shade=0.4, highlight=0.3, line=True)
+        body = sk.ellipse(0, 0.4, 0.62, 0.58)                                    # shaded forms, no outline
+        sk.paint(body, P["body"], volume=0.5, shade=0.4, highlight=0.3, shadow="ground", name="subject")
+        head = sk.paint(sk.circle(0, -0.45, 0.45), P["body"], volume=0.5, shade=0.4, highlight=0.3, spec=0.3)
         for s in (-1, 1):
             sk.paint(sk.circle(s * 0.17, -0.5, 0.06), P["ink"])
             sk.spot(s * 0.27, -0.33, 0.11, 0.07, "#ff8a8a", 0.6, clip=head)
 
     log("prop")                                # the same canvas through Pillow ImageDraw, finished in one call
-    with cv.draw(ss=2, name="prop", shade=0.35, highlight=0.3, line=True, shadow=True) as d:
+    with cv.draw(ss=2, name="prop", volume=0.4, shade=0.35, spec=0.6, shadow="ground") as d:
         d.rounded_rectangle([*d.p(0.66, 0.52), *d.p(0.76, 0.8)], radius=d.k(0.02), fill=P["accent"])
 
     if TITLE:

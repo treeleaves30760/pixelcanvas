@@ -27,6 +27,65 @@ def test_find_font_style_words_always_return_something():
     assert p is None or T.missing_glyphs("你好", p, fallback=False) == []
 
 
+@pytest.fixture
+def mac_like_cjk(monkeypatch):
+    """The macOS situation on any machine: the first CJK candidate of every language lacks Han glyphs (as Apple SD
+    Gothic Neo lacks 你), the second covers them. Yields (lacking, covering) font specs."""
+    covering = next((p for p in [T._cjk_font(l_) for l_ in ("tc", "sc", "ja", "ko")]
+                     if p and T.missing_glyphs("你好漢字", p, fallback=False) == []), None)
+    lacking = T.find_font("sans")
+    if covering is None or lacking is None or T._covers(lacking, ord("你")):
+        pytest.skip("needs one Latin-only and one Chinese font installed")
+    real = T._stem_path
+    fake = {"zzlacking": lacking, "zzcovering": covering}
+    monkeypatch.setattr(T, "_stem_path", lambda stem: fake.get(stem) or real(stem))
+    monkeypatch.setattr(T, "_CJK", {l_: (["zzlacking", "zzcovering"],) * 3 for l_ in ("tc", "sc", "ja", "ko")})
+    monkeypatch.delenv("PIXELCANVAS_CJK_FONT", raising=False)
+    monkeypatch.delenv("PIXELCANVAS_FONT", raising=False)
+    T._chain.cache_clear()
+    yield lacking, covering
+    T._chain.cache_clear()
+    T._COVER_SCAN.clear()
+
+
+def test_cjk_font_covers_the_text_when_the_first_candidate_lacks_glyphs(mac_like_cjk):
+    lacking, covering = mac_like_cjk
+    for words in (None, "cjk", "serif", "sans"):
+        p = T.find_font(words, text="你好")
+        assert p == covering, (words, p)
+        assert T.missing_glyphs("你好", p, fallback=False) == []
+    assert T.find_font(None, text="你好", bold=True) == covering
+    assert T.find_font(None, text="こんにちは世界") == covering
+    assert T.missing_glyphs("你好") == [] and T.missing_glyphs("Hello 你好", lacking) == []
+
+
+def test_cjk_text_is_drawn_with_the_covering_font(mac_like_cjk):
+    from pixelcanvas.text import _make_block
+    lacking, covering = mac_like_cjk
+    b = _make_block("你好世界", (0, 0), 30, None, False, "la", "left", None, 1.2, 0.0)
+    assert b.missing == [] and b.fonts == {covering}             # one face draws every character
+    b = _make_block("Hello 你好", (0, 0), 30, lacking, False, "la", "left", None, 1.2, 0.0)
+    assert b.missing == [] and b.fonts == {lacking, covering}    # Latin in the chosen font, Han in the covering one
+    cv = _cv()
+    cv.text("你好", (10, 40), 30)
+    assert cv.text_log[-1]["missing"] == []
+
+
+def test_cjk_font_scans_installed_fonts_when_no_listed_one_covers(mac_like_cjk, monkeypatch):
+    lacking, _ = mac_like_cjk
+    monkeypatch.setattr(T, "_CJK", {l_: (["zzlacking"],) * 3 for l_ in ("tc", "sc", "ja", "ko")})
+    monkeypatch.setattr(T, "_COVER_SCAN", {})
+    scans = []
+    real_faces = T._scan_faces
+    monkeypatch.setattr(T, "_scan_faces", lambda kind: scans.append(kind) or real_faces(kind))
+    p = T.find_font(None, text="你好")
+    assert p != lacking and T.missing_glyphs("你好", p, fallback=False) == []
+    assert scans == ["sans"] and T._COVER_SCAN[(("han",), "sans")] == p    # scanned once, cached per (scripts, kind)
+    assert T.find_font(None, text="好你") == p and scans == ["sans"]        # no second scan
+    b = T._make_block("你好", (0, 0), 30, None, False, "la", "left", None, 1.2, 0.0)
+    assert b.missing == [] and b.fonts == {p}
+
+
 def test_fallback_covers_mixed_scripts():
     s = "Café → ∑ ★ 中文 かな 한국어 ±½"
     assert T.missing_glyphs(s) == []
@@ -356,6 +415,25 @@ def test_separator_lists_break_between_items(width):
         assert not ln.endswith("·")                             # the separator at a line end is dropped
     assert "".join(lines).replace("·", "") == "".join(items)
     assert b.bbox[2] - b.bbox[0] <= width + 1
+
+
+@pytest.mark.parametrize("font,size,step", [(None, 30, 1), ("serif", 26, 3), ("mono", 30, 3), ("condensed", 34, 3)])
+def test_separator_never_ends_or_starts_a_line_at_any_width(font, size, step):
+    """Every width from 120 to 1000 px, several fonts: line-break positions depend on the metrics, the rule does not."""
+    spec = T.find_font(font)
+    for width in range(120, 1001, step):
+        lines, _ = _lines_with(spec, width, size)
+        assert lines and not any(ln.endswith("·") or ln.startswith("·") for ln in lines), (font, size, width, lines)
+        assert "".join(lines).replace("·", "") == "AnaReyesTrioKofi&TheLanternsDJMarlowe", (width, lines)
+
+
+def _lines_with(spec, width, size):
+    from pixelcanvas.text import _make_block
+    b = _make_block(LINEUP, (0, 0), size, spec, False, "la", "left", width, 1.2, 0.0)
+    rows = {}
+    for t, *_rest in b.pl:
+        rows.setdefault(round(_rest[-2]), []).append((_rest[-3], t))
+    return ["".join(t for _, t in sorted(v)) for _, v in sorted(rows.items())], b
 
 
 def test_prose_still_wraps_normally():

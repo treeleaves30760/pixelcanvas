@@ -114,6 +114,8 @@ def refresh_fonts():
     _FALLBACK_SCAN.clear()
     _chain.cache_clear()
     _family_file.cache_clear()
+    _scan_faces.cache_clear()
+    _COVER_SCAN.clear()
 
 
 def _split_spec(spec):
@@ -556,20 +558,31 @@ _STYLE_WORDS = set(_STYLE_FAMILIES) | set(_STYLE_ALIASES) | {"cjk", "cjk-serif"}
 _STYLE_BACKUP = {"slab": "serif", "rounded": "sans", "handwriting": "script", "script": "serif", "display": "sans",
                  "condensed": "sans", "mono": "sans"}
 
-# CJK families per language: (sans regular, sans bold, serif) lists of normalised stems
+# CJK families per language: (sans regular, sans bold, serif) lists of normalised stems. Chinese and Japanese
+# faces come before Korean ones for Han text: a Korean face (Apple SD Gothic Neo) lacks common Chinese characters.
+_HIRA_KAKU = "ヒラギノ角ゴシック"   # Hiragino Kaku Gothic file names (macOS)
+_HIRA_MIN = "ヒラギノ明朝"                     # Hiragino Mincho
 _CJK = {
     "tc": (["notosanstcvf", "msjh", "notosanscjktcregular", "notosanscjkregular", "pingfang", "notosanshkvf", "msyh",
-            "notosansscvf", "simhei", "wqymicrohei", "wqyzenhei", "droidsansfallbackfull", "arialuni"],
-           ["notosanstcvf", "msjhbd", "notosanscjktcbold", "notosanscjkbold", "pingfang", "msyhbd", "notosansscvf"],
+            "notosansscvf", "simhei", "sourcehansanstc", "sourcehansans", "hiraginosansgb", "stheitilight",
+            "stheitimedium", "wqymicrohei", "wqyzenhei", "droidsansfallbackfull", "arialuni"],
+           ["notosanstcvf", "msjhbd", "notosanscjktcbold", "notosanscjkbold", "pingfang", "msyhbd", "notosansscvf",
+            "hiraginosansgb", "stheitimedium"],
            ["notoseriftcvf", "notoserifhkvf", "notoserifcjktcregular", "notoserifcjkregular", "mingliu", "pmingliu",
             "songti", "simsun", "wqyzenhei", "droidsansfallbackfull", "msjh"]),
-    "sc": (["notosansscvf", "msyh", "notosanscjkscregular", "notosanscjkregular", "pingfang", "simhei", "wqymicrohei", "wqyzenhei", "droidsansfallbackfull", "msjh"],
-           ["notosansscvf", "msyhbd", "notosanscjkscbold", "pingfang", "simhei", "msjhbd"],
+    "sc": (["notosansscvf", "msyh", "notosanscjkscregular", "notosanscjkregular", "pingfang", "simhei",
+            "sourcehansanssc", "sourcehansans", "hiraginosansgb", "stheitilight", "stheitimedium", "wqymicrohei",
+            "wqyzenhei", "droidsansfallbackfull", "msjh"],
+           ["notosansscvf", "msyhbd", "notosanscjkscbold", "pingfang", "simhei", "hiraginosansgb", "stheitimedium",
+            "msjhbd"],
            ["notoserifscvf", "notoserifcjkscregular", "songti", "simsun", "notoseriftcvf"]),
-    "ja": (["notosansjpvf", "yugothm", "yugothr", "hiraginosans", "hiraginokakugothicpron", "notosanscjkjpregular",
-            "msgothic", "wqymicrohei", "droidsansfallbackfull", "msjh"],
-           ["notosansjpvf", "yugothb", "hiraginosans", "notosanscjkjpbold", "msgothic", "msjhbd"],
-           ["notoserifjpvf", "yumin", "hiraginomincho", "hiraginominchopron", "notoserifcjkjpregular", "msmincho"]),
+    "ja": (["notosansjpvf", "yugothm", "yugothr", "hiraginosans", "hiraginokakugothicpron", _HIRA_KAKU + "w3",
+            _HIRA_KAKU + "pronw3", "notosanscjkjpregular", "sourcehansansjp", "meiryo", "msgothic", "wqymicrohei",
+            "droidsansfallbackfull", "msjh"],
+           ["notosansjpvf", "yugothb", "hiraginosans", _HIRA_KAKU + "w6", _HIRA_KAKU + "pronw6", "notosanscjkjpbold",
+            "meiryob", "msgothic", "msjhbd"],
+           ["notoserifjpvf", "yumin", "hiraginomincho", "hiraginominchopron", _HIRA_MIN + "pron",
+            "notoserifcjkjpregular", "msmincho"]),
     "ko": (["notosanskrvf", "malgun", "applesdgothicneo", "notosanscjkkrregular", "nanumgothic", "notosanscjkregular", "droidsansfallbackfull"],
            ["notosanskrvf", "malgunbd", "applesdgothicneo", "notosanscjkkrbold", "nanumgothicbold"],
            ["notoserifkrvf", "notoserifcjkkrregular", "applemyungjo", "nanummyeongjo", "batang"]),
@@ -659,7 +672,8 @@ def _cjk_lang(text, lang=None):
     return "tc"
 
 
-def _cjk_font(lang="tc", weight="regular", kind="sans"):
+def _cjk_candidates(lang="tc", weight="regular", kind="sans"):
+    """Installed CJK font specs in order of preference: the language's own faces, then the other languages' sans."""
     sans, bold, serif = _CJK[lang]
     if kind == "brush":
         lst = _CJK_BRUSH + serif
@@ -667,16 +681,101 @@ def _cjk_font(lang="tc", weight="regular", kind="sans"):
         lst = serif
     else:
         lst = (bold if weight in ("bold", "black") else []) + sans
+    first = []
     for stem in lst:
         p = _stem_path(stem)
-        if p:
-            return p
+        if p and p not in first:
+            first.append(p)
+    rest = []
     for other in ("tc", "sc", "ja", "ko"):
         if other != lang:
             for stem in _CJK[other][0]:
                 p = _stem_path(stem)
-                if p:
-                    return p
+                if p and p not in first and p not in rest:
+                    rest.append(p)
+    return first, rest
+
+
+def _cjk_need(text):
+    """The CJK characters of ``text`` a CJK font has to draw (unique, in order) as a hashable cache key."""
+    if not text:
+        return ""
+    return "".join(dict.fromkeys(c for c in str(text).translate(_IGNORABLE) if _is_cjk_char(c) and c not in _SKIP_COVER))
+
+
+def _cjk_font(lang="tc", weight="regular", kind="sans", text=None):
+    """The CJK font for ``lang``; with ``text``, the first candidate that has a glyph for every CJK character of it
+    (else the one that covers most). Coverage is read from the same face (path#index) that draws the text."""
+    first, rest = _cjk_candidates(lang, weight, kind)
+    need = _cjk_need(text)
+    if not need:
+        return first[0] if first else (rest[0] if rest else None)
+    best, best_n = None, -1
+    for p in first + rest:
+        n = sum(1 for c in need if _covers(p, ord(c)))
+        if n == len(need):
+            return p
+        if n > best_n:
+            best, best_n = p, n
+    return _scan_cover(need, kind) or best
+
+
+_COVER_SCAN = {}                 # (scripts, kind) -> covering face found by a scan of every installed font
+_SCAN_SKIP = ("emoji", "symbol", "lastresort", "seguiemj", "seguisym", "webdings", "wingding", "marlett", "mtextra",
+              "holomdl", "segmdl", "fluent", "unifont", "dingbat")
+
+
+def _scripts(need):
+    s = set()
+    for c in need:
+        s.add("kana" if _KANA_RE.match(c) else "hangul" if _HANGUL_RE.match(c) else "han")
+    return tuple(sorted(s))
+
+
+def _face_count(path):
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(12)
+        return max(1, struct.unpack(">I", head[8:12])[0]) if head[:4] == b"ttcf" else 1
+    except Exception:
+        return 0
+
+
+@lru_cache(maxsize=4)
+def _scan_faces(kind):
+    """Every face (``path`` or ``path#index``) of every installed font, best-suited names first."""
+    want = ("serif", "ming", "song", "mincho", "batang", "myeongjo") if kind == "serif" else \
+           ("kai", "brush") if kind == "brush" else ("sans", "gothic", "goth", "hei", "pingfang", "malgun", "yahei")
+    rank = []
+    for p in sorted(set(_font_index().values())):
+        stem = _norm(os.path.splitext(os.path.basename(p))[0])
+        if any(k in stem for k in _SCAN_SKIP):
+            continue
+        r = 0 if any(k in stem for k in want) else 1
+        for i in range(_face_count(p)):
+            rank.append((r, p, i))
+    rank.sort(key=lambda t: t[0])
+    return tuple(p if i == 0 else f"{p}#{i}" for _, p, i in rank)
+
+
+def _scan_cover(need, kind="sans"):
+    """First installed face with a glyph for every character of ``need``, scanning all fonts once per
+    (scripts, kind) and reusing the answer while it still covers; None when no font covers them all."""
+    key = (_scripts(need), kind)
+    hit = _COVER_SCAN.get(key)
+    if hit and all(_covers(hit, ord(c)) for c in need):
+        return hit
+    if (need, kind) in _COVER_SCAN:                # scanned before for exactly these characters: nothing covers
+        return None
+    sample = [ord(c) for c in need[:4]]
+    for spec in _scan_faces(kind):
+        path, idx, _ = _split_spec(spec)
+        info = _SFNT(path, idx)                    # uncached: a scan must not flush the shared font cache
+        cm = info.cmap
+        if all(cp in cm for cp in sample) and all(ord(c) in cm for c in need):
+            _COVER_SCAN[key] = spec
+            return spec
+    _COVER_SCAN[(need, kind)] = None
     return None
 
 
@@ -726,9 +825,10 @@ def find_font(name=None, bold=False, style="sans", text=None, italic=False, lang
             st = [_STYLE_ALIASES.get(w, w) for w in rest]
             if text is not None and has_cjk(text) and "cjk" not in st[0]:
                 return _cjk_font(_cjk_lang(text, lang), weight,
-                                 "serif" if st[0] in ("serif", "slab") else "brush" if st[0] in ("script", "handwriting") else "sans")
+                                 "serif" if st[0] in ("serif", "slab") else "brush" if st[0] in ("script", "handwriting") else "sans",
+                                 text)
             if st[0].startswith("cjk"):
-                return _cjk_font(_cjk_lang(text, lang), weight, "serif" if st[0] == "cjk-serif" else "sans")
+                return _cjk_font(_cjk_lang(text, lang), weight, "serif" if st[0] == "cjk-serif" else "sans", text)
             return _resolve_style(st, weight, italic)
         if not rest:
             name = None
@@ -766,7 +866,7 @@ def find_font(name=None, bold=False, style="sans", text=None, italic=False, lang
     if env and os.path.isfile(env):
         return env
     if style.startswith("cjk"):
-        return _cjk_font(_cjk_lang(text, lang), weight, "serif" if style == "cjk-serif" else "sans")
+        return _cjk_font(_cjk_lang(text, lang), weight, "serif" if style == "cjk-serif" else "sans", text)
     st = _STYLE_ALIASES.get(style, style)
     if st in _STYLE_FAMILIES:
         return _resolve_style([st], weight, italic)
@@ -897,13 +997,16 @@ def _covers(spec, cp):
 
 
 @lru_cache(maxsize=256)
-def _chain(primary, weight="regular", kind="sans", lang="tc"):
-    """Fonts tried in order for each glyph: the chosen font, CJK fonts for every language, symbol fonts."""
+def _chain(primary, weight="regular", kind="sans", lang="tc", need=""):
+    """Fonts tried in order for each glyph: the chosen font, CJK fonts for every language, symbol fonts.
+
+    ``need`` (``_cjk_need(text)``) picks, per language, the CJK font that covers all of the text's CJK characters.
+    """
     out = [primary]
     seen = {primary}
     langs = [lang] + [l_ for l_ in ("tc", "sc", "ja", "ko") if l_ != lang]
     for l_ in langs:
-        p = _cjk_font(l_, weight, kind if kind != "brush" or l_ in ("tc", "sc") else "sans")
+        p = _cjk_font(l_, weight, kind if kind != "brush" or l_ in ("tc", "sc") else "sans", need)
         if p and p not in seen:
             out.append(p)
             seen.add(p)
@@ -971,7 +1074,7 @@ def missing_glyphs(text, font=None, fallback=True):
     """Characters of ``text`` that no font can draw (with ``fallback=False``: that ``font`` lacks)."""
     text = str(text).translate(_IGNORABLE)
     spec = find_font(font, text=text) if (font is None or isinstance(font, str)) else font
-    chain = _chain(spec, "regular", _style_kind(spec), _cjk_lang(text)) if fallback else (spec,)
+    chain = _chain(spec, "regular", _style_kind(spec), _cjk_lang(text), _cjk_need(text)) if fallback else (spec,)
     out = []
     for ch in dict.fromkeys(text):
         if ch in _SKIP_COVER or ch.isspace() or unicodedata_category(ch)[0] == "M" or unicodedata_category(ch) in ("Cc", "Cf", "Cs"):
@@ -1440,6 +1543,7 @@ class _Ctx:
         self.underline, self.strike, self.highlight, self.tabular = underline, strike, highlight, tabular
         self.lang = _cjk_lang(plain, lang)
         self.plain = plain
+        self.need = _cjk_need(plain)
         letters = [c for c in plain if c.isalpha() or _is_cjk_char(c)]
         cjk = sum(1 for c in letters if _is_cjk_char(c))
         self.mostly_cjk = cjk > 0 and cjk >= 0.5 * len(letters)
@@ -1472,7 +1576,7 @@ class _Ctx:
                 spec = sib
             else:
                 synth_i = True
-        chain = _chain(spec, weight, _style_kind(spec) if font is not None else "sans", self.lang)
+        chain = _chain(spec, weight, _style_kind(spec) if font is not None else "sans", self.lang, self.need)
         col = d.get("color")
         try:
             col = tuple(float(v) for v in rgb(_NAMED.get(col, col))) if col is not None else None
@@ -1583,7 +1687,16 @@ def _tokenize(chars):
     if seps:                                     # a list ("A · B · C"): break after a separator, never inside an item
         for i in range(1, len(boxes)):
             boxes[i].pen = -20.0 if i - 1 in seps else (_NO_BREAK_PEN if i in seps else _IN_ITEM_PEN)
+        for i in seps:                           # a separator never starts a line: it stays with the item before it
+            boxes[i].brk = False
     return boxes
+
+
+def _drop_line_end_seps(boxes, lines):
+    """A list separator that ends a line (not the last one) is not drawn, as on a poster."""
+    n = len(boxes)
+    return [(i, j - 1) if j < n and j - 1 > i and boxes[j - 1].text in _LIST_SEPS and boxes[j].pen == -20.0
+            else (i, j) for i, j in lines]
 
 
 _LIST_SEPS = {"·", "•", "|", "∙", "⋅", "/", "//", "✦", "◆", "★"}
@@ -1795,9 +1908,8 @@ def _layout_h(spans, ctx, max_width, line_spacing, align, list_style=None, drop_
         nl = _list_lines(boxes, widths) if max_width is not None and len(lines) > 1 else None
         if nl is not None and len(boxes) <= 160:
             dp = _wrap_dp(boxes, widths, max(nl, len(lines)), True)
-            if dp:                               # a separator at the end of a line is dropped (as on a poster)
-                lines = [(i, j - 1) if j < len(boxes) and j - 1 > i and boxes[j - 1].text in _LIST_SEPS else (i, j)
-                         for i, j in dp]
+            if dp:
+                lines = dp
         elif max_width is not None and len(boxes) <= 160 and (len(lines) > 1 or balance):
             if balance and len(lines) >= 1:
                 dp = _wrap_dp(boxes, widths, len(lines), True)
@@ -1805,6 +1917,7 @@ def _layout_h(spans, ctx, max_width, line_spacing, align, list_style=None, drop_
                 dp = _wrap_dp(boxes, widths, len(lines), False, px if align == "justify" else None)
             if dp:
                 lines = dp
+        lines = _drop_line_end_seps(boxes, lines)    # whichever path chose the breaks
         for li, (i, j) in enumerate(lines):
             ind = hang + indent + (dc[3] if dc is not None and li < dc[2] else 0.0)
             lines_out.append((pi, boxes, i, j, ind, li == len(lines) - 1, widths(li), marker if li == 0 else None,

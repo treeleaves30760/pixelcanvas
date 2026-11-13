@@ -26,13 +26,7 @@ npx skills add treeleaves30760/pixelcanvas
 
 ## As a Claude Code plugin
 
-Adds the marketplace and installs the skill in one step (Claude Code 2.1.275 or later).
-
-```text
-/plugin install pixelcanvas --marketplace treeleaves30760/pixelcanvas
-```
-
-The same in two steps, for any Claude Code version with plugins.
+Add the marketplace, then install the skill.
 
 ```text
 /plugin marketplace add treeleaves30760/pixelcanvas

@@ -268,6 +268,40 @@ cv.paint(snow, smoothstep(top - 0.5, top + 0.5, Y))
 
 ---
 
+## 13. Anime / soft-cel: defined bands, not flat fill
+
+Anime is cel shading with defined bands: every skin, hair and cloth shape gets a base and one or two hard-edged
+shadow tones turned towards violet, hair a gradient plus a jagged sheen band, eyes four or more tones, lines a dark
+tone of the fill. With a reference image, take the numbers from `tools/match.py REF.png` ([reference.md](reference.md)).
+
+```python
+from pixelcanvas.illustrate import Sketch, cel_tone
+sk = Sketch(cv, light=(-0.6, -0.8), finish="full")
+SKIN, HAIR, SHIFT = "#fde4d4", [(0, "#2f8f5a"), (1, "#6fcf8a")], (-0.12, None)
+sk.ramp(sk.box(0, 0, 1, 1), ["#3f7fd8", "#cdeefa"])                      # background: soft gradient
+sk.cel(sk.box(0.47, 0.5, 0.53, 0.7), SKIN, line=True)                    # neck
+sk.cel(sk.blob([(0.28, 0.72), (0.5, 0.64), (0.72, 0.72), (0.8, 1.05), (0.2, 1.05)]), "#f4ecdc", bands=2,
+       depth=0.3, line=True, name="shirt")                                 # cloth: hard shadow shapes
+with sk.at(0.5, 0.42, 0.32):
+    face = sk.blob([(-0.5, -0.3), (-0.45, 0.2), (0.0, 0.6), (0.45, 0.2), (0.5, -0.3), (0.0, -0.65)], tension=0.15)
+    sk.cel(face, SKIN, depth=0.15, shift=SHIFT, line=True, name="face")   # two-tone skin, coloured line
+    for sx in (-1, 1):
+        sk.eye(0.24 * sx, 0.1, 0.34, "#c0602a", mirror=sx < 0)           # iris ramp, lid shadow, 2 highlights
+        sk.blush(0.3 * sx, 0.33, 0.08)                                     # soft blush + hatch strokes
+    sk.ink([(-0.06, 0.43), (0.0, 0.46), (0.06, 0.43)], 0.012, cel_tone(SKIN, -0.4))
+    hair = sk.blob([(-0.62, 0.1), (-0.6, -0.6), (0.0, -0.95), (0.6, -0.6), (0.62, 0.1), (0.3, -0.35),
+                    (0.0, -0.1), (-0.3, -0.35)], tension=0.3)
+    sk.cel(hair, HAIR, bands=2, shift=SHIFT, rim=True, line=True, name="hair")  # gradient base, 2 bands, rim
+    sk.sheen(hair, y=0.35, width=0.06)                                     # the angel ring
+```
+
+- Shadow edges follow the light: `depth` sets how far the band reaches (share of the shape), `softness` its edge.
+- Cloth folds and cast shadows are hard shapes too: `sk.paint(cloth * sk.stroke(pts, [0.1, 0.02]), cel_tone(c, -0.1))`.
+- Skies: `sk.ramp(m, colors)`; posterised anime sky: `steps=4`. Clouds: `sk.cel(cloud, "#ffffff", shift=(-0.07, 0))`.
+- Full scene: `scenes/illustration_anime.py`.
+
+---
+
 ## Palette table (palette starting points, (V fraction, color))
 
 | Mood | Sky gradient | Fog / distance | Foreground / silhouette | Accent |

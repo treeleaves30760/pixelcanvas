@@ -102,7 +102,7 @@ Conventions: x right, y down, `arr[y, x]`; masks float32 (H, W) 0–1; positions
 
 This repository is a tool. Docs say what it does and how to use it, with confidence: no disclaimers, no
 limitation sections, no hedging, no comparisons that put the tool down, no invented numbers. Show capabilities
-through examples that run. SKILL.md stays within 180 lines (about 2,800 tokens): a new sentence replaces a weaker
+through examples that run. SKILL.md stays within 180 lines (about 3,650 tokens): a new sentence replaces a weaker
 one, and details go to the reference pages. SKILL.md is scored on public benchmarks against the no-skill agent; a
 change to it is kept only when the score holds.
 

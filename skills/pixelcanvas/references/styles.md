@@ -103,7 +103,7 @@ below. `strength` < 1 mixes the original back in. `options("oil")` lists a style
 |---|---|---|
 | `comic` | bold black outlines, flat saturated fills, Ben-Day dots; highlights kept clean white for speech bubbles | `colors=8`, `dots=9`, `whites=True` |
 | `manga` | black-and-white ink lines, cut screentone, solid blacks | `tone=6`, `outline=1` |
-| `cel` | anime cel: flat colours, one crisp cool shadow tone, highlight band, thin colour outlines | `colors=12`, `shadow="#6e6290"` |
+| `cel` | anime soft-cel: base colours with a crisp cool shadow band and a highlight band, thin colour outlines; to draw anime freehand use `sk.cel` / `sk.sheen` / `sk.eye` ([techniques.md](techniques.md), [reference.md](reference.md)) | `colors=12`, `shadow="#6e6290"` |
 
 ### Prints
 

@@ -380,6 +380,27 @@ def test_pillow_layer_finish_options():
         cv.draw(shaed=0.3)
 
 
+def test_paint_spec_ground_shadow_and_planar_faces():
+    cv = _cv(c="#808080")
+    sk = Sketch(cv, light=(-0.6, -0.8), finish="full")
+    sk.paint(sk.circle(0.5, 0.45, 0.3), "#c03020", spec=1.0, shadow="ground")
+    lit = cv.buf[81 - 27 - 6:81 - 27 + 6, 160 - 22:160 - 10].max(axis=(0, 1)).mean()   # upper left of the ball
+    assert lit > 0.75 and cv.buf[81, 160].mean() < 0.5                 # a bright hot spot on a red body
+    assert cv.buf[136, 160].mean() < 0.47                               # contact shadow on the floor under it
+    assert cv.buf[136, 40].mean() > 0.49                                # and not far off to the side
+    cv2 = _cv(c="#808080")
+    sk2 = Sketch(cv2, light=(-1.0, 0.0), finish="full")
+    face = sk2.polygon([(0.2, 0.2), (0.8, 0.2), (0.8, 0.8), (0.2, 0.8)])
+    sk2.paint(face, "#c89060", volume=1.0)
+    row = cv2.buf[90, 70:250].mean(-1)
+    assert row[5] > row[-5] + 0.05                                      # darker away from the light
+    assert np.all(np.diff(row[5:-5]) <= 1e-3)                           # a plane: one smooth ramp, no bulge
+    cv3 = _cv(c="#808080")
+    with cv3.draw(ss=2, volume=0.5, spec=0.8, shadow="ground") as d:
+        d.ellipse([*d.p(0.4, 0.2), *d.p(0.6, 0.6)], fill="#e08040")
+    assert d.mask.max() > 0.99
+
+
 def test_cairo_layer_when_installed():
     pytest.importorskip("cairo")
     cv = _cv(c="#000000")
