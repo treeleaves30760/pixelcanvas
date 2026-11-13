@@ -30,8 +30,9 @@ Only when that section is empty, run `python <folder of this SKILL.md>/scripts/b
 - **Checked**: several things, counts, colours, states, places, steps, a question or quoted text: it will be
   ticked off item by item, so every item must read at a glance. Follow "Checked pictures".
 - **Enjoyed**: one subject, a mood or a style. Follow "Art direction". A request that is both is checked.
-- **The medium is a requested item.** A photo, a 3D render or no named style gets lit solids on a receding ground,
-  no outlines (`volume=`, `spec=`, `shadow="ground"`, or the solids below); a named style gets its own parts.
+- **The medium is a requested item.** Photo, realistic, 3D render: lit solids on a receding ground, no outlines
+  (`volume=`, `spec=`, `shadow="ground"`, the solids below). A named style: its own parts. None named: shaded
+  forms, each with a thin darker edge (`line=True`) so it stands clear of what is behind it.
 
 ## The loop
 
@@ -46,9 +47,7 @@ Only when that section is empty, run `python <folder of this SKILL.md>/scripts/b
    `python <root>/tools/render.py ./art/NAME.py --check --out <delivery path>.png`
 4. **Fix in one edit** each inventory line the picture does not show at a glance and each item the FIX block
    names; render the same way and look. Deliver when the FIX block names no requested item and every
-   inventory line reads at a glance; a third render only for what still does not.
-
-Tell the user the path.
+   inventory line reads at a glance; a third render only for what still does not. Tell the user the path.
 
 ## Draw freehand
 
@@ -96,7 +95,7 @@ def render(width=1920, height=1080, seed=1, log=lambda step: None):
   start, end, width)`; `a * b` clips, `np.maximum(a, b)` joins.
 - `sk.paint(mask, color, ...)` and `cv.draw(...)` take `volume=` (a round body; a `polygon` face shades flat),
   `shade=`, `highlight=`, `spec=` (glossy hot spot), `shadow="ground"` (contact shadow) or `True` (drop shadow),
-  `glow=color`, `name=`, `line=True` (outline: flat, comic, ink and anime styles only); `color=[(0, c0), (1, c1)]`
+  `glow=color`, `name=`, `line=True` (a thin darker edge; none in photos and 3D renders); `color=[(0, c0), (1, c1)]`
   with `angle=90` or `"radial"` is a gradient. In `cv.draw`, `d.p(u, v)` gives layer pixels, `d.k(h)` a length.
 - `sk.spot(x, y, rx, ry, color, opacity, clip=m)`: blush, highlight, contact shadow;
   `sk.label("text", at, to=point)`: a caption on a contrasting pill with a leader line.
@@ -114,8 +113,8 @@ def render(width=1920, height=1080, seed=1, log=lambda step: None):
 - **Room for every item**: the items first, then every place, surface and material word of the request, each
   readable alone. `sk.row(3, box)` / `sk.grid(n, box)` give frames for `with sk.at(*f):` (draw inside -0.5..0.5).
   Each object at least a tenth of the height, whole, apart, unhidden; none over a third of the frame.
-- **Plain light, plain finish**: one colour per object, shaded, not outlined, a clear value step to the ground
-  (white and grey things on a mid or dark surface); no `grade`, `paper`, vignette or pattern over a requested colour.
+- **Plain light, plain finish**: one colour per object, shaded, a clear value step to its ground and neighbours
+  (white and grey things on a mid or dark surface); no `grade`, `paper`, vignette or pattern on a requested colour.
 - **Draw the part that names the thing**: a bicycle = two wheels, frame, handlebar, saddle; a teapot = body, spout,
   handle, lid. Each requested object gets at least its defining parts, a body shade, a highlight and a contact
   shadow (`volume=`, `spec=`, `shadow="ground"` or a solid); a bare silhouette reads as something else.
@@ -136,8 +135,8 @@ For pictures to enjoy:
   first ([reference.md](references/reference.md)).
 - **One mood and one light**: `Sketch(cv, light=(dx, dy))` aims every shade; `grade(cv, mood)`: warm night,
   golden, cosy, moody. The subject fills 40–70 % of the height.
-- **One palette**: 4–6 colours plus one saturated accent; outlines only in flat, comic, ink and anime
-  styles (ink: `line="ink"`).
+- **One palette**: 4–6 colours plus one saturated accent; outlines a darker tone of the fill (ink styles:
+  `line="ink"`), none in photos and 3D renders.
 - **Build a named style from its parts**, never filter a finished picture: woodblock = flat fills, key lines,
   `limit_palette(cv, colors)`; watercolour = `sk.wash(m, color)`; comic = bold black outlines, flat colour,
   halftone dots; pixel art = a small `Canvas` resized `"nearest"`; anime = soft cel, never a flat fill:
