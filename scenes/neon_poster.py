@@ -21,7 +21,7 @@ DEFAULT_SEED = 3
 
 TITLE = "NEON NIGHTS"
 KICKER = "CITY  ·  SYNTH  ·  AFTER DARK"
-SUBTITLE = "霓虹之夜"
+SUBTITLE = "\u9713\u8679\u4e4b\u591c"                   # CJK text demo: "Neon Night"
 INFO = "SAT 12.19  ·  21:00\nWAREHOUSE NO.9"
 HORIZON = 0.62
 SUN = (0.5, 0.52, 0.17)           # centre x, centre y, radius (fractions of width)

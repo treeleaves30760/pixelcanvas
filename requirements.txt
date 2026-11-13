@@ -1,4 +1,7 @@
+# runtime: numpy + Pillow (the package itself: pip install pixelcanvas)
 numpy>=1.22
 Pillow>=9.1
-scipy>=1.8
+# optional speed-up (same results, faster filters): pip install "pixelcanvas[fast]" or uncomment
+# scipy>=1.8
+# tests: python -m pytest -q
 pytest

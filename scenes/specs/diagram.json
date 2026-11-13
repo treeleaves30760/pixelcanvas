@@ -1,0 +1,17 @@
+{
+  "pcscene": 1,
+  "prompt": "A data pipeline diagram: the app sends events to a queue, a worker reads the queue and writes to a warehouse, and a dashboard reads the warehouse.",
+  "kind": "diagram",
+  "diagram": {
+    "title": "Event pipeline",
+    "theme": "light",
+    "nodes": ["App", "Event queue", "Worker", "Warehouse", "Dashboard"],
+    "edges": [
+      ["App", "Event queue", "events"],
+      ["Event queue", "Worker"],
+      ["Worker", "Warehouse", "writes"],
+      ["Dashboard", "Warehouse", "reads"]
+    ],
+    "groups": {"Processing": ["Event queue", "Worker"]}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "pcscene": 1,
+  "prompt": "A girl flying a kite in a park on a sunny day, a dog beside her",
+  "kind": "scene",
+  "background": {"sky": "day", "ground": "grass", "far": "forest"},
+  "layers": [
+    {"draw": "cloud", "at": "top left"},
+    {"draw": "oak", "at": "far right"},
+    {"draw": "girl", "describe": "a girl in a yellow dress", "pose": "wave", "at": "left third"},
+    {"draw": "dog", "at": "right of girl"},
+    {"draw": "kite", "at": "above girl", "size": "small"}
+  ]
+}

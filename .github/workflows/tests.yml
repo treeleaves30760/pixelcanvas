@@ -1,0 +1,99 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}${{ matrix.scipy && ' + scipy' || '' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.9", "3.13"]
+        scipy: [false]
+        # ubuntu-latest no longer ships Python 3.9; the 3.9 run on Linux uses the previous LTS image.
+        exclude:
+          - os: ubuntu-latest
+            python: "3.9"
+        include:
+          - os: ubuntu-24.04
+            python: "3.9"
+            scipy: false
+          - os: ubuntu-latest
+            python: "3.13"
+            scipy: true
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      # Windows (Arial, Segoe UI, Microsoft YaHei, Yu Gothic, Malgun Gothic) and macOS (Helvetica, PingFang,
+      # Hiragino, Apple SD Gothic) ship Latin and CJK fonts; Ubuntu runners get Noto CJK and DejaVu here.
+      - name: Fonts (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk fonts-dejavu-core
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=1.22" "Pillow>=9.1" pytest
+
+      - name: Install scipy
+        if: matrix.scipy
+        run: python -m pip install "scipy>=1.8"
+
+      - name: Fonts (check)
+        shell: python
+        run: |
+          import sys
+          sys.path.insert(0, ".")
+          from pixelcanvas import text as T
+          fonts = T.list_fonts()
+          print(len(fonts), "fonts; default", T.find_font(), "; CJK", T.find_font(text="漢字"))
+          if not fonts:
+              sys.exit("no TrueType fonts found: the text tests need at least one")
+          missing = T.missing_glyphs("漢字 日本語 한국어")
+          if missing:
+              print("::warning::no font covers " + "".join(sorted(set(missing))))
+
+      - name: Doctor
+        run: python tools/pc.py doctor
+
+      - name: Tests
+        run: python -m pytest -q
+
+  release-check:
+    name: release check (sdist + wheel, clean venv, installed command)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fonts
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk fonts-dejavu-core
+
+      - name: Release check
+        run: python tools/release_check.py --keep release-check
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-check
+          path: |
+            release-check/dist/
+            release-check/release_check.log
+          if-no-files-found: ignore

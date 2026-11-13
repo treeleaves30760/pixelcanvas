@@ -6,3 +6,4 @@ build/
 dist/
 outputs/*
 !outputs/.gitkeep
+gallery/**/outputs/

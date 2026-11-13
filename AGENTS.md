@@ -1,45 +1,61 @@
-# AGENTS.md — for AI coding assistants (Codex, Cursor, Gemini CLI, Copilot, Aider, …)
+# AGENTS.md: pixelcanvas for AI coding assistants
 
-This project lets **models that cannot generate images** draw good-looking ones: numpy + Pillow compute every pixel
-from noise, masks, signed distance fields, rasterised text and blending, and a **render → look → fix** loop
-improves the image. There are no image assets.
+pixelcanvas is a canvas, a toolbox and a pair of eyes for drawing with code. The agent designs the picture and
+draws it in Python (numpy + Pillow, no image model): illustrations, characters, posters, diagrams, charts, UI
+mock-ups, technical drawings, 3D objects and exact text in any language. A **render -> check -> look -> fix** loop
+turns a first draft into a picture worth delivering.
 
-**Install as a skill:** `npx skills add treeleaves30760/pixelcanvas` (the skill's `scripts/bootstrap.py` fetches the renderer on first use).
+**Read [`skills/pixelcanvas/SKILL.md`](skills/pixelcanvas/SKILL.md) before drawing.** It holds the loop, freehand
+drawing, art direction, the kit table and how to read the report.
 
-**The full workflow is in [`skills/pixelcanvas/SKILL.md`](skills/pixelcanvas/SKILL.md). Read it before drawing.**
-References: [API](skills/pixelcanvas/references/api.md) · [techniques & palettes](skills/pixelcanvas/references/techniques.md) ·
-[typography, shapes, layout](skills/pixelcanvas/references/typography.md) · [how to look + checklist](skills/pixelcanvas/references/review.md).
+## Two skills
 
-## One-minute version
+| Skill | For | The model writes |
+|---|---|---|
+| `pixelcanvas` | capable coding agents (Claude Code, Codex, Gemini CLI, Cursor, opencode with a large model) | a Python scene, drawn freehand with kits as ingredients |
+| `pixelcanvas-lite` | small and local models (opencode with a model served on your own machine) | one JSON spec; `tools/compose.py` draws it and its `NEXT:` line says what to do |
+
+## Install
 
 ```bash
-pip install -r requirements.txt
-python tools/new_scene.py my_scene [--poster]            # create scenes/my_scene.py (or copy the closest example)
-python tools/render.py my_scene --scale 0.5 --check      # draft + diagnostic sheet (guides | values | edges | thumbnail)
-python tools/look.py zoom outputs/my_scene_x0.5.png 0.4 0.3 0.6 0.5    # inspect a region
-python tools/render.py my_scene --stages                 # canvas after every step → find what broke
-python tools/render.py my_scene --sweep NAME 0.3 0.5 0.7 # compare values on one sheet
-python tools/look.py report outputs/my_scene_x0.5.png    # no vision? read the image as text
-python tools/render.py my_scene                          # full size when satisfied; copy to gallery/
-python -m pytest -q                                      # after changing the package or docs (~5 s)
+pip install pixelcanvas
+pixelcanvas install-skill claude                 # or agents, codex, cursor, opencode; --skill pixelcanvas-lite | both
+uvx pixelcanvas doctor                           # Python, numpy, Pillow, fonts (CJK included), write access
 ```
 
-1. Plan first (format, focal point, horizon, light, far / middle / near or text hierarchy, palette, exact text) and
-   write it as the scene file's docstring.
-2. A picture takes 4~7 rounds. Each round, write down the 2~4 worst problems **with coordinates**, change only
-   those, and keep the seed fixed.
-3. **Never deliver without looking.** Use `--check`, `guides`, `zoom` (vision) or `report` + `critique` (no vision).
+From a clone: `python tools/install_skill.py claude --skill both` (targets `agents`, `claude`, `codex`, `cursor`,
+`opencode`; `--project` for this project only). Every way to install, MCP included: [docs/INSTALL.md](docs/INSTALL.md).
 
-## Conventions
+## The loop
 
-- **Coordinates:** x goes right and y goes down (`arr[y, x]`). Masks are float32 (H, W) in 0~1. Positions are
-  fractions. Pixel constants are based on 1080p and multiplied by `S = H / 1080`.
-- **Drawing order:** sky → far → near → water (reflections sample the current image) → foreground → light →
-  text → post-processing. Lights may exceed 1; finish with `soft_clip`.
-- **Scene constants:** keep tunables as UPPER_CASE module constants so `--set` / `--sweep` can reach them. Call
-  `log("step")` at each drawing step so `--stages` can snapshot it.
-- **Performance:** vectorise everything; no per-pixel Python loops.
-- **Where new code goes:** general recipes go in `pixelcanvas/scenery.py` (landscapes), `pixelcanvas/text.py` or
-  `pixelcanvas/sdf.py` (design); one-off code stays in the scene file. Add new techniques to
-  `references/techniques.md` or `typography.md`; their ```python blocks are executed by `tests/test_skill_docs.py`.
-- **Outputs:** `outputs/` is not committed; finished pictures go in `gallery/`.
+```bash
+python tools/new_scene.py fox --prompt "a fox with a lantern in the snow" --dir ./art   # starter -> ./art/fox.py
+python tools/render.py ./art/fox.py --scale 0.5 --check           # draft + report -> ./art/outputs/
+python tools/look.py zoom art/outputs/fox_x0.5.png 0.3 0.2 0.7 0.6   # look closer (guides, values, probe ...)
+python tools/render.py ./art/fox.py --check --deliver ./art/final/  # full size, copied where the user wants it
+python tools/match.py REF.png ./art/outputs/fox.png               # with a style reference: the gaps, largest first
+```
+
+A picture gets the freehand starter (kind `illustration`); a chart, diagram, engineering drawing or UI screen gets a
+starter holding the request's data. `python tools/kit.py find "<request>"` names the kit and its calls. With a style reference,
+`python tools/match.py REF.png` (`pixelcanvas/reference.py`) prints its palette, lines and tone bands as numbers. Every
+tool runs from any folder (`python <root>/tools/...`), and `pixelcanvas <tool>` does the same after
+`pip install pixelcanvas`.
+
+## Small and local models
+
+Install the lite skill into opencode and run opencode with a local model:
+
+```bash
+pixelcanvas install-skill opencode --skill pixelcanvas-lite
+python tools/compose.py --example poster > ./art/poster.json      # what the model starts from
+python tools/compose.py ./art/poster.json --check                 # draws, reports, ends with one NEXT: line
+```
+
+## Rules that keep pictures good
+
+1. Plan first: subject and frame, a mood and its light, a palette of 4-6 colours with one accent, the exact text.
+2. Draw freehand for illustration; use a kit where structure is the hard part (charts, diagrams, drafting, UI, 3D).
+3. Never deliver without looking: open the preview and zoom, or use `look.py report` without vision.
+4. Coordinates: x right, y down, `arr[y, x]`; positions are fractions of the canvas.
+5. After changing the package or the docs, run `python -m pytest -q`.

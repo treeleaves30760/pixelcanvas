@@ -1,0 +1,14 @@
+{
+  "name": "pixelcanvas",
+  "displayName": "pixelcanvas",
+  "version": "0.4.0",
+  "description": "Draw with code: posters, illustrations, landscapes, diagrams, charts, UI mock-ups, technical drawings and 3D objects rendered with numpy + Pillow, with a render -> look -> fix loop and exact text in any language.",
+  "author": {
+    "name": "treeleaves30760",
+    "url": "https://github.com/treeleaves30760"
+  },
+  "homepage": "https://github.com/treeleaves30760/pixelcanvas",
+  "repository": "https://github.com/treeleaves30760/pixelcanvas",
+  "license": "MIT",
+  "keywords": ["drawing", "image-generation", "poster", "diagram", "chart", "illustration", "numpy", "pillow", "skill"]
+}

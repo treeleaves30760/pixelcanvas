@@ -1,0 +1,13 @@
+{
+  "pcscene": 1,
+  "prompt": "An old oak on a hill with wildflowers and rocks on a summer afternoon",
+  "kind": "nature",
+  "background": {"sky": "day", "ground": "meadow", "far": "hills"},
+  "layers": [
+    {"draw": "cloud", "at": "top right"},
+    {"draw": "old oak", "at": "left third", "size": "huge"},
+    {"draw": "rock", "at": "right foreground"},
+    {"draw": "poppy", "count": 5, "at": "foreground", "arrange": "scatter"},
+    {"draw": "daisy", "count": 4, "at": "front left", "arrange": "row"}
+  ]
+}

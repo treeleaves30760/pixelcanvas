@@ -1,20 +1,20 @@
 SCENE ?= mountains_sunset
 
-.PHONY: draft check stages render report test list new install-skill
+.PHONY: draft check stages render report test list new install-skill release-check
 
-draft:            ## 草稿（半解析度）
+draft:            ## draft (half resolution)
 	python tools/render.py $(SCENE) --scale 0.5
 
-check:            ## 草稿 + 診斷圖（guides | values | edges | thumbnail）+ 自動警告
+check:            ## draft + diagnostic images (guides | values | edges | thumbnail) + automatic warnings
 	python tools/render.py $(SCENE) --scale 0.5 --check
 
-stages:           ## 草稿 + 逐步驟快照
+stages:           ## draft + per-step snapshots
 	python tools/render.py $(SCENE) --scale 0.5 --stages
 
-render:           ## 全尺寸
+render:           ## full size
 	python tools/render.py $(SCENE)
 
-report:           ## 草稿的文字報告（給看不到圖的模型）
+report:           ## text report of the draft (for models that cannot see images)
 	python tools/look.py report outputs/$(SCENE)_x0.5.png
 
 test:
@@ -26,5 +26,8 @@ list:
 new:              ## make new SCENE=night_lake
 	python tools/new_scene.py $(SCENE)
 
-install-skill:    ## 安裝 skill 到 ~/.claude/skills（make install-skill TOOL=codex）
+install-skill:    ## install the skill to ~/.claude/skills (make install-skill TOOL=codex)
 	python tools/install_skill.py --tool $(or $(TOOL),claude)
+
+release-check:    ## build sdist + wheel, twine check, install in a clean venv and smoke test the command
+	python tools/release_check.py

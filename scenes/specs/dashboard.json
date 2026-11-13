@@ -1,0 +1,16 @@
+{
+  "pcscene": 1,
+  "prompt": "A sales dashboard with revenue, orders and conversion, a revenue trend and sales by channel",
+  "kind": "dashboard",
+  "dashboard": {
+    "title": "Store performance",
+    "subtitle": "Q3 2026",
+    "theme": "dark",
+    "kpis": [
+      {"label": "Revenue", "value": 128400, "delta": 12.4, "fmt": "$"},
+      {"label": "Orders", "value": 1842, "delta": 8.1},
+      {"label": "Conversion", "value": "3.9%", "delta": -0.4}
+    ],
+    "charts": [{"type": "line", "title": "Revenue by month", "yfmt": "$k", "data": {"Apr": 31000, "May": 34000, "Jun": 33000, "Jul": 38000, "Aug": 41000, "Sep": 49000}}, {"type": "donut", "title": "Sales by channel", "data": {"Search": 38, "Direct": 26, "Social": 21, "Email": 15}}]
+  }
+}

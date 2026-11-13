@@ -1,0 +1,11 @@
+{
+  "pcscene": 1,
+  "prompt": "A still life: three oranges, a blue vase and a white mug on a wooden table",
+  "kind": "still_life",
+  "background": {"table": "wood", "wall": "#d8c6ac"},
+  "layers": [
+    {"draw": "vase", "at": "back left", "color": "steelblue"},
+    {"draw": "mug", "at": "centre", "color": "white"},
+    {"draw": "orange", "count": 3, "at": "front right", "arrange": "cluster"}
+  ]
+}

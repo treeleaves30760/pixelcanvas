@@ -1,5 +1,11 @@
 # Technique library: how to draw X with math
 
+> Kits draw these subjects in one call: skies, clouds, water, fire and snow → [elements.md](elements.md); trees,
+> grass and rocks → [flora.md](flora.md); surfaces → [textures.md](textures.md); objects with volume →
+> [forms.md](forms.md) / [solid.md](solid.md); media and styles → [styles.md](styles.md). Use this page for the rest.
+> Characters, animals, posters and named styles drawn from shapes (blobs, tapered strokes, shading, stickers,
+> a Pillow ImageDraw layer) → [illustration.md](illustration.md).
+
 Each technique is a snippet you can paste straight into a scene's `render()`. Every `python` block below assumes this prelude
 has already run (`tests/test_skill_docs.py` actually executes each block, so the examples can't silently break):
 
@@ -13,6 +19,8 @@ cv = Canvas(W, H)
 X, Y = cv.xy()                    # pixel coordinates (H, W)
 U, V = cv.uv()                    # 0~1 coordinates
 ```
+
+Options are checked in every recipe: an unknown option name (or an unknown key in a `mountain_layer` dict) raises a TypeError that names the closest valid one, and both spellings are accepted (`colour` / `color`, `w` / `width`, ...).
 
 Full examples live in `scenes/`: `mountains_sunset` (high-level recipes), `night_sky`, `still_life`, `city_dusk`, `sea_sunset`.
 
@@ -152,7 +160,7 @@ shafts = light_shafts(disc * (1 - occl) + 0.15 * (1 - occl) * np.exp(-((X - sx) 
 cv.paint("#ffc98a", shafts * 0.6, "add")
 cv.bloom(0.85, 0.02 * H, 0.3).soft_clip(0.85)
 ```
-- Rim light (bright edge on the light-facing side of a silhouette): `edge = mask - np.roll(np.roll(mask, dy, 0), dx, 1)`, take the positive part and paint a warm color;
+- Rim light (bright edge on the light-facing side of a silhouette): `edge = mask - masks.shift(mask, dx, dy)` (zero fill; `np.roll` wraps the border round and draws a dark bar), take the positive part and paint a warm color;
   for landscapes use `rim_light(sc, mask)`.
 
 ## 9. Arbitrary shapes and strokes: Pillow supersampled masks, brushes
@@ -176,6 +184,31 @@ cv.paint("#3d5a2a", band_mask(H, W, 0.75 * H, 2 * H, soft=4 * S))
 cv.paint("#557a35", grass)
 ```
 - For many objects (thousands of trees), draw them all in one `shape_mask` draw_fn; much faster than building a mask per object (`scenery.pine_mask`).
+
+**A named object** (a harp, a windmill, a fuel pump): first try `pictograms.find("<object>")`. The 505
+[pictograms](pictograms.md) draw in one call, in six styles, and each is also a mask (`pictograms.mask(name, h, w,
+box)`) to texture, shade or set against a sky. Build from primitives only when the object is not among them (a
+curved horn with a flared bell): a spine of Bézier points, a radius that grows along it, one `sd_segment` per
+step, `sdf.union` with the other parts (here the bell), then `sdf.fill`.
+
+```python
+spine = (bezier_points((0.44 * W, 0.16 * H), (0.48 * W, 0.12 * H), (0.5 * W, 0.2 * H), n=12)          # neck
+         + bezier_points((0.5 * W, 0.2 * H), (0.5 * W, 0.86 * H), (0.6 * W, 0.86 * H), (0.6 * W, 0.62 * H), n=56))
+L = np.cumsum([0] + [np.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(spine, spine[1:])])   # arc length
+r = (5 + 33 * (L / L[-1]) ** 1.3) * S                                                 # thin neck -> wide body
+d = sdf.union(*[sdf.sd_segment(X, Y, *a, *b, r[i]) for i, (a, b) in enumerate(zip(spine, spine[1:]))])
+bx, by = spine[-1]
+d = sdf.union(d, sdf.sd_polygon(X, Y, [(bx - 36 * S, by + 10 * S), (bx - 60 * S, by - 60 * S),
+                                       (bx + 60 * S, by - 60 * S), (bx + 36 * S, by + 10 * S)]))   # bell
+body = sdf.fill(d)
+cv.gradient([(0, "#0b1a3a"), (1, "#1d3b6e")])
+cv.paint("#d4a843", body)
+cv.paint("#fff3c4", sdf.fill(sdf.offset(d, -12 * S)) * 0.3, "add")                    # soft highlight inside
+for i in (24, 30, 36, 42, 48):                                                          # keys down the body
+    x, y = spine[i]
+    cv.paint("#7a5a1c", sdf.fill(sdf.sd_circle(X, Y, x - r[i] * 0.4, y, 6 * S)))
+manifest.note(cv, "object", "horn", mask=body)                                        # so --check sees it
+```
 
 ## 10. Text and posters
 
@@ -233,27 +266,39 @@ cv.paint(snow, smoothstep(top - 0.5, top + 0.5, Y))
 - Shadows of trees / rocks on snow: stretch them opposite the light vector, color them blue-violet (not black); add a narrow, dark ring of AO at tree bases.
 - Don't use the same large blotchy noise as the sky on snow (it reads as water reflections or cloud shadows).
 
-## 13. Media: painting, watercolour, sketch, anime (`pixelcanvas.stylize`)
+---
 
-Draw the subject normally (clear shapes, lighting), then convert the finished image to the medium as the last step.
-The filters are array in → array out; pixel sizes × `S`.
+## 13. Anime / soft-cel: defined bands, not flat fill
+
+Anime is cel shading with defined bands: every skin, hair and cloth shape gets a base and one or two hard-edged
+shadow tones turned towards violet, hair a gradient plus a jagged sheen band, eyes four or more tones, lines a dark
+tone of the fill. With a reference image, take the numbers from `tools/match.py REF.png` ([reference.md](reference.md)).
+
 ```python
-from pixelcanvas import stylize
-cv.gradient([(0, "#5a86c8"), (0.6, "#cfe0f0"), (1, "#6d9a4a")])
-cv.paint("#c83a2a", sdf.fill(sdf.sd_circle(X, Y, 0.5 * W, 0.55 * H, 0.18 * H)))      # the subject
-cv.paint("#2c5a22", clamp01(Y - (0.8 * H + 20 * S * np.sin(X / (90 * S))) + 0.5))
-cv.apply(stylize.oil_paint, brush=6 * S, seed=1)     # Kuwahara colour blocks + LIC strokes along edges + impasto
-cv.apply(stylize.canvas_texture, strength=0.06)      # "on canvas"
-# alternatives: stylize.watercolor(img) / stylize.pencil_sketch(img) / stylize.cel_shade(img, levels=3, outline=2*S)
+from pixelcanvas.illustrate import Sketch, cel_tone
+sk = Sketch(cv, light=(-0.6, -0.8), finish="full")
+SKIN, HAIR, SHIFT = "#fde4d4", [(0, "#2f8f5a"), (1, "#6fcf8a")], (-0.12, None)
+sk.ramp(sk.box(0, 0, 1, 1), ["#3f7fd8", "#cdeefa"])                      # background: soft gradient
+sk.cel(sk.box(0.47, 0.5, 0.53, 0.7), SKIN, line=True)                    # neck
+sk.cel(sk.blob([(0.28, 0.72), (0.5, 0.64), (0.72, 0.72), (0.8, 1.05), (0.2, 1.05)]), "#f4ecdc", bands=2,
+       depth=0.3, line=True, name="shirt")                                 # cloth: hard shadow shapes
+with sk.at(0.5, 0.42, 0.32):
+    face = sk.blob([(-0.5, -0.3), (-0.45, 0.2), (0.0, 0.6), (0.45, 0.2), (0.5, -0.3), (0.0, -0.65)], tension=0.15)
+    sk.cel(face, SKIN, depth=0.15, shift=SHIFT, line=True, name="face")   # two-tone skin, coloured line
+    for sx in (-1, 1):
+        sk.eye(0.24 * sx, 0.1, 0.34, "#c0602a", mirror=sx < 0)           # iris ramp, lid shadow, 2 highlights
+        sk.blush(0.3 * sx, 0.33, 0.08)                                     # soft blush + hatch strokes
+    sk.ink([(-0.06, 0.43), (0.0, 0.46), (0.06, 0.43)], 0.012, cel_tone(SKIN, -0.4))
+    hair = sk.blob([(-0.62, 0.1), (-0.6, -0.6), (0.0, -0.95), (0.6, -0.6), (0.62, 0.1), (0.3, -0.35),
+                    (0.0, -0.1), (-0.3, -0.35)], tension=0.3)
+    sk.cel(hair, HAIR, bands=2, shift=SHIFT, rim=True, line=True, name="hair")  # gradient base, 2 bands, rim
+    sk.sheen(hair, y=0.35, width=0.06)                                     # the angel ring
 ```
-- `oil_paint(brush=…)`: 4~6 px × S = careful painting, 8~14 px × S = loose impressionism. Strokes follow edges
-  (structure-tensor flow), so silhouettes survive; very small details (text, thin lines) do not — draw them after.
-- `watercolor()`: transparent desaturated washes, pigment pooling at wash borders, granulation, white deckled border.
-- `pencil_sketch(colored=0~1)`: dodge-blend contours + hatching in the darks; `colored` for coloured pencil.
-- `cel_shade(levels, outline)`: flat bands + ink outlines. For anime also draw simple shapes and big flat areas first;
-  the filter cannot invent line art from noisy textures.
-- The building blocks are public: `kuwahara(img, r)`, `flow_field(img, sigma)` → (vx, vy, coherence),
-  `lic(tex, vx, vy, length)` for any directional texture (hair, fur, wood grain, wind-blown grass).
+
+- Shadow edges follow the light: `depth` sets how far the band reaches (share of the shape), `softness` its edge.
+- Cloth folds and cast shadows are hard shapes too: `sk.paint(cloth * sk.stroke(pts, [0.1, 0.02]), cel_tone(c, -0.1))`.
+- Skies: `sk.ramp(m, colors)`; posterised anime sky: `steps=4`. Clouds: `sk.cel(cloud, "#ffffff", shift=(-0.07, 0))`.
+- Full scene: `scenes/illustration_anime.py`.
 
 ---
 

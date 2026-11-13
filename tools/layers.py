@@ -3,7 +3,7 @@
 """
 Inspect and re-composite editable layer stacks written by ``render.py SCENE --layers``.
 
-  python tools/layers.py info  outputs/my_scene_layers            list layers (bbox, coverage, kind)
+  python tools/layers.py info  outputs/my_scene_layers [--json]   list layers (bbox, coverage, kind)
   python tools/layers.py sheet outputs/my_scene_layers            contact sheet: every layer on a checkerboard
                                                                   → outputs/my_scene_layers_sheet.jpg
   python tools/layers.py compose outputs/my_scene_layers --hide post --out no_post.png
@@ -41,6 +41,13 @@ def _checker(w, h, s=12):
 def cmd_info(a):
     st = layers.load_pngs(a.folder)
     W, H = st[0].size
+    if getattr(a, "json", False):
+        import json
+        rows = [{"index": i, "name": L.name, "kind": L.kind, "bbox": [int(v) for v in L.bbox], "visible": bool(L.visible),
+                 "opaque_fraction": round(float((L.rgba[..., 3] > 127).sum()) / (W * H), 4) if L.rgba.size else 0.0}
+                for i, L in enumerate(st)]
+        print(json.dumps({"width": W, "height": H, "layers": rows}))
+        return
     print(f"{W}x{H}, {len(st)} layers (bottom → top)")
     for i, L in enumerate(st):
         cov = float((L.rgba[..., 3] > 127).sum()) / (W * H) if L.rgba.size else 0.0
@@ -93,7 +100,8 @@ def cmd_export(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("info"); p.add_argument("folder"); p.set_defaults(fn=cmd_info)
+    p = sub.add_parser("info"); p.add_argument("folder"); p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_info)
     p = sub.add_parser("sheet"); p.add_argument("folder"); p.add_argument("--out"); p.set_defaults(fn=cmd_sheet)
     for name, fn in (("compose", cmd_compose), ("export", cmd_export)):
         p = sub.add_parser(name)

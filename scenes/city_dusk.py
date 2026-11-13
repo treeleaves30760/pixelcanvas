@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-黃昏城市天際線（city_dusk）— 幾何物件 + 重複圖樣（窗戶）+ 分層大氣透視。
+City skyline at dusk (city_dusk) — geometric objects + repeating patterns (windows) + layered atmospheric perspective.
 
-構圖：三層樓群由遠到近，地面線 0.80 / 0.86 / 0.95；落日躲在遠樓後方（左三分線）。
-光源：逆光 → 樓身全是剪影，只靠窗燈與霧色分層。
-技巧：
-* 每層一張「樓頂高度剖面」top(W,)，遮罩 = clamp01(Y - top + 0.5)（和山稜線同一招）。
-* 窗戶 = 以 cell 為格的整數座標 → 用 perlin2d_at 在格點上取值決定開燈（同一格同一個值）。
-* 越遠：越矮、越窄、越接近霧色、窗燈越淡；最遠一層不畫窗。
+Composition: three building layers from far to near, ground lines 0.80 / 0.86 / 0.95; the sun hides behind the far buildings (left third line).
+Light: backlit -> buildings are silhouettes; only window lights and haze colour separate the layers.
+Techniques:
+* One roof-height profile top(W,) per layer, mask = clamp01(Y - top + 0.5) (same trick as mountain ridges).
+* Windows = integer cell coordinates -> perlin2d_at sampled at the cell decides whether the light is on (same value within a cell).
+* Farther layers are shorter, narrower, closer to the haze colour, with dimmer windows; the farthest layer has no windows.
 """
 import numpy as np
 
@@ -17,7 +17,7 @@ NAME = "city_dusk"
 DEFAULT_SIZE = (1920, 1080)
 DEFAULT_SEED = 4
 
-LAYERS = [  # (地面 V, 最矮, 最高（佔 H 比例）, 最窄, 最寬（1080p px）, 霧量, 窗格 px)
+LAYERS = [  # (ground V, min height, max height (fraction of H), min width, max width (1080p px), haze amount, window cell px)
     (0.80, 0.08, 0.22, 36, 80, 0.70, 0),
     (0.86, 0.10, 0.32, 48, 120, 0.38, 12),
     (0.95, 0.12, 0.45, 80, 180, 0.00, 18),
@@ -45,7 +45,7 @@ def render(width=1920, height=1080, seed=DEFAULT_SEED, log=None):
         x = -rng.uniform(0, wmax * S)
         while x < W:
             bw = rng.uniform(wmin, wmax) * S
-            bh = rng.uniform(hmin, hmax) ** 1.3 / hmax ** 0.3 * H     # 偏向矮樓，少數高樓
+            bh = rng.uniform(hmin, hmax) ** 1.3 / hmax ** 0.3 * H     # biased towards low buildings, a few tall ones
             x0, x1 = int(max(x, 0)), int(min(x + bw, W))
             top[x0:x1] = ground * H - bh
             if cell and x1 > x0:

@@ -1,0 +1,14 @@
+{
+  "pcscene": 1,
+  "prompt": "Two friends talking in a park on a sunny afternoon, one waving, their dog sitting beside them",
+  "kind": "people",
+  "background": {"sky": "day", "ground": "grass", "far": "forest"},
+  "layers": [
+    {"draw": "cloud", "at": "top right"},
+    {"draw": "oak", "at": "left", "size": "huge"},
+    {"draw": "person", "describe": "a woman in a red coat", "pose": "wave", "at": "left third"},
+    {"draw": "person", "describe": "a man in a blue jacket", "pose": "talk", "at": "right third"},
+    {"draw": "dog", "pose": "sit", "at": "right of the man"},
+    {"draw": "daisy", "count": 5, "at": "foreground", "arrange": "scatter"}
+  ]
+}

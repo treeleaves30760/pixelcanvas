@@ -1,60 +1,57 @@
 # -*- coding: utf-8 -*-
-"""
-Design / poster template — copy via ``python tools/new_scene.py <name> --poster``.
+"""Poster / flyer / cover with strong typography (layout.template + text)
 
-Write the plan here before coding (then check it against the render with ``look.py check``):
-* Format: 1080x1350 portrait poster (change DEFAULT_SIZE for square 1080x1080, story 1080x1920, thumb 1280x720).
-* Focal element: <what is biggest / brightest / most saturated?>  at (U, V) = (0.5, 0.55)
-* Text hierarchy: title (top third) → subtitle → info (bottom); margins MARGIN of the short side.
-* Palette: background BG, accent ACCENT, ink INK. Light from the upper left.
-
-Conventions: positions are fractions (0~1) of W / H; pixel sizes are designed at 1080 px on the short side and
-multiplied by S, so drafts (--scale 0.5) and full size look identical. Each log("...") call is one step in
-``render.py --stages``.
+* Format: 1080x1350 portrait (story 1080x1920, square 1080x1080, A4 2480x3508)
+* Focal point: <the striped sun in the picture area, centre>
+* Text hierarchy: <kicker -> TITLE -> subtitle -> details in columns -> footer>
+* Palette: <theme THEME (midnight, paper, neon, forest, sunset, mono, pastel, luxury, ocean)>
+* Light: <glow around the focal shape>
+* Exact text: <TITLE, SUBTITLE, DETAILS copied verbatim from the request>
 """
+# Read skills/pixelcanvas/references/typography.md (sections 9 templates, 11 layout rules).
 import numpy as np
 
-from pixelcanvas import *
-from pixelcanvas import sdf
+from pixelcanvas import Canvas, sdf, layout
 
+PROMPT = ""            # paste the request here, verbatim - --check compares the picture against it
+KIND = "design"
 NAME = "my_poster"
 DEFAULT_SIZE = (1080, 1350)
 DEFAULT_SEED = 1
 
-TITLE = "TITLE HERE"
-SUBTITLE = "a short subtitle"
-INFO = "DATE · PLACE"
-BG = [(0.0, "#1b1f3a"), (1.0, "#0d0f1e")]
-ACCENT = "#ffb347"
-INK = "#f4efe6"
-MARGIN = 0.07
+TEMPLATE = "poster"                 # poster, flyer, book_cover, magazine, quote_card, slide, menu ... (typography section 9)
+THEME = "midnight"
+KICKER = "Summer series 2026"
+TITLE = "Night Market"
+SUBTITLE = "Street food, music and lanterns by the river"
+DETAILS = [("When", "Fridays 7 pm"), ("Where", "Pier 4"), ("Entry", "Free")]
+FOOTER = "nightmarket.example"
+SUN = ("#ffcf6b", "#ff5e7e")        # focal shape gradient, top -> bottom
 
 
-def render(width=1080, height=1350, seed=DEFAULT_SEED, log=None):
+def render(width=DEFAULT_SIZE[0], height=DEFAULT_SIZE[1], seed=DEFAULT_SEED, log=None):
     log = log or (lambda m: None)
-    W, H = width, height
-    S = min(W, H) / 1080
-    m = MARGIN * min(W, H)
-    cv = Canvas(W, H)
+    cv = Canvas(width, height)
+    th = layout.theme(THEME)
     X, Y = cv.xy()
-    U, V = cv.uv()
 
     log("background")
-    cv.gradient(BG)
-    cv.paint("#ffffff", (fbm2d(H, W, 300 * S, 4, seed=seed) * 0.5 + 0.5) * 0.04, "add")   # subtle texture
-
+    cv.gradient(th["bg"])
+    log("text")                                          # the template places and sizes every line
+    boxes = layout.template(TEMPLATE, cv, title=TITLE, subtitle=SUBTITLE, kicker=KICKER, details=DETAILS,
+                            footer=FOOTER, theme=THEME, seed=seed, background=False)
+    pic = boxes["image"]                                 # the picture's area, also as fractions u0, v0, u1, v1
+    u0, v0, u1, v1 = pic.x0 / width, pic.y0 / height, pic.x1 / width, pic.y1 / height
+    # >>> subjects stage: new_scene.py --prompt writes one call per subject of the request here
     log("focal shape")
-    cx, cy, r = 0.5 * W, 0.55 * H, 0.28 * min(W, H)
-    d = sdf.sd_circle(X, Y, cx, cy, r)
-    cv.paint(ACCENT, sdf.glow(d, 60 * S) * 0.35, "add")
-    cv.paint(lerp(ACCENT, "#ffffff", 0.15) * sdf.bevel_light(d, 30 * S, strength=0.3)[..., None], sdf.fill(d))
-
-    log("text")
-    cv.text(TITLE, box=(m, m, W - m, m + 0.14 * H), color=INK, bold=True, shadow=dict(blur=10 * S, opacity=0.5))
-    t = cv.last_bbox
-    cv.text(SUBTITLE, (W / 2, t[3] + 24 * S), 40 * S, lerp(INK, ACCENT, 0.4), anchor="mt")
-    cv.text(INFO, (W / 2, H - m), 30 * S, INK, anchor="mb", tracking=0.25, bold=True)
+    cx, cy, r = pic.cx, pic.cy, 0.42 * pic.short
+    sun = sdf.sd_circle(X, Y, cx, cy, r)
+    band = np.abs(((Y - cy) / r * 6) % 1 - 0.5) * 2 - np.clip((Y - cy) / r * 0.7, 0, 1)
+    stripes = np.clip(band * r / 12 + 0.5, 0, 1)                                            # retro cut lines
+    cv.paint(SUN[0], sdf.glow(sun, 0.3 * r) * 0.35, "add")
+    cv.linear((cx, cy - r), (cx, cy + r), [(0, SUN[0]), (1, SUN[1])], mask=sdf.fill(sun) * stripes)
+    # <<< subjects
 
     log("post")
-    cv.vignette(0.3, 0.6).grain(0.01, seed).soft_clip(0.85)
+    cv.vignette(0.3, 0.65).grain(0.01, seed).soft_clip(0.9)
     return cv
