@@ -36,8 +36,8 @@ paper(cv); grade(cv, "golden", 0.6)
 
 When the picture lists objects, every one must be nameable at thumbnail size by someone who never read the prompt.
 
-1. **One flat colour per object, a clear value step to the ground**: shading on small things muddies their hue,
-   so `Sketch` keeps shapes under 3 % of the canvas flat (`finish="auto"`); `finish="full"` models everything.
+1. **One colour per object, shaded for volume, a clear value step to the ground**: `Sketch` models every object
+   and keeps only details under 0.3 % of the canvas flat (`finish="auto"`); `finish="full"` models everything.
 2. **Draw the part that names it**: a plain circle names nothing; a pear needs its narrow top and stalk.
 3. **Big and apart**: each object at least a tenth of the height, side by side with gaps (`sk.row`, `sk.grid`);
    a dominant subject in front of small things hides them.

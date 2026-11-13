@@ -321,7 +321,7 @@ class Sketch:
     and isotropic: 1 unit = ``size`` × the parent unit, origin at (x, y) — design a character once, place it many
     times. ``light`` is the screen direction towards the light, used by shading, rim light and shadows.
     ``finish``: "auto" (default) scales shade / highlight / volume / shadow with the shape's share of the canvas, so
-    small things stay flat and crisp (they read better); "full" always applies them; "flat" never does."""
+    tiny details stay flat and crisp while every object is modelled; "full" always applies them; "flat" never does."""
 
     def __init__(self, cv, light=(-0.6, -0.8), finish="auto"):
         _choice("Sketch", "finish", finish, ("auto", "full", "flat"))
@@ -805,14 +805,14 @@ class Sketch:
         return Shape(m, ext)
 
     def _detail(self, area_px):
-        """How much modelling a shape of this area gets: 1 = full, 0 = flat (finish="auto": flat below 3 % of the
-        canvas, full from 10 %)."""
+        """How much modelling a shape of this area gets: 1 = full, 0 = flat (finish="auto": flat below 0.3 % of
+        the canvas, full from 1.5 %)."""
         if self.finish == "full":
             return 1.0
         if self.finish == "flat":
             return 0.0
         share = area_px / float(self.W * self.H)
-        t = min(max((share - 0.03) / 0.07, 0.0), 1.0)
+        t = min(max((share - 0.003) / 0.012, 0.0), 1.0)
         return float(t * t * (3 - 2 * t))
 
     def pattern(self, mask, kind, color, size=0.05, width=None, angle=0.0, rings=4, opacity=1.0):

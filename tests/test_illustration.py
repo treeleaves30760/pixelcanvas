@@ -214,10 +214,11 @@ def test_small_shapes_get_a_flat_finish_large_ones_keep_it():
         sk.paint(m, "#e08040", shade=0.8, highlight=0.8)
         inside = cv.buf[m > 0.99]
         return float(inside.std(0).mean())
-    assert spread("auto", 0.05) < 1e-4                      # ~1.6 % of the canvas: one flat colour
+    assert spread("auto", 0.015) < 1e-4                     # a tiny detail (under 0.3 % of the canvas): one flat colour
+    assert spread("auto", 0.1) > 0.02                       # an object a fifth of the height across: modelled
     assert spread("auto", 0.3) > 0.03                       # large: modelled as before
     assert abs(spread("auto", 0.3) - spread("full", 0.3)) < 1e-6
-    assert spread("full", 0.05) > 0.02 and spread("flat", 0.3) < 1e-4
+    assert spread("full", 0.015) > 0.005 and spread("flat", 0.3) < 1e-4
     with pytest.raises(ValueError):
         Sketch(_cv(), finish="smooth")
 

@@ -42,7 +42,7 @@ Only when that section is empty, run `python <folder of this SKILL.md>/scripts/b
 2. **Write the whole scene in one go** with your file-writing tool (not a shell heredoc): `./art/NAME.py` like
    the example below; `PROMPT` = the request word for word (the report checks it); `DEFAULT_SIZE` = the size asked
    for (render.py reads it).
-3. **Render straight to the file you hand over** **and open that PNG in the same message**:
+3. **Render straight to the file you hand over and open that PNG in the same message**:
    `python <root>/tools/render.py ./art/NAME.py --check --out <delivery path>.png`
 4. **Fix in one edit** each inventory line the picture does not show at a glance and each item the FIX block
    names; render the same way and look. Deliver when the FIX block names no requested item and every
