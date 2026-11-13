@@ -4432,6 +4432,13 @@ for _n, _p in _SPECIES_B.items():
 _ALIASES.update(_BIRD_ALIASES)
 
 
+# `from pixelcanvas.creature import creature` is the usual import: the lists hang on the function too, so
+# `creature.species()`, `creature.POSES` and `creature.COATS` work on it as they do on the module.
+creature.species = species
+creature.POSES = POSES
+creature.COATS = COATS
+
+
 def flock(cv, species="sparrow", n=7, region=(0.15, 0.1, 0.85, 0.4), size=0.04, seed=0, pose="fly", style="soft",
           facing="right", log=None, coat=None, **kw):
     """Draw a group of birds (flying by default) scattered over ``region`` (u0, v0, u1, v1), each with its own wing

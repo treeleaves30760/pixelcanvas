@@ -366,3 +366,7 @@ def test_unknown_anchor_is_a_value_error_with_a_did_you_mean():
         c.anchor("nsoe")
     with pytest.raises(KeyError):
         c.anchor("nsoe")
+
+def test_lists_hang_on_the_creature_function_too():
+    assert creature.species() == species() and creature.species("bird") == species("bird")
+    assert creature.POSES is POSES and creature.COATS is COATS
