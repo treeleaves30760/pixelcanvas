@@ -27,6 +27,7 @@ pixelcanvas/layout.py     boxes, grids, stacks, poster / card templates, themes
 pixelcanvas/vision.py     inspection views (guides, zoom, values, edges, sheets), critique, stage snapshots
 pixelcanvas/layers.py     layer recorder: one layer per log() step -> PSD / ORA / PNG stack
 pixelcanvas/manifest.py   what was drawn where: note, summary, relations, prompt checks for --check
+pixelcanvas/reference.py  match a reference image: style sheet (palette roles, lines, tone bands, highlights), gaps
 pixelcanvas/catalog.py    one search index over every kit registry (tools/kit.py)
 pixelcanvas/scenery.py    landscape recipes on a Scene: sky, sun, clouds, mountains, rivers, pines, god rays, finish
 pixelcanvas/elements.py   fire, smoke, clouds, water, weather, skies, light
@@ -53,7 +54,8 @@ pixelcanvas/cli.py        the `pixelcanvas` command
 pixelcanvas/mcp_server.py MCP server (stdlib only) exposing the tools and reference pages
 scenes/                   example scenes (gallery, illustration_*.py freehand) and 30 starter templates
                           _template_<kind>.py (illustration, poster, chart, diagram, ui, drawing, floorplan, ...)
-tools/                    render, look, kit, new_scene, compose (JSON specs), layers, styles, fonts, pc (one entry),
+tools/                    render, look, kit, new_scene, compose (JSON specs), match (reference style sheet and
+                          gaps: match.py REF.png [DRAFT.png]), layers, styles, fonts, pc (one entry), build_gallery,
                           install_skill (--skill pixelcanvas | pixelcanvas-lite | both), release_check
 skills/pixelcanvas/       SKILL.md, scripts/bootstrap.py, references/ (one page per kit + illustration, api, spec ...)
 skills/pixelcanvas-lite/  the small-model skill: SKILL.md, scripts/bootstrap.py, tools/compose.py

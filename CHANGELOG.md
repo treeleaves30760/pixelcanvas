@@ -15,6 +15,9 @@ First release on PyPI: `pip install pixelcanvas`, or `uvx pixelcanvas doctor` to
 - **Freehand illustration**: `illustrate.Sketch` places shapes in fractions of the canvas, in nested local frames,
   with blobs, tapered strokes, shading, highlights, outlines, glow, stickers and washes; `cv.draw()` adds a
   supersampled Pillow layer.
+- **Lit solids by default**: a photo, a 3D render or a request with no named style gets lit, shaded objects on a
+  receding ground (`Sketch.paint(spec=, shadow="ground")`, planar shading of polygon faces), without outlines.
+- **Soft-cel and anime**: `Sketch.cel`, `sheen`, `eye`, `blush`, `ink`, `ramp` and `cel_tone`.
 - **Posters, cards and type**: poster and card templates, themes, text effects and auto-fitting type in any
   language; 57 one-call backdrops that keep a calm area for the title, and 60 palettes.
 - **Charts and dashboards** (`chart`), **diagrams** with automatic layout (`diagram`: flowcharts, architecture,
@@ -30,11 +33,18 @@ First release on PyPI: `pip install pixelcanvas`, or `uvx pixelcanvas doctor` to
   (`elements`); 80 lit materials (`texture`); 2.5D objects and rooms with one light (`form`).
 - **633 pictograms** in six styles (silhouette, duotone, line, shaded, sticker, cutout), also usable as masks.
 - **43 art styles**, from oil and watercolour to ukiyo-e and risograph; `styles pick "REQUEST"` chooses one.
+- **Text**: a list separator never starts or ends a line, and CJK lookup picks a font that covers the text.
 
 ### Tools
 
 - `render SCENE --check` writes a check sheet and a report: image critique, a text audit, the objects drawn and
   where, and the request checked item by item, ending with a FIX block that names what to change.
+- The report names a missing thing only when the request clearly asks for it, counts a thing drawn under another
+  name, label or comment as present, and ends with "N requested items unconfirmed" or "every requested item is
+  confirmed - deliver".
+- **Match a reference image** (#5): `match.py REF.png` prints a style sheet (palette with roles, lines, tone bands,
+  shadow shifts, highlights, paste-ready constants); `match.py REF.png DRAFT.png` lists the gaps, largest first;
+  `render --check --ref REF.png` adds them as a REFERENCE block.
 - `kit find "REQUEST"` searches every kit at once and answers with one call per subject.
 - `new NAME --prompt "REQUEST"` starts from the matching one of 30 starter templates, filled in for the request.
 - Spec mode: `compose --example poster` writes a JSON spec and `compose SPEC.json --check` draws it, in 16 kinds
@@ -45,13 +55,14 @@ First release on PyPI: `pip install pixelcanvas`, or `uvx pixelcanvas doctor` to
 ### Packaging
 
 - `pip install pixelcanvas`, with a `pixelcanvas` command for every tool: `kit`, `new`, `render`, `compose`, `look`,
-  `styles`, `layers`, `fonts`, `install-skill`, `doctor`, `mcp`.
+  `match`, `styles`, `layers`, `fonts`, `install-skill`, `doctor`, `mcp`.
 - `pixelcanvas install-skill` installs both skills for Claude Code, Codex, Cursor, opencode or any Agent Skills
   tool, for one user or one project; `npx skills add treeleaves30760/pixelcanvas` works as before.
 - Claude Code plugin: `/plugin marketplace add treeleaves30760/pixelcanvas`, then `/plugin install
   pixelcanvas@pixelcanvas`.
 - `pixelcanvas mcp` runs an MCP server with 11 tools and every reference page as a resource, for any MCP client.
 - The skill's bootstrap finds or fetches the runtime by itself.
+- CI runs the tests on Ubuntu, Windows and macOS with Python 3.9 and 3.13.
 
 ## 0.3.0 (2026-11-11)
 

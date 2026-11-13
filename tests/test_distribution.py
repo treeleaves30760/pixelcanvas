@@ -193,6 +193,15 @@ def test_tools_are_discovered(tmp_path, capsys):
     assert cli.tool_path("new", ROOT).endswith("new_scene.py")
 
 
+def test_pc_match(tmp_path):
+    from pixelcanvas import Canvas, cli
+    assert "match" in cli.available_tools(ROOT) and "match REF.png" in cli._usage()
+    ref = tmp_path / "ref.png"
+    Canvas(96, 54).gradient([(0, "#1d2150"), (1, "#f29a72")]).save(str(ref))
+    r = _run([os.path.join(TOOLS, "pc.py"), "match", "ref.png"], tmp_path)
+    assert r.returncode == 0 and r.stdout.strip(), r.stderr
+
+
 def test_doctor_json(tmp_path):
     r = _run([os.path.join(TOOLS, "pc.py"), "doctor", "--json"], tmp_path)
     doc = json.loads(r.stdout.strip().splitlines()[-1])

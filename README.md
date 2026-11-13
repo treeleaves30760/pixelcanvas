@@ -93,8 +93,8 @@ installing. Every option, per tool and per project: [docs/INSTALL.md](docs/INSTA
 **1. Plan.** The agent writes an inventory of the picture in the scene's docstring and copies the request into
 `PROMPT`, word for word.
 
-**2. Draw.** It writes the whole scene in one go. Shapes are placed in fractions of the canvas, with shading,
-outlines, glow and exact text built in:
+**2. Draw.** It writes the whole scene in one go. Shapes are placed in fractions of the canvas, and every
+object comes out lit and shaded, with glow, soft-cel bands, outlines for flat and ink styles, and exact text built in:
 
 ```python
 """lighthouse: red and white, on a dark cliff at the right, lamp glowing, beam over the sea; title 'Harbour Light'"""
@@ -155,11 +155,48 @@ pixelcanvas new corgi --prompt "a corgi sitting under an oak tree at sunset" --d
 pixelcanvas render ./art/corgi.py --scale 0.5 --check
 ```
 
+## Match a reference image
+
+Hand the agent a picture and say "in this style". `match.py` reads the reference as numbers, the agent draws with
+them, and the same tool lists what still differs, largest gap first.
+
+```bash
+python tools/match.py REF.png               # style sheet: palette with roles, lines, tone bands, highlights
+python tools/match.py REF.png DRAFT.png     # the draft's gaps to the reference and one match figure
+```
+
+On the anime illustration in [`scenes/illustration_anime.py`](scenes/illustration_anime.py):
+
+```text
+roles: background #508fdd, skin #ef8987, line #5d313a, accent #a62250
+lines: #5d313a (coloured), width 0.0037 of the height (~4 px at 1080)
+shading by region (largest first):
+  #d1535e 11%: hard bands, 3 tones; shadow #b12854 = L -0.12, hue -13 deg; highlight band #f88f96 (L +0.17)
+  #fde3d4 5% (skin): hard bands, 3 tones; shadow #dabbb0 = L -0.12, hue -10 deg
+PASTE (scene docstring / constants):
+  PALETTE = ["#508fdd", "#80b7ed", "#b8d4ec", "#f4efe9", "#d2555f", "#a62250", "#e89c2a", "#ef8987"]
+  LINE, LINE_WIDTH = "#5d313a", 0.0037      # sk.cel(..., line=LINE, line_width=LINE_WIDTH)
+  SHIFT, BANDS = (-0.119, -11.9), 2     # sk.cel(mask, base, bands=BANDS, shift=SHIFT)
+```
+
+A draft with purple hair against that reference:
+
+```text
+match 89/100 against the reference
+  1. [palette gap 0.17] palette distance 0.021 (OKLab) - use the reference colours: #d2555f (draft nearest #896eb3), #a62250 (draft nearest #664697), #ef8987 (draft nearest #e59c35)
+  2. [lines gap 0.26] line #372d3d width 0.0037 vs #5d313a width 0.0037 - line="#5d313a", line_width=0.0037
+  3. [contrast gap 0.35] value range 0.35-1.00 vs 0.49-1.00 - less contrast
+```
+
+Inside the render loop, `render.py SCENE --check --ref REF.png` (or `REFERENCE = "REF.png"` in the scene) adds the
+same gaps as a REFERENCE block. The protocol: [reference.md](skills/pixelcanvas/references/reference.md).
+
 ## What is in the box
 
 | Kit | Draws | Reference |
 |---|---|---|
-| `illustrate` | freehand drawing: `Sketch` shapes in fractions, local frames, blobs, tapered strokes, shading, stickers, washes; `cv.draw()` gives a supersampled Pillow layer | [illustration.md](skills/pixelcanvas/references/illustration.md) |
+| `illustrate` | freehand drawing: `Sketch` shapes in fractions, local frames, blobs, tapered strokes, lit shading, soft-cel bands, sheen, eyes and blush, stickers, washes; `cv.draw()` gives a supersampled Pillow layer | [illustration.md](skills/pixelcanvas/references/illustration.md) |
+| `reference` | match a reference image: style sheet, paste-ready constants, gaps of a draft (`tools/match.py`) | [reference.md](skills/pixelcanvas/references/reference.md) |
 | `text`, `layout` | type in any language with CJK fallback, auto-fit, effects; poster and card templates, themes | [typography.md](skills/pixelcanvas/references/typography.md) |
 | `chart` | charts, KPI tiles and whole dashboards | [charts.md](skills/pixelcanvas/references/charts.md) |
 | `diagram` | flowcharts, architecture, trees, sequences, timelines, tables, callouts, with automatic layout | [diagrams.md](skills/pixelcanvas/references/diagrams.md) |

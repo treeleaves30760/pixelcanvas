@@ -33,10 +33,12 @@ python tools/new_scene.py fox --prompt "a fox with a lantern in the snow" --dir 
 python tools/render.py ./art/fox.py --scale 0.5 --check           # draft + report -> ./art/outputs/
 python tools/look.py zoom art/outputs/fox_x0.5.png 0.3 0.2 0.7 0.6   # look closer (guides, values, probe ...)
 python tools/render.py ./art/fox.py --check --deliver ./art/final/  # full size, copied where the user wants it
+python tools/match.py REF.png ./art/outputs/fox.png               # with a style reference: the gaps, largest first
 ```
 
 A picture gets the freehand starter (kind `illustration`); a chart, diagram, engineering drawing or UI screen gets a
-starter holding the request's data. `python tools/kit.py find "<request>"` names the kit and its calls. Every
+starter holding the request's data. `python tools/kit.py find "<request>"` names the kit and its calls. With a style reference,
+`python tools/match.py REF.png` (`pixelcanvas/reference.py`) prints its palette, lines and tone bands as numbers. Every
 tool runs from any folder (`python <root>/tools/...`), and `pixelcanvas <tool>` does the same after
 `pip install pixelcanvas`.
 

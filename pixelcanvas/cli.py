@@ -444,6 +444,7 @@ def _usage():
   render SCENE [--scale 0.5] [--check]   render a scene (name or path); --deliver PATH copies the result
   compose SPEC.json --check              draw from a JSON spec (compose --example poster writes one)
   look VIEW IMAGE ...                    inspect a picture (guides, zoom, values, critique, report, ask ...)
+  match REF.png [DRAFT.png]              a reference picture's style sheet; with a draft, its gaps to the reference
   styles list                            the art styles (styles pick "REQUEST" chooses one)
   install-skill [claude|agents|codex|cursor|opencode]   give the skills to an agent
   doctor [--json]                        check the installation

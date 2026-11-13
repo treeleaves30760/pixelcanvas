@@ -92,7 +92,7 @@ skill 內附 `scripts/bootstrap.py`，第一次使用時會自動準備好執行
 
 **1. 規劃。** 代理在場景的 docstring 裡寫下畫面清單，並把需求一字不差地放進 `PROMPT`。
 
-**2. 繪製。** 一次寫完整個場景。形狀用畫布的比例座標擺放，陰影、外框、光暈與精確文字都已內建：
+**2. 繪製。** 一次寫完整個場景。形狀用畫布的比例座標擺放，每個物件都自帶受光與陰影；光暈、柔和賽璐璐色階、平面與墨線風格的外框，以及精確文字都已內建：
 
 ```python
 """lighthouse: red and white, on a dark cliff at the right, lamp glowing, beam over the sea; title 'Harbour Light'"""
@@ -152,11 +152,47 @@ pixelcanvas new corgi --prompt "a corgi sitting under an oak tree at sunset" --d
 pixelcanvas render ./art/corgi.py --scale 0.5 --check
 ```
 
+## 比對參考圖
+
+給代理一張圖，說「照這個風格」。`match.py` 把參考圖讀成數字，代理用這些數字作畫，同一個工具再列出還有哪裡不同，差距最大的排在最前面。
+
+```bash
+python tools/match.py REF.png               # 風格表：帶角色的配色、線條、色階、高光
+python tools/match.py REF.png DRAFT.png     # 草稿與參考圖的差距，以及一個相符分數
+```
+
+以 [`scenes/illustration_anime.py`](scenes/illustration_anime.py) 的動漫插畫為例：
+
+```text
+roles: background #508fdd, skin #ef8987, line #5d313a, accent #a62250
+lines: #5d313a (coloured), width 0.0037 of the height (~4 px at 1080)
+shading by region (largest first):
+  #d1535e 11%: hard bands, 3 tones; shadow #b12854 = L -0.12, hue -13 deg; highlight band #f88f96 (L +0.17)
+  #fde3d4 5% (skin): hard bands, 3 tones; shadow #dabbb0 = L -0.12, hue -10 deg
+PASTE (scene docstring / constants):
+  PALETTE = ["#508fdd", "#80b7ed", "#b8d4ec", "#f4efe9", "#d2555f", "#a62250", "#e89c2a", "#ef8987"]
+  LINE, LINE_WIDTH = "#5d313a", 0.0037      # sk.cel(..., line=LINE, line_width=LINE_WIDTH)
+  SHIFT, BANDS = (-0.119, -11.9), 2     # sk.cel(mask, base, bands=BANDS, shift=SHIFT)
+```
+
+一張頭髮畫成紫色的草稿，對照同一張參考圖：
+
+```text
+match 89/100 against the reference
+  1. [palette gap 0.17] palette distance 0.021 (OKLab) - use the reference colours: #d2555f (draft nearest #896eb3), #a62250 (draft nearest #664697), #ef8987 (draft nearest #e59c35)
+  2. [lines gap 0.26] line #372d3d width 0.0037 vs #5d313a width 0.0037 - line="#5d313a", line_width=0.0037
+  3. [contrast gap 0.35] value range 0.35-1.00 vs 0.49-1.00 - less contrast
+```
+
+在渲染迴圈裡，`render.py SCENE --check --ref REF.png`（或在場景裡寫 `REFERENCE = "REF.png"`）會把同樣的差距加成一個
+REFERENCE 區塊。完整流程：[reference.md](skills/pixelcanvas/references/reference.md)。
+
 ## 內容一覽
 
 | 套件 | 能畫什麼 | 參考頁 |
 |---|---|---|
-| `illustrate` | 自由繪製：`Sketch` 以比例座標畫形狀、局部座標系、blob、漸細筆觸、陰影、貼紙、暈染；`cv.draw()` 提供超取樣的 Pillow 圖層 | [illustration.md](skills/pixelcanvas/references/illustration.md) |
+| `illustrate` | 自由繪製：`Sketch` 以比例座標畫形狀、局部座標系、blob、漸細筆觸、受光陰影、柔和賽璐璐色階、髮絲光澤、眼睛與腮紅、貼紙、暈染；`cv.draw()` 提供超取樣的 Pillow 圖層 | [illustration.md](skills/pixelcanvas/references/illustration.md) |
+| `reference` | 比對參考圖：風格表、可直接貼上的常數、草稿的差距（`tools/match.py`） | [reference.md](skills/pixelcanvas/references/reference.md) |
 | `text`、`layout` | 任何語言的文字（自動 CJK 字型）、自動縮放、文字特效；海報與卡片範本、主題 | [typography.md](skills/pixelcanvas/references/typography.md) |
 | `chart` | 圖表、KPI 指標卡與整個儀表板 | [charts.md](skills/pixelcanvas/references/charts.md) |
 | `diagram` | 流程圖、架構圖、樹狀圖、循序圖、時間軸、表格、引線標註，自動排版 | [diagrams.md](skills/pixelcanvas/references/diagrams.md) |
