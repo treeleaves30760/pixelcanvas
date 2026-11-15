@@ -1,9 +1,14 @@
 # pixelcanvas
 
-**讓你的程式代理用程式碼畫出完成度高的圖：海報、圖解、儀表板、3D 場景與插畫，只用 numpy + Pillow。不需要圖片生成模型、
+**讓你的程式代理用程式碼畫出完成度高的圖，而且一步一步越改越好。每張圖都是一疊活的圖層，代理用工具編輯它：一個指令移動、
+縮放、換色或重畫一樣東西，再對照你的需求檢查整張圖，告訴代理下一步做什麼。只用 numpy + Pillow，不需要圖片生成模型、
 不需要 GPU、不需要 API key。**
 
-![coding agent 用 pixelcanvas 畫出的作品](gallery/wall.jpg)
+![第一版草稿與完成的成品](gallery/studio/campfire_fox_before_after.jpg)
+
+*「a fox asleep beside a small campfire in a snowy pine forest at night, a full moon above the trees, cozy and
+quiet」*（雪夜松林裡，一隻狐狸睡在小營火旁，樹梢上一輪滿月，溫暖而安靜）：左邊是第一版草稿，右邊是完成的成品。
+[完整的工作紀錄](gallery/studio/sessions/campfire_fox.txt)。
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
@@ -12,19 +17,133 @@
 
 [English](README.md)
 
-pixelcanvas 是一個 **Agent Skill**，也是一個 **Python 套件**。Claude Code、Codex、opencode、Cursor、Gemini CLI，或任何
-能執行 shell 的代理，讀了 [`SKILL.md`](skills/pixelcanvas/SKILL.md) 之後會先設計畫面、用 Python 畫出來、執行一份會指出
-該修什麼的檢查，再親眼看過結果才交件。每張圖都是一個簡短的場景檔：任何語言的文字都一字不差，圖層可編輯，需要時還能輸出
-SVG 與 DXF。
+pixelcanvas 是一個 **Agent Skill**，也是一個 **Python 套件**。它在 Claude Code、Codex、Cursor、Gemini CLI、opencode
+或任何能執行 shell 的代理裡運作，也能用本地模型：我們用 Qwen 3.8 Flash Next 在 Claude Code 與 opencode 裡實際驅動測試過。
+代理讀了 [`SKILL.md`](skills/pixelcanvas/SKILL.md) 之後，在 **`pixelcanvas studio`** 裡工作：圖放在 `./art/NAME/`，
+每個物件是草稿檔裡的一個 `# %% name` 區段，草稿的清單行就是檢查清單，另外還有 look 圖與完整的修訂歷史。
 
 ```bash
 npx skills add treeleaves30760/pixelcanvas
 ```
 
-接著就可以說：*「做一張鋼琴之夜 NOCTURNE 的中英雙語海報」*、*「畫出我們電商平台的架構圖」*、*「一個等角視角的閱讀角落，
-扶手椅上有一隻貓」*。
+接著就可以說：*「做一張夜市 Lantern Street 的海報」*、*「畫出我們電商平台的架構圖」*，之後針對同一張圖再說：
+*「把狐狸放大一點」*、*「把月亮移到左邊」*。
+
+## 運作方式：一張代理持續編輯的圖
+
+代理把整份第一版草稿寫在一個檔案 `./art/NAME/draft.py` 裡：一支腳本切成 `# %% name` 區段，由後往前，每樣東西一個區段。
+區段的第一行註解就是它的清單行（數量、顏色、'引號文字'、狀態，再接 `|` 與位置）：
+
+```python
+# %% apple
+# apple: 3, green, one bitten | in bowl
+ball(cv, t.place(0.3, 0.5), 0.07, base="#7cb342")
+```
+
+一個指令就從草稿建出整張圖。之後每個指令只改一件小事，只重新渲染有變的部分（大約一秒），對照清單行檢查整張圖，最後印出
+一行 `NEXT:`：
+
+```bash
+studio new fox --prompt "a fox carrying a lantern through a snowy wood at night, titled 'Night Walk'" --size 1920x1080 --out ./night_walk.png --from ./art/fox/draft.py
+studio scale lantern 1.8                     # 不是改程式的修改：一個指令
+studio add --from ./art/fox/draft.py         # 改程式：編輯一個區段，只有它會重畫
+studio note add "3 the lantern glow is faint"   # 留一份缺點清單，讓 NEXT 逐條帶你處理
+studio note done 1
+```
+
+`studio` 就是 `pixelcanvas studio`（從 clone 執行則是 `python tools/studio.py`）。`--out` 的檔案在每個指令之後都會重寫。
+每份報告都以一行下一步收尾；沒有任何量測項目未過時，它請你打開 look 圖，看過三次之後就說圖完成了：
+
+```text
+request: 4 of 4 confirmed
+look list ([x] = what can be measured holds; by eye: does the picture show each line at a glance?):
+  [x] 1 wood: snowy ground receding to dark pines, night sky
+  [x] 2 fox: 1, orange, walking left to right | at centre
+  [x] 3 lantern: glowing warm yellow, its handle in the fox's mouth  <- worth checking: lantern covers 0.4% of the frame: scale lantern 1.8
+  [x] 4 title: 'Night Walk' | at top
+NEXT: look 1 of 3: open .../art/fox/look.png (the picture, then every item close up); a line above that does not show at a glance: edit its section ... then studio add --from ...
+...
+NEXT: finished: the picture is .../night_walk.png (open it before you tell the user)
+```
+
+代理打開的 look 圖：上方是帶座標格線與圖層框的整張圖，下面是每個清單項目的特寫。
+
+![look 圖](gallery/studio/campfire_fox_look.jpg)
+
+- **清單行就是合約。** 每個區段的第一行註解變成一個編號項目（數量、顏色、引號文字與位置），量測的部分成立、而且該圖層
+  在圖裡看得到時才打勾。沒過的項目會直接寫出修法：`apple: 1 drawn, the request says 3: copy apple --total 3`、
+  `apple is not in bowl (boxes: ...): put apple* in bowl`。量測到的疑慮以 `worth checking` 列出：被要求的東西不到畫面的
+  1.5 %、互相碰到的複製品、和背後顏色融在一起的東西。
+- **用最小的工具修。** `move`、`scale`、`fit`、`put`、`order`、`crop`、`recolor`、`copy --total N --row`、`set L outline=on
+  shadow=ground glow=ffcf70`、`set scene light=top-right grade=golden`；形狀看不出是什麼，就編輯那一個區段，再用 `add --from`
+  重畫。`scale` 與 `fit` 以 `anchor("fox", "mouth")` 定位的區段的錨點為軸心，`copy --row` 會留空隙，`put` 讓東西留在畫面內，
+  指令蓋住了東西或把它推出畫面時，會建議 `undo`。
+- **什麼都弄不壞整張圖。** 出錯的區段保留上一次成功的渲染，報告指出草稿的哪一行；`undo`、`redo`、`goto REV` 會一起還原程式碼
+  與參數；`compare 5 34` 把兩個版本並排。
+- **你要的檔案永遠是最新的。** `--out ./night_walk.png` 在每個指令之後都會重寫，完成不需要多一個指令。
+- **問工具，不讀原始碼。** `studio api sk.paint creature` 印出每個呼叫的確切參數與範例；`studio api steam` 列出名稱含這個字
+  的所有呼叫；`studio look --text` 把數字交給沒有視覺的模型。
+
+所有指令與圖的資料夾結構：[studio.md](skills/pixelcanvas/references/studio.md)。
+
+## 在 studio 裡畫出來的
+
+這三張圖都是照著上面的流程，只用 CLI 畫出來的：第一版草稿、一個個小修正。每份工作紀錄列出每個指令與當下的需求
+分數。
+
+| | |
+|---|---|
+| ![Lantern Street 海報](gallery/studio/night_market.jpg) | ![靜物](gallery/studio/still_life.jpg) |
+| *「A poster for a night market titled 'Lantern Street': three red paper lanterns hanging from a string across the top, a steaming bowl of noodles in the middle, the lines 'Every Friday & Saturday' and '18:00 - 23:00' at the bottom, deep indigo night」*（夜市海報：上方一條繩上掛著三盞紅紙燈籠，中間一碗冒著熱氣的麵，底部兩行字，深靛藍夜色）：rev 13 完成，[工作紀錄](gallery/studio/sessions/night_market.txt) | *「A still life on a wooden table: three green apples in a white bowl, a blue mug right of the bowl, two yellow lemons in front of the bowl, a glass bottle on the left」*（木桌上的靜物：白碗裡三顆青蘋果、碗右邊一個藍色馬克杯、碗前兩顆黃檸檬、左邊一支玻璃瓶）：rev 21 完成，[工作紀錄](gallery/studio/sessions/still_life.txt) |
+| ![海報：第一版草稿與成品](gallery/studio/night_market_before_after.jpg) | ![靜物：第一版草稿與成品](gallery/studio/still_life_before_after.jpg) |
+| 修正把燈籠複製成三盞、均勻掛在繩子上，把碗往下移讓熱氣離開標題，碗裡也放滿了麵、蛋、青菜與筷子。 | 修正把瓶子染成淡綠色、在放大的碗裡複製出三顆蘋果、碗前複製出兩顆檸檬，畫面也裁到桌面。 |
+
+![交件的狐狸與營火](gallery/studio/campfire_fox.jpg)
+
+look 圖：[海報](gallery/studio/night_market_look.jpg)、[靜物](gallery/studio/still_life_look.jpg)。
+
+## 後續修改只要一個指令
+
+交件後的圖保留著它的狀態。「把狐狸放大一點」就是 `studio -p campfire_fox scale fox 1.2`，使用者手上的檔案會跟著重畫。
+成品完成後（rev 29 到 32）的四個要求，各一個指令：`scale fox 1.2`、`recolor moon ffb36b`、`move moon --to 0.3 0.24`、`add owl --kit "creature('owl', at=(0.885, 0.5), size=0.11, pose='perch', facing='left')"`：
+
+![交件後的四個後續指令](gallery/studio/campfire_fox_follow_up.jpg)
+
+會改變需求本身的要求（換顏色、數量或文字）就改 `draft.py` 裡那個區段的清單行，再執行 `studio -p NAME add --from ./art/NAME/draft.py`，
+接下來交給 NEXT。
+
+## 每個物件都是真正的圖層
+
+`studio deliver PATH.png --layers` 在 PNG 旁邊寫出 PSD（Photoshop、Photopea、GIMP、Affinity）與 ORA（Krita、GIMP），每個物件一個
+圖層，名稱和 studio 裡一樣。上面那張靜物，一層一層攤開（table、bottle、bowl、apple、apple2、apple3、mug、lemon、lemon2）：
+
+![交件靜物的各個圖層](gallery/studio/still_life_layers.jpg)
+
+`studio export NAME.py` 把同一張圖寫成一個給 `tools/render.py` 用的場景檔。
+
+## 用真正的畫材交件
+
+完成的圖可以交成 3D render、平面圖形、油畫、水彩、墨線畫或像素畫。圖層會變成逐像素的緩衝（固有色、每個形狀的浮雕、法線、
+深度、發光），一盞主光照亮它們，帶出形體陰影、地面上的投影與接觸遮蔽，再由畫材用自己的方式把結果畫出來：油畫的筆觸沿著形體走，
+水彩在紙上暈出帶積水邊緣的色塊，墨線畫有輪廓線與順著形體轉的排線，像素畫是小色盤的像素格。`studio new` 會從需求讀出畫材
+（「水彩」、「油畫」、「墨線畫」、「像素畫」、「3D render」）；之後換畫材不會重跑任何區段。
+
+```bash
+studio set scene medium=watercolour          # render flat oil watercolour ink pixel off
+studio set scene medium_mark=2 medium_strength=0.7 medium_palette=12 medium_paper=f4ecd8
+studio stages                                # 平面剪影 -> 浮雕黏土 -> 上光的顏色 -> 畫材
+```
+
+上面那張靜物，每格一次 `set scene medium=`（render、flat、oil／watercolour、ink、pixel）：
+
+![六種畫材的靜物](gallery/studio/still_life_media.jpg)
+
+畫材檢查會確認圖保有原稿的明暗分布、要求的顏色、每樣東西的對比與清楚的文字；未過的那項就是 `NEXT:` 那一行，附修法。每個旋鈕與
+各畫材畫什麼：[medium.md](skills/pixelcanvas/references/medium.md)。
 
 ## 可以畫什麼
+
+![coding agent 用 pixelcanvas 畫出的作品](gallery/wall.jpg)
 
 下面每一張圖都是 pixelcanvas 根據圖下的需求畫出來的，場景檔都在 [`scenes/`](scenes/)。
 
@@ -71,7 +190,7 @@ npx skills add treeleaves30760/pixelcanvas
 | ![aurora](gallery/aurora_lake.jpg) | ![sea sunset](gallery/sea_sunset.jpg) | ![studio still life](gallery/studio_still_life.jpg) |
 | *「寬幅橫幅：松林之間鏡面湖上的極光，標題 'pixelcanvas'」* | *「夕陽落在平靜的海面，波浪上一條光帶」* | *「大理石板上的棚拍靜物：玻璃瓶、陶土色馬克杯、玻璃球和一顆金球」* |
 | ![art styles](gallery/art_styles.jpg) | ![pictograms](gallery/pictograms.jpg) | ![harbour light](gallery/harbour_light.jpg) |
-| *「同一幅風景，十二種媒材」*：43 種具名畫風，從油畫、水彩到彩繪玻璃與藍圖 | 633 個圖示，六種樣式，用名稱就能放上畫面 | *「黃昏的紅白燈塔，標題 'Harbour Light'」*：下一節的場景 |
+| *「同一幅風景，十二種媒材」*：43 種具名畫風，從油畫、水彩到彩繪玻璃與藍圖 | 633 個圖示，六種樣式，用名稱就能放上畫面 | *「黃昏的紅白燈塔，標題 'Harbour Light'」*：下面那個場景檔 |
 
 ## 安裝
 
@@ -88,11 +207,10 @@ skill 內附 `scripts/bootstrap.py`，第一次使用時會自動準備好執行
 會檢查 Python、numpy、Pillow、字型與寫入權限；`uvx pixelcanvas doctor` 不用安裝就能執行。各工具、各專案的完整選項：
 [docs/INSTALL.md](docs/INSTALL.md)。
 
-## 運作方式：規劃、繪製、檢查、檢視
+## 場景檔：一張圖就是一支程式
 
-**1. 規劃。** 代理在場景的 docstring 裡寫下畫面清單，並把需求一字不差地放進 `PROMPT`。
-
-**2. 繪製。** 一次寫完整個場景。形狀用畫布的比例座標擺放，每個物件都自帶受光與陰影；光暈、柔和賽璐璐色階、平面與墨線風格的外框，以及精確文字都已內建：
+studio 畫的每樣東西都是建立在各套件上的 Python，整張圖也能放進一個場景檔（`studio export NAME.py` 會寫出一個）。形狀用畫布
+的比例座標擺放，每個物件都自帶受光與陰影；光暈、柔和賽璐璐色階、平面與墨線風格的外框，以及精確文字都已內建：
 
 ```python
 """lighthouse: red and white, on a dark cliff at the right, lamp glowing, beam over the sea; title 'Harbour Light'"""
@@ -125,8 +243,8 @@ def render(width=1600, height=900, seed=1, log=lambda step: None):
     return cv
 ```
 
-**3. 檢查。** `python tools/render.py gallery/src/harbour_light.py --check` 會渲染並寫出報告：畫面評析、文字檢查、每個物件
-落在哪裡，以及逐項比對需求。最後的 FIX 區塊會指出要改什麼，或宣告這張圖可以交件：
+`python tools/render.py gallery/src/harbour_light.py --check` 會渲染並寫出報告：畫面評析、文字檢查、每個物件落在哪裡，
+以及逐項比對需求，最後是 FIX 區塊：
 
 ```text
 PROMPT "a red and white lighthouse at dusk, titled 'Harbour Light'"
@@ -139,17 +257,17 @@ PROMPT "a red and white lighthouse at dusk, titled 'Harbour Light'"
 FIX: nothing flagged - look at the picture once, then deliver
 ```
 
-**4. 檢視。** 代理打開 PNG 親眼看，需要細看時用 `tools/look.py`（座標格線、放大、明度圖、邊緣、取色）。這就是上面那個場景
-畫出的圖：
+這就是那個場景檔畫出的圖：
 
 ![Harbour Light](gallery/harbour_light.jpg)
 
-結構性的圖則從範本開始，而不是空白檔案：
+圖表、儀表板、圖解、平面圖、工程圖與 UI 從 30 個起手範本之一開始，進到 studio 成為一個圖層，標註與印章再各自成為上面的圖層：
 
 ```bash
-pixelcanvas kit find "a corgi sitting under an oak tree at sunset"      # 每個主體該用哪個呼叫
-pixelcanvas new corgi --prompt "a corgi sitting under an oak tree at sunset" --dir ./art
-pixelcanvas render ./art/corgi.py --scale 0.5 --check
+pixelcanvas new sales --dir . --prompt "quarterly sales as a bar chart, titled 'Sales 2025'"
+pixelcanvas studio new sales --prompt "quarterly sales as a bar chart, titled 'Sales 2025', stamped 'Draft'"
+pixelcanvas studio add base --scene sales.py
+pixelcanvas studio add stamp --text "Draft" --box 0.72 0.05 0.95 0.14 --color d63c2f --bold
 ```
 
 ## 比對參考圖
@@ -211,11 +329,15 @@ REFERENCE 區塊。完整流程：[reference.md](skills/pixelcanvas/references/r
 `pixelcanvas kit find "需求"` 一次搜尋所有套件；30 個起手範本（`pixelcanvas new --list`）涵蓋海報、圖表、圖解、UI、
 平面圖、產品照、人物、寵物等等。
 
-## 小型本地模型
+## 本地模型
 
-在你自己電腦上跑的模型透過 **pixelcanvas-lite** skill 作畫：它只寫一份小小的 JSON spec，`compose` 再用各個套件畫出來，
-支援 16 種類型，從海報、桌布到儀表板、房間與 3D 場景。每次執行都以一行 `NEXT:` 結尾，告訴模型下一步做什麼。完全不用寫
-Python。
+studio 的流程可以交給你自己電腦上的模型：每個指令之後的那一行 `NEXT:` 讓小模型不會迷路，沒有影像輸入的模型則用
+`studio look --text`（每個圖層的框、大小與平均色）檢查圖。我們用 Qwen 3.8 Flash Next 在 Claude Code 與 opencode 裡實際驅動
+測試過。在 opencode 裡用有視覺的模型時，宣告這個模型能讀圖
+（[docs/INSTALL.md](docs/INSTALL.md#local-models-in-opencode-the-studio-with-vision)），它就會自己看 `look` 圖。
+
+最小的模型則有 **pixelcanvas-lite** skill：模型只寫一份小小的 JSON spec，`compose` 再用各個套件畫出來，支援 16 種類型，
+從海報、桌布到儀表板、房間與 3D 場景。每次執行都以一行 `NEXT:` 結尾。完全不用寫 Python。
 
 ```bash
 pixelcanvas install-skill opencode --skill pixelcanvas-lite
@@ -226,11 +348,10 @@ pixelcanvas compose poster.json --deliver final/
 
 spec 格式：[spec.md](skills/pixelcanvas/references/spec.md)。
 
-## 可編輯圖層、SVG 與 DXF
+## 場景檔的圖層、SVG 與 DXF
 
-場景裡每個 `log("step")` 都是一個圖層。`--layers` 會輸出 `SCENE.psd`（Photoshop、Photopea、GIMP、Affinity）、
-`SCENE.ora`（Krita、GIMP）和一個 PNG 資料夾，讓人可以移動、隱藏或重畫任何物件。`--svg` 把向量繪圖（圖解、圖表、UI、
-圖示）存成 SVG，`--dxf` 把工程圖存成 CAD 可用的 DXF。
+場景檔裡每個 `log("step")` 都是一個圖層：`render.py --layers` 會輸出 `SCENE.psd`、`SCENE.ora` 和一個 PNG 資料夾，就像
+studio 的 `deliver PATH.png --layers`。`--svg` 把向量繪圖（圖解、圖表、UI、圖示）存成 SVG，`--dxf` 把工程圖存成 CAD 可用的 DXF。
 
 ```bash
 python tools/render.py drafting_bracket --svg --dxf
@@ -239,8 +360,10 @@ python tools/render.py clay_campsite --layers
 
 ## MCP server
 
-`pixelcanvas mcp` 在 stdin / stdout 上說 Model Context Protocol，提供 11 個工具（`kinds`、`new_scene`、`write_scene`、
-`read_scene`、`render`、`look`、`find`、`reference`、`ask`、`animate`、`layers`），每一份參考頁也都是 resource。
+`pixelcanvas mcp` 在 stdin / stdout 上說 Model Context Protocol，提供 15 個工具，每一份參考頁也都是 resource。
+其中四個就是 studio：`studio`（任何一條 studio 指令，回傳報告與 look 圖）、`studio_draft`（一次寫完整份草稿）、
+`studio_layer`（重畫單一物件）、`studio_read`。其餘：`kinds`、`new_scene`、`write_scene`、`read_scene`、`render`、
+`look`、`find`、`reference`、`ask`、`animate`、`layers`。
 
 ```bash
 claude mcp add --scope project pixelcanvas -- python -m pixelcanvas.mcp_server
@@ -251,12 +374,13 @@ Claude Desktop、Cursor 與 opencode 的設定：[docs/INSTALL.md](docs/INSTALL.
 
 ## 參考頁
 
-- [SKILL.md](skills/pixelcanvas/SKILL.md)：作畫流程、自由繪製、需逐項檢查的圖、美術方向、套件表
+- [SKILL.md](skills/pixelcanvas/SKILL.md)：studio 的作畫流程、第一版草稿、需逐項檢查的圖、美術方向、套件表
+- [studio.md](skills/pixelcanvas/references/studio.md)：每個 studio 指令、圖的資料夾、草稿格式、報告、look
 - [api.md](skills/pixelcanvas/references/api.md)：完整 API 索引
 - [illustration.md](skills/pixelcanvas/references/illustration.md)、[techniques.md](skills/pixelcanvas/references/techniques.md)、
   [typography.md](skills/pixelcanvas/references/typography.md)、[review.md](skills/pixelcanvas/references/review.md)
 - 每個套件一頁，都在 [`skills/pixelcanvas/references/`](skills/pixelcanvas/references/)
-- [CHANGELOG.md](CHANGELOG.md)：0.4 的新內容
+- [CHANGELOG.md](CHANGELOG.md)：0.5 的新內容
 
 ## 參與貢獻
 
@@ -268,7 +392,7 @@ pip install -r requirements.txt pytest
 python -m pytest -q
 ```
 
-`python tools/build_gallery.py` 會從場景重新產生這份作品集。
+`python tools/build_gallery.py` 會從場景重新產生作品牆與其中的圖；`gallery/studio/` 放的是 studio 作品與它們的工作紀錄。
 
 ## 授權
 

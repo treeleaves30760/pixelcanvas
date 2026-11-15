@@ -30,7 +30,7 @@ from . import form as _form
 from ._args import (reject_unknown as _reject_unknown, unknown_name as _unknown_name,
                     signature_options as _sig_options, strict as _strict, strict_methods as _strict_methods)
 
-__all__ = ["Creature", "creature", "flock", "school", "species", "SPECIES", "POSES", "COATS"]
+__all__ = ["Creature", "creature", "flock", "school", "species", "poses", "SPECIES", "POSES", "QUAD_POSES", "COATS"]
 
 _BIG = 1e5
 
@@ -829,6 +829,8 @@ def _render_model(cv, model, cam, style="soft", light=None, seed=0, detail=1.0):
         shaded = shaded * (1 - ring)[..., None]
 
     rr = _Render(cam, box, shaded.astype(F32), alpha, Z, D)
+    rr.base = np.broadcast_to(np.asarray(base, F32), shaded.shape).copy()      # the coat itself, for the medium
+    rr.nrm = np.stack(np.broadcast_arrays(nx, ny, nz), -1).astype(F32)
     rr.X, rr.Y = Xc, Yc
     rr.world = (Wx, Wy, Wz)
     rr.light = light
@@ -987,6 +989,17 @@ def _visible(rr, p_screen, tol):
     if rr.D[iy, ix] > 1.5:
         return 0.0
     return float(np.clip((z - zz + tol) / max(tol * 0.5, 1e-3), 0, 1))
+
+
+def _record(cv, rr, x0, y0, opacity=1.0):
+    """The creature for the medium stage: a solid with its true normals and its coat colours (what is drawn over
+    the coat, eyes and nose, is kept as drawn)."""
+    from .medium import record as _rec
+    base, nrm = getattr(rr, "base", None), getattr(rr, "nrm", None)
+    if not _rec.active(cv) or base is None or nrm is None or nrm.shape[:2] != rr.alpha.shape:
+        return
+    _rec.note(cv, "solid", rr.alpha * float(opacity), np.clip(base, 0, 1), volume=1.0, gloss=0.1, off=(x0, y0),
+              normals=nrm, painted=np.clip(rr.rgb, 0, 1))
 
 
 def _paint(rr, color, m):
@@ -1615,6 +1628,9 @@ def _spine(P, Sy, Hy, cx=0.0):
 
 POSES = ("stand", "walk", "trot", "gallop", "sit", "lie", "crouch", "jump", "graze", "sniff", "rear", "sleep",
          "perch", "fly", "swim", "glide", "peck", "open", "rest")
+QUAD_POSES = ("stand", "walk", "trot", "gallop", "sit", "lie", "rest", "crouch", "jump", "graze", "sniff", "rear",
+              "sleep")                                   # four-legged animals ("rest" = lying with the head up)
+_QUAD_EXTRA = ("look", "run", "amble", "bound", "still")
 
 
 def _gait_leg(P, front, root, phase, off, duty, st, lift, flex_max, x0, quick=0.0):
@@ -1661,6 +1677,10 @@ def _quad_pose(P, name, phase=0.0, opt=None):
     tail = sk["tail"]
     kind = P.get("gallop", "rotary")
 
+    if name == "rest":
+        name = "lie"
+    elif name == "still":
+        name = "stand"
     if name in ("stand", "graze", "sniff", "look"):
         S, H, sp = _spine(P, Sy, Hy)
         fo = 0.03 if name == "graze" else 0.0
@@ -1835,7 +1855,7 @@ def _quad_pose(P, name, phase=0.0, opt=None):
         sk["grounded"] = True
         tail = dict(tail, ang=-70.0)
     else:
-        raise _unknown_name("pose", name, POSES, "Try creature.POSES for the list")
+        raise _unknown_name("pose", name, QUAD_POSES, "Four-legged animals take: " + ", ".join(QUAD_POSES))
 
     if "head_ang" in opt:
         head_ang = opt["head_ang"]
@@ -2574,6 +2594,16 @@ def _resolve(name):
     raise _unknown_name("species", name, list(_KINDS) + list(_ALIASES), "Try creature.species() for the list")
 
 
+def poses(name=None):
+    """The poses a species takes (``poses("fox")``), or every pose name when no species is given."""
+    if name is None:
+        return list(POSES)
+    sp = _resolve(name)[0]
+    if _KINDS.get(sp) == "quad":
+        return list(QUAD_POSES)
+    return [p for p in POSES if p not in ("trot", "gallop", "graze", "sniff", "rear", "crouch", "lie")]
+
+
 def species(kind=None):
     """Names of every preset, or only one kind: 'quad', 'bird', 'sea', 'small'."""
     return sorted(n for n, k in _KINDS.items() if kind is None or k == kind)
@@ -2713,8 +2743,11 @@ class Creature:
         graze, sniff, rear; birds: stand, perch, fly (phase = wing beat), glide, swim; fish: swim (phase = tail
         beat). Options: ``head_turn`` (deg towards the viewer), ``head_tilt``, ``tail`` ("up", "down", "out", "curl",
         "wag" or an angle), ``ears`` ("back", "down", "alert"), ``mouth`` ("open", "pant"), ``eyes`` ("closed")."""
+        if isinstance(name, str) and self.kind == "quad" and name not in QUAD_POSES + _QUAD_EXTRA:
+            raise _unknown_name("pose", name, QUAD_POSES, f"A {self.name} takes: " + ", ".join(QUAD_POSES))
         if isinstance(name, str) and name not in POSES and name not in _EXTRA_POSES:
-            raise _unknown_name("pose", name, list(POSES) + list(_EXTRA_POSES), "Try creature.POSES for the list")
+            raise _unknown_name("pose", name, list(POSES) + list(_EXTRA_POSES), "Try creature.poses(SPECIES) for the "
+                                "list")
         self._pose = (name, float(phase), _reject_unknown("Creature.pose", opt, _POSE_OPTS))
         return self
 
@@ -2832,6 +2865,7 @@ class Creature:
             st = 0.6 if shadow is True else float(shadow)
             _ground_shadow(cv, model, cam, st, light, rr)
         cv.paste(rr.rgb, x0, y0, mask=rr.alpha * float(opacity))
+        _record(cv, rr, x0, y0, opacity)
         self.mask = full
         ys, xs = np.nonzero(rr.alpha > 0.05)
         self.bbox = (int(xs.min()) + x0, int(ys.min()) + y0, int(xs.max()) + x0 + 1, int(ys.max()) + y0 + 1) \
@@ -4436,6 +4470,8 @@ _ALIASES.update(_BIRD_ALIASES)
 # `creature.species()`, `creature.POSES` and `creature.COATS` work on it as they do on the module.
 creature.species = species
 creature.POSES = POSES
+creature.poses = poses
+creature.QUAD_POSES = QUAD_POSES
 creature.COATS = COATS
 
 

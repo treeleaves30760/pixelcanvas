@@ -225,6 +225,17 @@ def test_moon_reflection_is_a_bright_glitter_not_a_dark_disc():
     assert (col > 0.3).mean() > 0.05
 
 
+def test_the_default_moon_is_full_and_its_doc_says_what_phase_means():
+    def lit(**kw):
+        cv = Canvas(200, 200, "#000000")
+        E.moon(cv, at=(0.5, 0.5), size=400, glow=0, earthshine=0, **kw)
+        disc = cv.buf[60:140, 60:140].max(axis=2)
+        return float((disc > 0.25).mean())
+    assert lit() > 0.9 and lit(phase=1.0) < 0.05 and lit(phase=0.0) < 0.05
+    first = E.moon.__doc__.strip().splitlines()[0]
+    assert "0.5 = full" in first and "new" in first
+
+
 def test_smoke_thins_as_it_spreads():
     cv = Canvas(200, 300, "#000000")
     fx = E.smoke(cv, at=(0.5, 0.95), size=1000, wind=0.0, seed=2)

@@ -270,6 +270,9 @@ def test_mcp_round_trip(tmp_path):
         c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})           # no reply expected
         assert c.call("ping")["result"] == {}
         tools = {t["name"]: t for t in c.call("tools/list")["result"]["tools"]}
+        assert {"studio", "studio_draft", "studio_layer", "studio_read"} <= set(tools)
+        names = list(tools)
+        assert names.index("studio_read") < names.index("kinds")          # studio tools are listed first
         assert {"kinds", "new_scene", "write_scene", "read_scene", "render", "look", "find", "reference", "ask",
                 "animate", "layers"} <= set(tools)
         for t in tools.values():
@@ -323,6 +326,8 @@ def test_mcp_round_trip(tmp_path):
         resources = c.call("resources/list")["result"]["resources"]
         uris = {r["uri"] for r in resources}
         assert "pixelcanvas://skill/SKILL.md" in uris and "pixelcanvas://references/api.md" in uris
+        assert "pixelcanvas://references/studio.md" in uris
+        assert "Studio" in c.tool("reference", page="studio")["content"][0]["text"]
         doc = c.call("resources/read", {"uri": "pixelcanvas://skill/SKILL.md"})["result"]["contents"][0]
         assert doc["mimeType"] == "text/markdown" and "name: pixelcanvas" in doc["text"]
         assert "error" in c.call("resources/read", {"uri": "pixelcanvas://references/nope.md"})
@@ -344,6 +349,85 @@ def test_mcp_round_trip(tmp_path):
     finally:
         rest = c.close()
     assert rest == b""                                                    # nothing but protocol messages on stdout
+
+
+def _images(res):
+    return [b for b in res["content"] if b["type"] == "image"]
+
+
+def test_mcp_studio_round(tmp_path):
+    """The whole studio loop through MCP tools alone, on a small canvas."""
+    c = Client(tmp_path)
+    draft = ("# %% background\n# background: night\ncv.fill('#203050')\n"
+             "# %% fox\n# fox: orange\nsk.level(sk.circle(0.4, 0.6, 0.15), 0.8, '#e07020')\n"
+             "# %% lantern\n# lantern: glow\nsk.level(sk.circle(0.7, 0.5, 0.05), 0.8, '#ffd060')\n")
+    try:
+        c.call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}})
+        res = c.tool("studio", command='new fox --prompt "a fox by a lantern" --size 320x180')
+        text = res["content"][0]["text"]
+        assert not res["isError"], text
+        assert not (tmp_path / "art" / "fox" / "draft.py").exists() and "NEXT:" in text
+        assert "studio_draft" in text and "studio.py" not in text          # NEXT names MCP tools, not the CLI
+
+        res = c.tool("studio_draft", picture="fox", code=draft)
+        assert not res["isError"], res["content"][0]["text"]
+        assert "NEXT:" in res["content"][0]["text"] and len(_images(res)) == 1
+        assert (tmp_path / "art" / "fox" / "layers" / "lantern.py").exists()
+
+        res = c.tool("studio", command="move fox --to 0.4 0.7", picture="fox")
+        assert not res["isError"] and "move fox" in res["content"][0]["text"] and _images(res)
+        res = c.tool("studio", command="look")
+        img = _images(res)
+        assert not res["isError"] and len(img) == 1 and img[0]["mimeType"] == "image/jpeg", res["content"][0]["text"]
+        assert res["content"][0]["text"].startswith("look:")
+
+        res = c.tool("studio_layer", picture="fox", layer="lantern",
+                     code="# lantern: bigger glow\nsk.level(sk.circle(0.72, 0.45, 0.08), 0.8, '#ffe080')\n")
+        assert not res["isError"], res["content"][0]["text"]
+        assert "lantern" in res["content"][0]["text"] and _images(res)
+        assert "0.08" in (tmp_path / "art" / "fox" / "layers" / "lantern.py").read_text(encoding="utf-8")
+
+        res = c.tool("studio_read", picture="fox")
+        text = res["content"][0]["text"]
+        assert not res["isError"] and "lantern: bigger glow" in text and "# %% fox" in text
+        res = c.tool("studio_read", picture="fox", layer="lantern")
+        assert "0.72" in res["content"][0]["text"]
+
+        res = c.tool("studio", command="deliver out.png")
+        assert not res["isError"] and (tmp_path / "out.png").exists(), res["content"][0]["text"]
+        assert (tmp_path / "out.png").stat().st_size > 100
+
+        # quoting: text with spaces and a hex colour travel as one argument each, no shell involved
+        res = c.tool("studio", command='note add "fox is too small" --layer fox')
+        assert not res["isError"] and "fox is too small" in res["content"][0]["text"]
+        res = c.tool("studio", command="recolor fox #ff8800")
+        assert not res["isError"], res["content"][0]["text"]
+        res = c.tool("studio", command="pixelcanvas studio history")           # a program prefix is tolerated
+        assert not res["isError"]
+
+        # refused with a clear message
+        for bad in ("../evil", "a/b", "a b", "", "..\\x", "x.py"):
+            res = c.tool("studio_layer", picture="fox", layer=bad, code="x = 1")
+            assert res["isError"] and "layer name" in res["content"][0]["text"], bad
+        res = c.tool("studio_layer", picture="../fox", layer="a", code="x = 1")
+        assert res["isError"] and "picture name" in res["content"][0]["text"]
+        res = c.tool("studio_read", picture="fox", layer="../../picture")
+        assert res["isError"] and "layer name" in res["content"][0]["text"]
+        res = c.tool("studio_read", picture="nobody")
+        assert res["isError"] and "no picture" in res["content"][0]["text"] and "fox" in res["content"][0]["text"]
+        res = c.tool("studio_draft", picture="fox", code="cv.fill('#000')")
+        assert res["isError"] and "# %%" in res["content"][0]["text"]
+        res = c.tool("studio", command='note add "unclosed')
+        assert res["isError"] and "quote" in res["content"][0]["text"]
+        assert c.tool("studio", command="   ")["isError"]
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["art", "out.png"]      # nothing escaped art/
+
+        res = c.tool("studio", command="frobnicate")                        # the CLI's did-you-mean, not a crash
+        assert res["isError"] and "did you mean" in res["content"][0]["text"]
+        res = c.tool("studio", command="api sk.circle")
+        assert not res["isError"] and "sk.circle" in res["content"][0]["text"] and not _images(res)
+    finally:
+        c.close()
 
 
 def test_mcp_unknown_legacy_version_is_tolerated(tmp_path):

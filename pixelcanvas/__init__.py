@@ -52,13 +52,13 @@ from .canvas import Canvas
 from . import illustrate
 from .illustrate import Sketch, paper, grade, limit_palette, MOODS, grow, edge, signed_distance
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # heavy kits: imported on first attribute access (``pixelcanvas.flora`` / ``from pixelcanvas import flora``) and
 # never star-imported, so names such as box / union / texture never shadow the 2D helpers above
 _LAZY = ("stylize", "scenery", "vector", "diagram", "chart", "drafting", "solid", "texture", "elements", "flora",
          "form", "figure", "creature", "layout", "clay", "pictograms", "palette", "backdrop", "ui", "spec", "catalog",
-         "cli", "mcp_server")
+         "studio", "cli", "mcp_server")
 
 __all__ = ["Canvas", "__version__"] + color.__all__ + noise.__all__ + masks.__all__ + brush.__all__ + filters.__all__ \
     + text.__all__ + ["sdf", "vision", "layers", "stylize", "manifest", "illustrate", "Sketch", "paper", "grade",

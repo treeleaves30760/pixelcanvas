@@ -1,0 +1,32 @@
+studio session: still_life
+request: a still life on a wooden table: three green apples in a white bowl, a blue mug right of the bowl, two yellow lemons in front of the bowl, a glass bottle on the left
+
+rev   1       -  new still_life
+rev   2     3/6  add --from draft.py (new table, bottle, bowl, apple, mug, lemon)
+rev   3     3/6  note add 1 2 3 4 5 6
+rev   4     4/6  recolor bottle 9fd8b8
+rev   5     4/6  scale apple 1.5
+rev   6     4/6  scale lemon 1.5
+rev   7     5/6  copy apple -> apple2 apple3
+rev   8     6/6  copy lemon -> lemon2
+rev   9     5/6  set bottle tint=none
+rev  10     2/6  add --from draft.py (changed bottle, bowl, apple, apple2, apple3, lemon, lemon2)
+rev  11     3/6  scale bowl 1.35
+rev  12     3/6  scale mug 1.2
+rev  13     4/6  copy apple --total 3 (laid out again)
+rev  14     5/6  copy lemon --total 2 (laid out again)
+rev  15     6/6  recolor bottle 9fd8b8
+rev  16     6/6  set bottle opacity=0.88
+rev  17     6/6  move bottle --by 0.08 0
+rev  18     6/6  move mug --by -0.03 0
+rev  19     6/6  crop 0.06 0.22 0.84 1.00
+rev  20     6/6  move bottle --by -0.05 0
+rev  21     6/6  note done 1 2 3 4 5 6
+
+notes (each fixed, then: note done N):
+  note 1: the bottle is near-black grey: it must read as pale green glass
+  note 2: only one apple and one lemon: the counts are three and two
+  note 3: the fruit is tiny next to the bowl: the apples and lemons need to be bigger
+  note 4: the bowl is a dull grey-beige, not white
+  note 5: 40 % of the frame is empty wall: the objects float small in the middle
+  note 6: the mug and bottle are far apart from the bowl: the group does not hold together

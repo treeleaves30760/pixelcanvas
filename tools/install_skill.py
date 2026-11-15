@@ -102,7 +102,7 @@ def install(skills, root=ROOT, name=NAME):
     with open(p, encoding="utf-8") as f:
         text = f.read()
     head = text.split(MARK)[0].rstrip() + "\n\n"
-    tool = "compose.py" if name == "pixelcanvas-lite" else "render.py"
+    tool = "compose.py" if name == "pixelcanvas-lite" else "studio.py"
     scripts = os.path.join(dst, "scripts")
     if os.path.isdir(scripts):                       # the skill's own bootstrap.py finds this runtime first
         with open(os.path.join(scripts, "ROOT.txt"), "w", encoding="utf-8") as f:
@@ -111,7 +111,11 @@ def install(skills, root=ROOT, name=NAME):
         head = head.replace("ROOT/tools/", root.replace("\\", "/") + "/tools/")
         with open(os.path.join(dst, "tools", "ROOT.txt"), "w", encoding="utf-8") as f:
             f.write(root + "\n")                     # tools/compose.py in the skill folder runs the real one
-    text = (f"{head}{MARK}\n\nProject root: `{root}`\n"
+    refs = os.path.join(dst, "references")              # the reference pages this page links to, as an absolute
+    if not os.path.isdir(refs):                          # folder: a relative link is read from the wrong place
+        refs = os.path.join(root, "skills", name, "references")
+    ref_line = f"references: {os.path.abspath(refs).replace(os.sep, '/')}/\n" if os.path.isdir(refs) else ""
+    text = (f"{head}{MARK}\n\n{ref_line}Project root: `{root}`\n"
             f"(The tools live in this folder: `python {root}/tools/{tool} ...`; scenes and pictures stay in your "
             f"project. After moving the runtime, run `python tools/install_skill.py` again.)\n")
     with open(p, "w", encoding="utf-8", newline="\n") as f:

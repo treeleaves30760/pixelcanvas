@@ -34,10 +34,15 @@ def test_rgb_forms_and_names():
 
 def test_rgb_rejects_malformed():
     import pytest
-    for bad in ("#ffb34", "#ggg", "ffb347", "#", "", "notacolour", "#ff00001"):
+    for bad in ("#ffb34", "#ggg", "ffb34", "#", "", "notacolour", "#ff00001"):
         with pytest.raises(ValueError) as e:
             rgb(bad)
         assert repr(bad) in str(e.value) and "#rrggbb" in str(e.value)
+
+
+def test_rgb_takes_a_bare_hex_as_the_studio_commands_do():
+    assert np.allclose(rgb("ffb347"), rgb("#ffb347")) and np.allclose(rgb("3a4048ff"), rgb("#3a4048"))
+    assert np.allclose(rgb("coral"), rgb("#ff7f50"))
 
 
 def test_lerp_mix_shapes():
@@ -228,7 +233,7 @@ def test_every_kit_module_imports_from_the_package():
         ns = {}
         exec(f"from pixelcanvas import {k}", ns)
         assert ns[k] is mod
-    assert pixelcanvas.__version__ == "0.4.0"
+    assert pixelcanvas.__version__ == "0.5.0"
     assert all(hasattr(pixelcanvas, n) for n in pixelcanvas.__all__)
     assert set(pixelcanvas._LAZY) <= set(dir(pixelcanvas))
 

@@ -452,10 +452,10 @@ def stars(cv, density=1.0, seed=0, milky_way=True, twinkle=1.0, mask=None, horiz
 
 
 def moon(cv, at=(0.75, 0.22), size=60, phase=0.5, seed=0, color="#f1ecdc", glow=0.6, tilt=0.0, earthshine=0.05):
-    """Moon disc with maria, craters, phase terminator and a soft halo.
+    """Moon disc with maria, craters and a soft halo; phase 0.5 = full (the default), 0 or 1 = new (dark).
 
     ``size`` = radius (1080p px); ``phase`` 0 = new, 0.25 = first quarter (lit right), 0.5 = full, 0.75 = last
-    quarter; ``tilt`` rotates the terminator (degrees). Returns FX with the disc mask and a cool light."""
+    quarter, 1 = new again; ``tilt`` rotates the terminator (degrees). Returns FX with the disc mask and a cool light."""
     S = _S(cv)
     cx, cy = _xy(cv, at)
     r = size * S

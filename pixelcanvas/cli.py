@@ -3,6 +3,7 @@
 
   pixelcanvas new NAME --kind poster [--dir DIR]     create a scene from a template (tools/new_scene.py)
   pixelcanvas render SCENE --scale 0.5 --check       render a scene by name or path (tools/render.py)
+  pixelcanvas studio new NAME --prompt "..."         a picture as layers edited step by step (tools/studio.py)
   pixelcanvas look | layers | styles | fonts | kit   the other tools/<name>.py (any tool that exists)
   pixelcanvas doctor [--json]                        check Python, numpy, Pillow, fonts, write access, a test render
   pixelcanvas mcp                                    run the stdio MCP server (pixelcanvas.mcp_server)
@@ -443,6 +444,7 @@ def _usage():
   new NAME --prompt "REQUEST"            create a scene for a request (--kind KIND picks a template; --list)
   render SCENE [--scale 0.5] [--check]   render a scene (name or path); --deliver PATH copies the result
   compose SPEC.json --check              draw from a JSON spec (compose --example poster writes one)
+  studio new NAME --prompt "REQUEST"     a picture as layers you edit step by step (studio help)
   look VIEW IMAGE ...                    inspect a picture (guides, zoom, values, critique, report, ask ...)
   match REF.png [DRAFT.png]              a reference picture's style sheet; with a draft, its gaps to the reference
   styles list                            the art styles (styles pick "REQUEST" chooses one)

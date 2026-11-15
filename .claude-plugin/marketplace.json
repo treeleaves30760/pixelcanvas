@@ -9,7 +9,7 @@
     {
       "name": "pixelcanvas",
       "source": "./",
-      "description": "Draw with code: posters, illustrations, landscapes, diagrams, charts, UI mock-ups, technical drawings and 3D objects (numpy + Pillow), with a render -> look -> fix loop.",
+      "description": "Draw with code: posters, illustrations, landscapes, diagrams, charts, UI mock-ups, technical drawings and 3D objects (numpy + Pillow), as layers your agent edits one command at a time: draft, look, fix, deliver.",
       "category": "design",
       "homepage": "https://github.com/treeleaves30760/pixelcanvas"
     }

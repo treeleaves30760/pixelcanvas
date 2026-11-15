@@ -193,6 +193,13 @@ def likely_causes(exc, frames):
             except (TypeError, ValueError):
                 pass
         out.append(f"unknown keyword {kw!r} for {name}().{extra} See skills/pixelcanvas/references/api.md for the options.")
+    m = re.search(r"([\w.]+)\(\) got multiple values for (?:keyword )?argument '(\w+)'", msg)
+    if m:
+        kw = m.group(2)
+        twin = {"color": "colour", "center": "centre", "gray": "grey"}.get(kw)
+        said = twin and re.search(r"\b%s\s*=" % twin, src)
+        out.append(f"{m.group(1)}() got {kw!r} twice: " + (f"write {kw}= (not {twin}=) and pass it once."
+                   if said else "it is passed both by position and as a keyword; pass it once."))
     m = re.search(r"([\w.]+)\(\) missing (\d+) required (?:positional|keyword-only) arguments?: (.+)", msg)
     if m:
         fn = _lookup_callable(m.group(1)) or _lookup_callable(m.group(1).split(".")[-1])

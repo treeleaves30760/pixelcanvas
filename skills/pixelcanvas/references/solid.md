@@ -24,6 +24,8 @@ cv.save("car.png")
 
 Units are metres, y is up, the floor is y = 0, the default camera looks from +z. Build shapes around the origin,
 then move them: `box(1, 0.5, 2).rotate_y(30).at(1, 0.25, 0)`, or `.place(x, z)` to stand anything on the floor.
+In a studio draft the whole scene is one section (one camera, one light, shadows and occlusion between the objects);
+name every `sc.add(..., "car")` and the report measures each named object: its box, cut by or outside the frame.
 
 ## Calls
 

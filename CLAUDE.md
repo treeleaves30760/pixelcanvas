@@ -1,10 +1,13 @@
 # CLAUDE.md: developing pixelcanvas
 
 pixelcanvas is an Agent Skill and a Python package that draws finished pictures with numpy + Pillow. Agents read
-`skills/pixelcanvas/SKILL.md`, design the picture, draw it freehand (`illustrate.Sketch`, `cv.draw()`) with kits as
-ingredients where structure is the hard part, and iterate with `tools/render.py --check` and `tools/look.py`. Small
-local models use `skills/pixelcanvas-lite` and `tools/compose.py` (one JSON spec). To draw inside this repo, follow
-SKILL.md.
+`skills/pixelcanvas/SKILL.md` and work in the studio (`tools/studio.py`): a picture is a persistent stack of layers
+in `./art/NAME/`, one `# %% name` section of one draft file per object (freehand with `illustrate.Sketch`, kits as
+ingredients), edited one command at a time; every command re-renders what changed, checks the picture against the
+sections' inventory lines and prints one `NEXT:` line, and a look sheet (`look.png`) shows each item close up until
+the picture is finished; a finished drawing can be delivered in a real art medium (`studio set scene medium=oil`).
+Small local models use `skills/pixelcanvas-lite` and `tools/compose.py` (one JSON spec). To draw inside this repo,
+follow SKILL.md.
 
 ## Project map
 
@@ -50,10 +53,17 @@ pixelcanvas/chart.py      charts, KPI tiles and dashboards on vector
 pixelcanvas/ui.py         declarative UI screens in device frames with auto layout
 pixelcanvas/drafting.py   engineering sheets: views, dimensions, sections, plans, SVG and DXF
 pixelcanvas/spec.py       spec mode: a picture from a small JSON spec (pcscene), placed by words, drawn by the kits
+pixelcanvas/studio/       the studio: state (picture.json, needs, notes, history), engine (draft sections, namespace,
+                          cache), compositor (place, effects, scene look), check (inventory-line checklist, NEXT,
+                          looks), commands (every verb, look sheet, api, deliver, export)
+pixelcanvas/medium/       the medium stage: layers -> per-pixel buffers (colour, relief, normals, depth, emission), one key
+                          light, then render / flat / oil / watercolour / ink / pixel painted as their own process
 pixelcanvas/cli.py        the `pixelcanvas` command
 pixelcanvas/mcp_server.py MCP server (stdlib only) exposing the tools and reference pages
 scenes/                   example scenes (gallery, illustration_*.py freehand) and 30 starter templates
                           _template_<kind>.py (illustration, poster, chart, diagram, ui, drawing, floorplan, ...)
+tools/studio.py           `pixelcanvas studio`: new --from, add --from, move / scale / fit / order / set / recolor /
+                          put / copy, look, note, need, api, undo / history / compare, deliver, export
 tools/                    render, look, kit, new_scene, compose (JSON specs), match (reference style sheet and
                           gaps: match.py REF.png [DRAFT.png]), layers, styles, fonts, pc (one entry), build_gallery,
                           install_skill (--skill pixelcanvas | pixelcanvas-lite | both), release_check

@@ -30,12 +30,14 @@ def _parse_str(c):
     if key in _NAMES:
         s = _NAMES[key]
     h = s[1:] if s.startswith("#") else s
+    if not s.startswith("#") and len(h) in (6, 8) and all(ch in "0123456789abcdefABCDEF" for ch in h):
+        s = "#" + h                                      # a bare hex as the studio commands take it: 'c4501c'
     if s.startswith("#") and len(h) in (3, 4, 6, 8) and all(ch in "0123456789abcdefABCDEF" for ch in h):
         if len(h) in (3, 4):
             h = "".join(ch * 2 for ch in h)
         return np.array([int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4)], F32)
     raise ValueError(
-        f"invalid colour {c!r}: use '#rgb', '#rgba', '#rrggbb', '#rrggbbaa', a CSS colour name "
+        f"invalid colour {c!r}: use '#rgb', '#rgba', '#rrggbb' (or 'rrggbb'), '#rrggbbaa', a CSS colour name "
         f"(e.g. 'navy', 'gold', 'coral'), or an (r, g, b) tuple")
 
 

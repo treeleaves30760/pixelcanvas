@@ -124,7 +124,7 @@ def reject_unknown(owner, given, allowed, aliases=None):
 def unknown_name(kind, name, valid, hint=None):
     """Return a ValueError for an unknown registry name, with the closest valid names."""
     valid = [str(v) for v in valid]
-    close = difflib.get_close_matches(str(name), valid, n=3, cutoff=0.5)
+    close = [c for c in difflib.get_close_matches(str(name), valid, n=4, cutoff=0.5) if c != str(name)][:3]
     msg = "unknown %s '%s'" % (kind, name)
     if close:
         msg += " — did you mean %s?" % " or ".join("'%s'" % m for m in close)
@@ -140,7 +140,7 @@ def check_choice(owner, option, value, choices):
     if value in choices:
         return value
     ch = [str(c) for c in choices]
-    close = difflib.get_close_matches(str(value), ch, n=3, cutoff=0.5)
+    close = [c for c in difflib.get_close_matches(str(value), ch, n=4, cutoff=0.5) if c != str(value)][:3]
     msg = "%s: invalid %s %r" % (owner, option, value)
     if close:
         msg += " — did you mean %s?" % " or ".join("'%s'" % m for m in close)

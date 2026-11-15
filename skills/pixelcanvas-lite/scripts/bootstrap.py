@@ -36,7 +36,7 @@ for _s in (sys.stdout, sys.stderr):              # Windows consoles default to a
         except (ValueError, OSError):
             pass
 
-VERSION = "0.4.0"                      # fallback when SKILL.md is not next to this script
+VERSION = "0.5.0"                      # fallback when SKILL.md is not next to this script
 MARKER = ".pixelcanvas-managed"
 REPO = "treeleaves30760/pixelcanvas"
 GIT_URL = f"https://github.com/{REPO}.git"

@@ -505,3 +505,13 @@ def test_form_objects_record_under_the_requests_word():
     E = {e["name"]: e for e in manifest.entries(cv)}
     assert {"lemon", "candle", "vase", "crate"} <= set(E)
     assert "citrus" in E["lemon"]["aliases"] and "ball" in E["lemon"]["aliases"]
+
+
+def test_color_word_is_the_body_colour():
+    from pixelcanvas import Canvas
+    from pixelcanvas import form as _fm
+    cv = Canvas(120, 90)
+    _fm.lathe(cv, (0.5, 0.8), [(0.1, 0), (0.2, 0.2)], color="#ff0000")
+    _fm.cylinder(cv, (0.5, 0.8), 0.05, 0.1, colour="#0000ff")
+    r, g, b = cv.buf[70, 60]
+    assert b > r and b > g

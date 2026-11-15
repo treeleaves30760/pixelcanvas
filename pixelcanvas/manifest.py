@@ -821,7 +821,8 @@ def note_render3d(cv, result):
             m = result.mask(nm)
         except Exception:                                # noqa: BLE001
             continue
-        _note_raw(cv, "object", nm, mask=m)
+        if _note_raw(cv, "object", nm, mask=m, solid3d=True) is None:      # added, but nowhere in the frame
+            cv.__dict__.setdefault("solid_unseen", []).append(str(nm))
 
 
 # --------------------------------------------------------------------------------------------- reading

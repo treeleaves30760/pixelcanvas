@@ -10,6 +10,7 @@ Speaks JSON-RPC 2.0, one message per line on stdin / stdout. Both protocol eras 
 * legacy (2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05): ``initialize`` handshake; a client asking for an unknown
   version gets the newest legacy version back.
 
+Studio tools (studio, studio_draft, studio_layer, studio_read) drive tools/studio.py in ./art/NAME/.
 Methods: server/discover, initialize, ping, tools/list, tools/call, resources/list, resources/read,
 resources/templates/list, prompts/list. Scenes are created and rendered in the server's working directory
 (or $PIXELCANVAS_WORK); every tool runs the matching tools/*.py in a child process, so a failing scene comes back as
@@ -22,6 +23,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -36,10 +38,14 @@ TIMEOUT = float(os.environ.get("PIXELCANVAS_MCP_TIMEOUT", "900"))
 
 INSTRUCTIONS = """pixelcanvas draws pictures with code (numpy + Pillow): posters, illustrations, landscapes, diagrams,
 charts, UI mock-ups, technical drawings, 3D objects, typography in any language.
-The loop: new_scene(name, kind) -> edit the file (read_scene / write_scene) -> render(scene) and look at the
-preview image -> fix the 2-4 worst problems -> render again. Use kinds() to pick a template, find("...") to find
-the right kit call, reference("api") for the API. Every render returns the --check report (WARNINGS / TEXT /
-OBJECTS / PROMPT) as text and the preview as an image."""
+The studio loop (illustrations, paintings, designs): studio(command='new fox --prompt "a fox by a lantern" --size
+1280x720') -> studio_draft(picture, code) writes every object as a '# %% name' section and renders it -> do what
+the NEXT line of each report says (studio for move / scale / look / note / need / recolor / undo,
+studio_layer to redraw one object, studio_read to see the code). studio(command="api sk.paint") explains any drawing
+call; reference("studio") lists every command.
+Single-file scenes (charts, diagrams, UI, drawings): new_scene(name, kind) -> write_scene -> render(scene) and look
+at the preview -> fix the worst problems -> render again. kinds() picks a template, find("...") finds the kit call,
+reference("api") is the API."""
 
 # ----------------------------------------------------------------------------------------------- helpers
 
@@ -386,6 +392,143 @@ def t_layers(a):
     return content
 
 
+# ----------------------------------------------------------------------------------------------- studio
+
+PICTURE_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
+LAYER_RE = re.compile(r"[A-Za-z0-9_]+")
+STUDIO_PREFIX = re.compile(r"^\s*(?:(?:python3?|py)\s+\S*studio\.py|pixelcanvas\s+studio|studio)\s+", re.I)
+
+
+def _picture_name(name):
+    name = str(name or "").strip()
+    if not PICTURE_RE.fullmatch(name):
+        raise ToolError(f"picture name {name!r}: use letters, digits, _ and - (e.g. fox)")
+    return name
+
+
+def _layer_name(name):
+    name = str(name or "").strip()
+    if not LAYER_RE.fullmatch(name):
+        raise ToolError(f"layer name {name!r}: use letters, digits and _ only (e.g. lantern)")
+    return name
+
+
+def _picture_dir(name):
+    """art/NAME inside the work folder (it must hold a picture); the resolved path never leaves the art folder."""
+    name = _picture_name(name)
+    art = os.path.realpath(os.path.join(_workdir(), "art"))
+    d = os.path.realpath(os.path.join(art, name))
+    if os.path.dirname(d) != art:
+        raise ToolError(f"picture {name!r} is outside the art folder")
+    if not os.path.isfile(os.path.join(d, "picture.json")):
+        have = sorted(x for x in (os.listdir(art) if os.path.isdir(art) else [])
+                      if os.path.isfile(os.path.join(art, x, "picture.json")))
+        raise ToolError(f"no picture {name!r}" + (f" (pictures: {', '.join(have)})" if have else "")
+                        + f"; start one with studio(command='new {name} --prompt \"...\" --size WxH')")
+    return d
+
+
+def _write_text(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text if text.endswith("\n") else text + "\n")
+
+
+def _split_command(command):
+    """Split like a shell would (quotes group words, # is no comment); backslashes stay literal so Windows paths work."""
+    command = STUDIO_PREFIX.sub("", str(command or "")).strip()
+    if not command:
+        raise ToolError("command is empty; try studio(command=\"help\")")
+    lex = shlex.shlex(command, posix=True)
+    lex.whitespace_split, lex.commenters, lex.escape = True, "", ""
+    try:
+        return list(lex)
+    except ValueError as e:
+        raise ToolError(f"cannot read the command ({e}); close every quote, or use single quotes around text that "
+                        "holds double quotes")
+
+
+def _for_mcp(text):
+    """The CLI names itself in its NEXT lines; an MCP client calls tools instead."""
+    text = re.sub(r"write \S+draft\.py, then: python3? \S*studio\.py add --from \S+",
+                  "studio_draft(picture, code) with the whole draft", text)
+    text = re.sub(r"python3? \S*studio\.py add --from \S+", "studio_draft(picture, code) with the whole draft", text)
+    return re.sub(r"python3? \S*studio\.py", "studio command:", text)
+
+
+def _studio_result(argv):
+    """Run one studio command -> content blocks: the report, then the picture it rendered or the look it made."""
+    code, out, err = _run("studio", argv)
+    text = _for_mcp((out.rstrip() + ("\n" + err.strip() if err.strip() else "")).strip() or "(no output)")
+    if code:
+        raise ToolError(_clip(text))
+    content = [_text(_clip(text))]
+    looked = re.findall(r"(?:^|\s)look: (\S+\.(?:png|jpg))", out, re.M)      # the look sheet the report names
+    shown = looked or re.findall(r"picture: (\S+\.(?:png|jpg))", out)
+    for p in shown[:1]:
+        img = _image_block(p)
+        if img:
+            content.append(img)
+    return content
+
+
+def t_studio(a):
+    argv = _split_command(a.get("command"))
+    if a.get("picture") and argv[0] != "new":
+        argv += ["-p", _picture_name(a["picture"])]
+    return _studio_result(argv)
+
+
+def t_studio_draft(a):
+    d = _picture_dir(a.get("picture"))
+    code_src = a.get("code")
+    if not isinstance(code_src, str) or not code_src.strip():
+        raise ToolError("code is empty: pass the whole draft, one '# %% name' section per object")
+    if not re.search(r"^# %% ?\S", code_src, re.M):
+        raise ToolError("the draft needs '# %% name' section lines, one per object, back to front, e.g.\n"
+                        "# %% background\ncv.fill(...)\n# %% fox\n...")
+    path = os.path.join(d, "draft.py")
+    _write_text(path, code_src)
+    rel = os.path.relpath(path, _workdir()).replace(os.sep, "/")
+    return _studio_result(["add", "--from", rel, "-p", os.path.basename(d)])
+
+
+def t_studio_layer(a):
+    d = _picture_dir(a.get("picture"))
+    layer = _layer_name(a.get("layer"))
+    code_src = a.get("code")
+    if not isinstance(code_src, str) or not code_src.strip():
+        raise ToolError("code is empty: pass the cell body (the drawing code of this one object)")
+    _write_text(os.path.join(d, "layers", layer + ".py"), code_src)
+    return _studio_result(["render", "-p", os.path.basename(d)])
+
+
+def t_studio_read(a):
+    d = _picture_dir(a.get("picture"))
+    if a.get("layer"):
+        layer = _layer_name(a["layer"])
+        path = os.path.join(d, "layers", layer + ".py")
+        if not os.path.isfile(path):
+            have = sorted(f[:-3] for f in os.listdir(os.path.join(d, "layers")) if f.endswith(".py"))
+            raise ToolError(f"no layer {layer!r} in {os.path.basename(d)}; layers: {', '.join(have)}")
+        with open(path, encoding="utf-8") as f:
+            return [_text(f"layers/{layer}.py\n\n```python\n{f.read()}\n```")]
+    with open(os.path.join(d, "picture.json"), encoding="utf-8") as f:
+        info = json.load(f)
+    rows = []
+    for L in info.get("layers", []):
+        desc = L.get("desc") or ""
+        rows.append(f"  {L.get('name')}" + (f": {desc}" if desc else ""))
+    size = "x".join(str(v) for v in info.get("size", []))
+    parts = [f"picture {info.get('name')}: {info.get('prompt', '')} ({size})",
+             "layers, back to front (studio_read with layer = its code):\n" + ("\n".join(rows) or "  (none yet)")]
+    draft = os.path.join(d, "draft.py")
+    if os.path.isfile(draft):
+        with open(draft, encoding="utf-8") as f:
+            parts.append(f"draft.py\n\n```python\n{f.read()}\n```")
+    return [_text(_clip("\n\n".join(parts), 20000))]
+
+
 S = lambda d, **kw: dict({"type": "string", "description": d}, **kw)            # noqa: E731
 N = lambda d, **kw: dict({"type": "number", "description": d}, **kw)            # noqa: E731
 B = lambda d, **kw: dict({"type": "boolean", "description": d}, **kw)           # noqa: E731
@@ -396,8 +539,38 @@ def _schema(props, required=()):
 
 
 TOOLS = [
+    ("studio", "Run one studio command and get its report plus the look sheet (the picture, then every item "
+               "close up) when the picture changed. The loop: "
+               "command 'new fox --prompt \"a fox by a lantern\" --size 1280x720' (a picture lives in art/NAME), "
+               "then studio_draft with the code, then do what the NEXT line of each report says: move fox --to 0.4 0.7, "
+               "scale, recolor, copy, set, put, crop, look (one image to check), look fox, need, note add \"...\", "
+               "undo, history, batch \"CMD\" \"CMD\"; NEXT says when the picture is finished. 'api sk.paint' "
+               "explains any drawing call, "
+               "'help' lists every command; reference(page='studio') is the full manual. The command is split like a "
+               "shell would split it: quote text with spaces.",
+     _schema({"command": S("one studio command without the program name, e.g. 'move fox --to 0.4 0.7' or "
+                           "'look' or 'deliver out.png --scale 2'"),
+              "picture": S("picture name when more than one exists (default: the current one)")},
+             ["command"]), t_studio),
+    ("studio_draft", "Write the first draft of a picture in one call: the whole draft.py, one '# %% name' section "
+                     "per object, back to front (background first), each section draws ONE thing with cv, sk, W, H, S "
+                     "and the kits. Runs 'add --from' and returns the report with the look sheet. Run studio "
+                     "'new NAME ...' first; studio(command='api sk.paint creature') shows call arguments.",
+     _schema({"picture": S("picture name, e.g. fox"),
+              "code": S("the whole draft: '# %% name' section lines, each followed by that object's code")},
+             ["picture", "code"]), t_studio_draft),
+    ("studio_layer", "Redraw one object: write its cell body to layers/LAYER.py (new or existing layer) and render. "
+                     "Returns the report and the look sheet. Use after a report says an object needs a fix.",
+     _schema({"picture": S("picture name, e.g. fox"),
+              "layer": S("layer name: letters, digits and _ (e.g. lantern)"),
+              "code": S("the cell body: drawing code for this one object")},
+             ["picture", "layer", "code"]), t_studio_layer),
+    ("studio_read", "Read a picture's code: with layer, that cell's source; without, the layers with their "
+                    "descriptions and the draft. Read before editing what exists.",
+     _schema({"picture": S("picture name, e.g. fox"), "layer": S("layer name (optional)")},
+             ["picture"]), t_studio_read),
     ("kinds", "List the starter templates (kinds) with one line each: poster, landscape, diagram, chart, ui, "
-              "isometric, product ... Pick the closest before new_scene.", _schema({}), t_kinds),
+              "isometric, product ... Pick the closest before new_scene (single-file scenes: charts, diagrams, UI).", _schema({}), t_kinds),
     ("new_scene", "Create a scene file from a template and return its source. The template already renders a "
                   "finished picture; replace its content, keep its structure.",
      _schema({"name": S("file name: lower-case letters, digits and _ (e.g. night_market)"),
@@ -437,7 +610,7 @@ TOOLS = [
     ("find", "Search the kit catalogue for the call that draws a subject (\"campfire\", \"bar chart\", \"oak tree\", "
              "\"isometric box\"). Returns calls with their reference page.",
      _schema({"query": S("what you want to draw or do")}, ["query"]), t_find),
-    ("reference", "Read a reference page: SKILL (the workflow), api, techniques, typography, review, diagrams, "
+    ("reference", "Read a reference page: studio (every studio command), SKILL (the workflow), api, techniques, typography, review, diagrams, "
                   "charts, solid, styles, textures, ui ... (the error lists all pages).",
      _schema({"page": S("page name, e.g. api or typography")}, ["page"]), t_reference),
     ("ask", "Ask the configured vision model (PIXELCANVAS_VLM) a question about a picture, e.g. \"does this read "

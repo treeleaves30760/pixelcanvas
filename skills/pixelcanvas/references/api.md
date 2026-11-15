@@ -17,6 +17,7 @@ layers and the manifest behind `--check`. `python tools/kit.py find "..."` names
 | `texture` | materials: wood, stone, brick, fabric, metal, fur, lava | [textures.md](textures.md) |
 | `form` | 2.5D objects with volume: still lifes, rooms, one light | [forms.md](forms.md) |
 | `solid` | ray-marched 3D: products, rooms, vehicles, isometric dioramas | [solid.md](solid.md) |
+| `medium` | the picture delivered as a render, flat graphic, oil, watercolour, ink or pixel art | [medium.md](medium.md) |
 | `scenery` | landscape recipes: sky, mountains, rivers, pines, god rays | [below](#landscapes-pixelcanvasscenery) |
 | `text` | exact text in any language, auto-fit, wrapping, effects | [typography.md](typography.md) |
 | `layout` | boxes, grids, stacks, poster and card templates, themes; `THEME_KEYS`, `role_color` | [typography.md](typography.md) |

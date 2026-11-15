@@ -709,7 +709,10 @@ class Sketch:
         area = float(m[bb[0]:bb[1], bb[2]:bb[3]].sum())
         R = math.sqrt(max(area, 1.0) / math.pi)
         k = self._detail(area)
-        shade, highlight, volume = float(shade) * k, float(highlight) * k, float(volume) * k
+        hollow = float(volume) < 0                       # volume < 0: a hollow (a bowl's inside), lit from the far side
+        rec_vol = (abs(float(volume)) if volume else 0.6 * float(shade)) * (-1.0 if hollow else 1.0)
+        shade, highlight, volume = float(shade) * k, float(highlight) * k, abs(float(volume)) * k
+        from .medium import record as _rec
         spec = float(spec)                              # cues a small thing needs too: not scaled by detail
         H_, W_ = m.shape
 
@@ -726,7 +729,9 @@ class Sketch:
         if isinstance(shadow, str) and shadow == "ground":   # contact shadow on the floor under the bottom edge
             w = bb[3] - bb[2]
             cx = (bb[2] + bb[3]) / 2 - self.light[0] * 0.12 * w
-            self._blend("#1d1830", oval(cx, bb[1] - 0.015 * w, 0.62 * w, max(0.1 * w, 2.0)), 0.5 * opacity)
+            gs = oval(cx, bb[1] - 0.015 * w, 0.62 * w, max(0.1 * w, 2.0))
+            self._blend("#1d1830", gs, 0.5 * opacity)
+            _rec.note(self.cv, "shadow", gs * F32(0.5 * opacity), as_color("#1d1830"), strength=0.5)
             shadow = None
         if shadow:
             sh = dict(offset=None, blur=0.012, opacity=0.3, color="#1d1830")
@@ -743,16 +748,20 @@ class Sketch:
             s = _windowed(m, abs(dx) + abs(dy) + 3 * blur + 2,
                           lambda sub: _f.gaussian_blur(shift(sub, dx, dy), blur) if blur > 0 else shift(sub, dx, dy))
             self._blend(sh["color"], s, sh["opacity"] * opacity * k)
+            _rec.note(self.cv, "shadow", s * F32(sh["opacity"] * opacity * k), as_color(sh["color"]),
+                      strength=sh["opacity"])
         if glow is not None and glow is not False:
             gl = dict(color=glow, radius=0.03, strength=0.8) if not isinstance(glow, dict) else                 dict(dict(color="#ffd27a", radius=0.03, strength=0.8), **glow)
             r = self.size(gl["radius"])
             g = _windowed(m, 3 * r, lambda sub: _f.gaussian_blur(sub, r)) * F32(gl["strength"] * opacity)
+            _rec.note(self.cv, "light", clamp01(g), as_color(gl["color"]), strength=gl["strength"])
             if self._dst:
                 self._blend(gl["color"], clamp01(g))
             else:
                 self.cv.paint(gl["color"], g, "add")
         col, base = self._fill_color(m, color, angle, bb)
         self._blend(col, m, opacity)
+        rec_body = _rec.note(self.cv, "body", m * F32(opacity), col, volume=rec_vol, gloss=float(spec))
         lx, ly = self.light
         from .masks import shift
         dark = as_color(shade_color) if shade_color is not None else _shadow_of(base)
@@ -769,7 +778,8 @@ class Sketch:
 
             def fv(sub):
                 inside = clamp01(-signed_distance(sub, reach + 2) / reach)       # 0 at the edge -> 1 deep inside
-                away = _f.gaussian_blur(shift(sub, lx * 0.5 * R, ly * 0.5 * R), 0.4 * R)
+                sx_, sy_ = (-lx, -ly) if hollow else (lx, ly)
+                away = _f.gaussian_blur(shift(sub, sx_ * 0.5 * R, sy_ * 0.5 * R), 0.4 * R)
                 return sub * (1.0 - inside) ** 1.6 * (0.45 + 0.55 * clamp01(1.0 - away))
             self._blend(dark, _windowed(m, R, fv) * F32(min(float(volume), 1.0)), opacity)
         if shade:
@@ -793,13 +803,17 @@ class Sketch:
             a = 0.16 * min(hw, hh)
             sp = oval((x0 + x1) / 2 + lx * 0.5 * hw, (y0 + y1) / 2 + ly * 0.5 * hh, a, 0.75 * a, 0.25) * m
             self._blend((1.0, 0.99, 0.96), sp * F32(min(float(spec), 1.0) * 0.9), opacity)
+        if not self._dst:
+            _rec.painted(self.cv, rec_body)                # what the paint left: shading, highlight, spec
         if line is not None and line is not False:
             lw = line_width
             if isinstance(line, str) and line == "ink":                 # comic / ink styles: bold near-black line
                 lc, lw = "#15131a", line_width * 2.4
             else:
                 lc = base * np.array([0.42, 0.38, 0.45], F32) if line is True else line
-            self._blend(lc, self.outline(m, lw), opacity)
+            om = self.outline(m, lw)
+            self._blend(lc, om, opacity)
+            _rec.note(self.cv, "line", om * F32(opacity), as_color(lc))
         if name:
             _manifest.note(self.cv, kind, name, mask=m, extent=ext)
         return Shape(m, ext)
@@ -1035,15 +1049,17 @@ class Sketch:
             _manifest.note(self.cv, "object", name, mask=pool)
         return pool
 
-    def steam(self, at, size=0.15, n=3, color="#ffffff", opacity=0.8, seed=0, name=None):
-        """Rising steam above the point ``at``: ``n`` tapered, wavy wisps ``size`` tall with a soft glow, readable on
-        dark and light grounds (a faint cool edge). Returns their mask."""
+    def steam(self, at, size=0.15, n=3, color="#ffffff", opacity=0.8, seed=0, name=None, height=None, width=None):
+        """Rising steam above the point ``at``: ``n`` tapered, wavy wisps ``size`` tall (``height`` says the same)
+        spread over ``width`` (default 0.6 x the height), with a soft glow, readable on dark and light grounds (a
+        faint cool edge). Returns their mask."""
         rng = np.random.default_rng(seed)
         ax, ay = self.px(*at)
-        Hs = self.size(size)
+        Hs = self.size(height if height is not None else size)
+        gap = (self.size(width) / max(int(n) - 1, 1)) if width is not None and int(n) > 1 else 0.3 * Hs
         parts = []
         for i in range(int(n)):
-            x0 = ax + (i - (n - 1) / 2) * 0.3 * Hs
+            x0 = ax + (i - (n - 1) / 2) * gap
             ph = rng.random() * 6
             ts = np.linspace(0, 1, 7)
             P = np.stack([x0 + 0.12 * Hs * np.sin(ts * 5 + ph) * (0.4 + ts), ay - Hs * ts], 1)

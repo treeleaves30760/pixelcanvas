@@ -605,8 +605,15 @@ def _window_mask(a, b, blur):
     return box
 
 
+_LAST_LIT = []                                           # the last lit normal fields (recorded by _finish_solid)
+_LAST_SOLID = []                                         # the last Solid's normals
+_LAST_REC = []                                           # a lathe's own record for the medium (hollow inside)
+
+
 def _illuminate(nx, ny, nz, base, m, light, occl=None, behind=None):
     """Light a normal field → (colour (h, w, 3), alpha (h, w) or None)."""
+    _LAST_LIT.append(dict(n=(nx, ny, nz), base=base, spec=min(1.0, float(m.get("ks", 0.0)) * 1.5 + float(m.get("env", 0.0)))))
+    del _LAST_LIT[:-6]
     L = light.vec
     lc = rgb(light.color) * F32(light.intensity)
     sky = rgb(light.sky)
@@ -1086,6 +1093,8 @@ class Solid:
         self.alpha = alpha
         self.anchors = dict(anchors or {})
         self.normals = normals
+        if normals is not None:                          # the final normal field, for _finish_solid's record
+            _LAST_SOLID[:] = [normals]
         self.material = material
         self.light = light
         self.hmap = hmap
@@ -1142,6 +1151,25 @@ class Solid:
 
 
 def _finish_solid(cv, col, alpha, box, opacity=1.0):
+    from .medium import record as _rec
+    lit = next((d for d in _LAST_LIT if np.shape(d["n"][0]) == np.shape(alpha)), None)   # the body's own lighting
+    own = _LAST_REC[0] if _LAST_REC and np.shape(_LAST_REC[0]["base"])[:2] == np.shape(alpha) else None
+    if own is not None:
+        _LAST_REC.clear()
+    if _rec.active(cv) and lit is not None:              # its local colour and true normals, for the medium
+        nx, ny, nz = lit["n"]
+        if _LAST_SOLID and np.shape(_LAST_SOLID[0][0]) == np.shape(alpha):
+            nx, ny, nz = _LAST_SOLID[0]                  # with the lathe's cap blended in
+        base = as_color(lit["base"])
+        if own is not None:
+            nx, ny, nz = own["n"]
+            base = own["base"]
+        base = base.reshape(-1)[:3] if base.size == 3 else np.broadcast_to(base, np.shape(alpha) + (3,))
+        _rec.note(cv, "solid", np.asarray(alpha, F32) * float(opacity), base, volume=1.0,
+                  hollow=own.get("hollow") if own is not None else None, painted=col,
+                  gloss=min(1.0, lit.get("spec", 0.0)), off=(box[0], box[1]),
+                  normals=np.stack([np.broadcast_to(nx, np.shape(alpha)), np.broadcast_to(ny, np.shape(alpha)),
+                                    np.broadcast_to(nz, np.shape(alpha))], -1))
     cv.paste(col, box[0], box[1], mask=alpha * float(opacity))
 
 
@@ -1384,6 +1412,11 @@ def lathe(cv, at, profile, base="#d8d2c8", material="ceramic", light=None, tilt=
         nx = nx * (1 - w2) + up_n[0] * w2
         ny = ny * (1 - w2) + up_n[1] * w2
         nz = nz * (1 - w2) + up_n[2] * w2
+        if open:                                         # the medium sees the hollow: inner wall, its occlusion
+            wi = (w_in * wcap)[..., 0]
+            rn = tuple(a_ * (1 - wi) + b_ * wi for a_, b_ in zip((nx, ny, nz), wn))
+            rb = np.broadcast_to(base_c, X.shape + (3,)) * (1 - wi[..., None]) +                 np.broadcast_to(in_c, X.shape + (3,)) * (occ_in[..., None] ** 0.8) * wi[..., None]
+            _LAST_REC[:] = [dict(n=rn, base=rb.astype(F32), hollow=wi.astype(F32))]
     sol = _attach(Solid(cv, box, alpha, anchors, (nx, ny, nz), material, light, hmap, occ), at, cv)
     sol._point = _point
     _ground_shadows(cv, shadow, cast, light, (bx, by), max(r0, rmax * 0.8), se, alpha, box, anchors, at=at)
@@ -2751,8 +2784,15 @@ def _strict_kw(fn, owner, extra=()):
     allowed = names + [e for e in extra if e not in names]
     known = frozenset(allowed)
 
+    body = "base" in names
+
     @functools.wraps(fn)
     def wrapper(*a, **k):
+        if body:                                         # color= / colour= on a solid is its body colour
+            for w in ("color", "colour"):
+                if w in k:
+                    v = k.pop(w)
+                    k.setdefault("base", v)
         if k and not known.issuperset(k):
             k = _reject_unknown(owner, k, allowed)
         return fn(*a, **k)

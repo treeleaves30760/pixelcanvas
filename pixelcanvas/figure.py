@@ -498,6 +498,9 @@ _MAT = dict(skin=dict(preset="skin", ks=0.07, sss=0.35, rim=0.05, wrap=0.45),
 _SHK = dict(flat=0.6, anime=0.72, line=0.5, soft=0.0)
 
 
+_VOL = {"skin": 0.5, "cloth": 0.4, "hair": 0.25, "shoe": 0.4, "metal": 0.4}   # volume hints for the medium
+
+
 class _Painter:
     """Paints the parts of one figure into a private RGBA buffer (one paste per figure)."""
 
@@ -513,6 +516,7 @@ class _Painter:
         base_w = {"line": 0.034, "anime": 0.02}.get(style, 0.0)
         self.lw = max(0.9, hu * base_w) * (line if line else 1.0) if base_w else 0.0
         self.ink = _col(INK)
+        self.recs = []                                   # (window, coverage, colour, volume) per part: the medium
 
     def win(self, pts, pad):
         xs = [p[0] for p in pts]
@@ -599,6 +603,7 @@ class _Painter:
                 self.col[b0:b1, a0:a1] *= (1 - S[..., None] * (1 - mult))
         A = A * float(opacity)
         self._comp(sl, col, A)
+        self.recs.append((sl, A, base, _VOL.get(kind, 0.45) if shade else 0.0))
         if edge is not None and st in ("flat", "soft"):
             ew = edge_w if edge_w else max(0.6, self.hu * 0.012)
             E = _sdf.fill(np.abs(D + ew * 0.5) - ew * 0.5) * A
@@ -627,6 +632,7 @@ class _Painter:
         c = color if (isinstance(color, np.ndarray) and color.ndim == 3) else \
             np.broadcast_to(_col(color), A.shape + (3,))
         self._comp(sl, c, A)
+        self.recs.append((sl, A, c, 0.0))
         return A
 
     def stroke(self, fn, pts, pad, color, width, opacity=1.0, clip=None):
@@ -1228,9 +1234,25 @@ class Figure:
             st = 1.0 if shadow is True else float(shadow)
             self._ground_shadow(cv, full, light, st)
         cv.paste(straight, box[0], box[1], mask=A)
+        self._record(cv, pt, box, straight)
         for poly, col in front:                              # a chair back between the viewer and the figure
             self._seat_poly(cv, poly, col)
         return self
+
+    @staticmethod
+    def _record(cv, pt, box, straight):
+        """The parts for the medium stage, in painting order: each part's coverage, its own colour and a volume
+        hint by kind (skin and cloth rounder than hair); details are flat."""
+        from .medium import record as _rec
+        if not _rec.active(cv):
+            return
+        for (a0, b0, a1, b1), A, c, vol in pt.recs:
+            fy0, fx0 = box[1] + b0, box[0] + a0
+            h, w = A.shape
+            col = np.asarray(c, F32)
+            col = col if col.ndim == 3 else np.broadcast_to(col.reshape(1, 1, 3), (h, w, 3))
+            _rec.note(cv, "body", A, np.clip(col, 0, 1), volume=vol, off=(fx0, fy0),
+                      painted=np.clip(straight[b0:b1, a0:a1], 0, 1))
 
     # ------------------------------------------------------------ seat under a sitting figure
     def _seat_kind(self, at):

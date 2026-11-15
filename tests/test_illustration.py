@@ -504,3 +504,14 @@ def test_illustration_template_renders_clean():
 def test_scenes_render_small(name):
     cv = importlib.import_module("scenes." + name).render(192, 108)
     assert cv.shape == (108, 192, 3) and np.isfinite(cv.buf).all() and 0.05 < cv.buf.mean() < 0.95
+
+
+def test_steam_takes_height_and_width():
+    from pixelcanvas import Canvas
+    from pixelcanvas.illustrate import Sketch
+    cv = Canvas(200, 160)
+    sk = Sketch(cv)
+    tall = sk.steam((0.5, 0.8), height=0.4, width=0.3)
+    short = sk.steam((0.5, 0.8), size=0.1)
+    assert (tall > 0.3).any(0).sum() > (short > 0.3).any(0).sum()
+    assert (tall > 0.3).any(1).sum() > (short > 0.3).any(1).sum()

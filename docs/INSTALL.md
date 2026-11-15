@@ -1,8 +1,9 @@
 # Installing pixelcanvas
 
 pixelcanvas runs anywhere Python 3.9+ runs, with numpy and Pillow as its only requirements. It ships two skills:
-`pixelcanvas` for capable coding agents (Python scenes, every kit) and `pixelcanvas-lite` for small and local models
-(one JSON spec, drawn by `tools/compose.py`). Pick the way that fits your agent; every option is one copy-paste block.
+`pixelcanvas` (the studio: a picture as layers edited command by command, delivered in a real art medium such as oil, watercolour or ink, every kit) for coding agents and local
+models, and `pixelcanvas-lite` (one JSON spec, drawn by `tools/compose.py`) for the smallest models. Pick the way
+that fits your agent; every option is one copy-paste block.
 
 ## With pip (quickest)
 
@@ -79,6 +80,30 @@ pixelcanvas compose ./art/poster.json --check
 pixelcanvas compose ./art/poster.json --deliver ./art/final/
 ```
 
+## Local models in opencode: the studio with vision
+
+The full `pixelcanvas` skill runs with local models too. After every change the studio writes one image, the `look`
+sheet (the picture, then each checklist item close up), and the model reads it when opencode knows the model takes images. Declare that on the model's entry in
+`opencode.json`, under `provider.<id>.models.<model>`, next to the provider settings you already have:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "PROVIDER_ID": {
+      "models": {
+        "MODEL_ID": {
+          "attachment": true,
+          "modalities": {"input": ["text", "image"], "output": ["text"]}
+        }
+      }
+    }
+  }
+}
+```
+
+A model without vision checks the picture with `studio look --text`: each layer's box, size and mean colour as numbers.
+
 ## The `pixelcanvas` command
 
 The package carries the tools, every starter template, the example scenes and both skills. `scipy` is an optional
@@ -100,10 +125,24 @@ python ~/.pixelcanvas/tools/pc.py render ./art/poster.py --scale 0.5 --check
 
 ## As an MCP server
 
-The server speaks the Model Context Protocol on stdin / stdout with the standard library only. It gives the model
-`kinds`, `new_scene`, `write_scene`, `read_scene`, `render` (report + preview image), `look`, `find`, `reference`,
-`ask`, `animate` and `layers`, plus every reference page as a resource. Scenes and pictures are written in the
-folder the host starts it in (or `$PIXELCANVAS_WORK`). The snippets use `python -m pixelcanvas.mcp_server` after a
+The server speaks the Model Context Protocol on stdin / stdout with the standard library only. A client without a
+shell or a file tool (Claude Desktop, Cursor chat) runs the whole studio loop through four tools:
+
+| Tool | Parameters | Returns |
+| --- | --- | --- |
+| `studio` | `command` (one studio command, e.g. `new fox --prompt "a fox by a lantern" --size 1280x720`, `move fox --to 0.4 0.7`, `set scene medium=oil`, `look`, `note add "..."`, `deliver out.png`), `picture` (optional) | the printed report ending in `NEXT:`, plus the look sheet |
+| `studio_draft` | `picture`, `code` (the whole draft, one `# %% name` section per object) | writes `draft.py`, runs `add --from`; report + look sheet |
+| `studio_layer` | `picture`, `layer`, `code` (one section body) | writes `layers/<layer>.py`, renders; report + look sheet |
+| `studio_read` | `picture`, `layer` (optional) | one section's source, or the layers with their descriptions and the draft |
+
+The loop: `studio` `new NAME --prompt "..." --size WxH`, then `studio_draft` with the whole draft (each section starts
+with its inventory line, `# apple: 3, green | in bowl`), then whatever each report's `NEXT:` line says: the look sheet
+comes with every report, and after three looks NEXT says the picture is finished. `studio` `api sk.paint` explains any drawing call; `reference` with `page` set to `studio` returns the full
+manual. A `studio` command is split like a shell command line (quotes group words, backslashes in Windows paths stay
+literal) and runs without a shell. The older single-file scene workflow stays available as `kinds`, `new_scene`,
+`write_scene`, `read_scene`, `render` (report + preview image), `look`, `find`, `reference`, `ask`, `animate` and
+`layers`, and every reference page is a resource. Pictures live in `art/NAME/` and scenes next to them, in the folder
+the host starts the server in (or `$PIXELCANVAS_WORK`). The snippets use `python -m pixelcanvas.mcp_server` after a
 pip install; from a clone use `python /path/to/pixelcanvas/tools/pc.py mcp` instead.
 
 Claude Code, for this project (writes `.mcp.json`):

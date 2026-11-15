@@ -370,3 +370,29 @@ def test_unknown_anchor_is_a_value_error_with_a_did_you_mean():
 def test_lists_hang_on_the_creature_function_too():
     assert creature.species() == species() and creature.species("bird") == species("bird")
     assert creature.POSES is POSES and creature.COATS is COATS
+
+
+@pytest.mark.parametrize("sp", ["fox", "dog", "horse", "cat"])
+def test_every_listed_pose_of_a_four_legged_animal_draws(sp):
+    from pixelcanvas.creature import poses
+    assert "rest" in poses(sp)
+    for p in poses(sp):
+        cv = _cv(160, 100)
+        creature(cv, sp, at=(0.5, 0.9), size=0.5, pose=p)
+
+
+def test_every_listed_pose_of_other_kinds_draws():
+    from pixelcanvas.creature import poses
+    for sp in ("sparrow", "goldfish", "frog"):
+        for p in poses(sp):
+            creature(_cv(120, 80), sp, at=(0.5, 0.7), size=0.4, pose=p)
+
+
+def test_a_rejected_pose_is_never_suggested_back():
+    with pytest.raises(ValueError) as e:
+        creature(_cv(), "fox", pose="perch")
+    msg = str(e.value)
+    assert "'perch'" not in msg.split("did you mean")[-1] and "rest" in msg
+    with pytest.raises(ValueError) as e:
+        creature(_cv(), "fox", pose="rests")
+    assert "did you mean 'rest'" in str(e.value)

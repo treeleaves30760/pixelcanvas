@@ -1,9 +1,14 @@
 # pixelcanvas
 
-**Your coding agent draws finished pictures with code: posters, diagrams, dashboards, 3D scenes and
-illustrations, with numpy + Pillow. No image model, no GPU, no API key.**
+**Your coding agent draws finished pictures with code, then keeps making them better. Each picture is a living stack
+of layers the agent edits with tools: one command moves, scales, recolours or redraws one thing, checks the picture
+against your request and says what to do next. numpy + Pillow. No image model, no GPU, no API key.**
 
-![Pictures drawn by coding agents with pixelcanvas](gallery/wall.jpg)
+![The first draft and the finished picture](gallery/studio/campfire_fox_before_after.jpg)
+
+*"A fox asleep beside a small campfire in a snowy pine forest at night, a full moon above the trees, cozy and
+quiet"*: the first draft (left) and the finished picture (right).
+[The whole session](gallery/studio/sessions/campfire_fox.txt).
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
@@ -12,19 +17,144 @@ illustrations, with numpy + Pillow. No image model, no GPU, no API key.**
 
 [繁體中文](README-zh.md)
 
-pixelcanvas is an **Agent Skill** and a **Python package**. Claude Code, Codex, opencode, Cursor, Gemini CLI or any
-agent with a shell reads [`SKILL.md`](skills/pixelcanvas/SKILL.md), designs the picture, draws it in Python, runs a
-check that names what to fix, and looks at the result before handing it over. Every picture is a short scene file:
-exact text in any language, editable layers, SVG and DXF when you want them.
+pixelcanvas is an **Agent Skill** and a **Python package**. It runs in Claude Code, Codex, Cursor, Gemini CLI,
+opencode or any agent with a shell, and with local models too: it was tested with Qwen 3.8 Flash Next driving it in
+Claude Code and in opencode. The agent reads [`SKILL.md`](skills/pixelcanvas/SKILL.md) and works in
+**`pixelcanvas studio`**: the picture lives in `./art/NAME/` as one `# %% name` section of a draft file per object, with
+the draft's inventory lines as the checklist, a look sheet and a full revision history.
 
 ```bash
 npx skills add treeleaves30760/pixelcanvas
 ```
 
-Then ask: *"Make a bilingual poster for a piano night called NOCTURNE"*, *"Draw the architecture of our commerce
-platform"*, *"An isometric reading nook with a cat on the armchair"*.
+Then ask: *"Make a poster for a night market called Lantern Street"*, *"Draw the architecture of our commerce
+platform"*, and later, about the same picture: *"make the fox bigger"*, *"put the moon on the left"*.
+
+## How it works: a picture your agent keeps editing
+
+The agent writes the whole first draft in one file, `./art/NAME/draft.py`: one script cut into `# %% name` sections,
+back to front, one section per thing. The first comment line of a section is its inventory line (count, colours,
+'quoted text', states, then `|` and its places):
+
+```python
+# %% apple
+# apple: 3, green, one bitten | in bowl
+ball(cv, t.place(0.3, 0.5), 0.07, base="#7cb342")
+```
+
+One command creates the picture from the draft. Every command after it changes one small thing, re-renders only what
+changed (about a second), checks the picture against the inventory lines and prints one `NEXT:` line:
+
+```bash
+studio new fox --prompt "a fox carrying a lantern through a snowy wood at night, titled 'Night Walk'" --size 1920x1080 --out ./night_walk.png --from ./art/fox/draft.py
+studio scale lantern 1.8                     # a change that is not code: one command
+studio add --from ./art/fox/draft.py         # a change in code: edit one section, then only it is redrawn
+studio note add "3 the lantern glow is faint"   # keeps a list of faults for NEXT to walk through
+studio note done 1
+```
+
+`studio` is `pixelcanvas studio` (or `python tools/studio.py` from a clone). The `--out` file is rewritten after every
+command. Every report ends in one line that says what to do next; when nothing measured is open it opens the look
+sheet, and after three looks it says the picture is finished:
+
+```text
+request: 4 of 4 confirmed
+look list ([x] = what can be measured holds; by eye: does the picture show each line at a glance?):
+  [x] 1 wood: snowy ground receding to dark pines, night sky
+  [x] 2 fox: 1, orange, walking left to right | at centre
+  [x] 3 lantern: glowing warm yellow, its handle in the fox's mouth  <- worth checking: lantern covers 0.4% of the frame: scale lantern 1.8
+  [x] 4 title: 'Night Walk' | at top
+NEXT: look 1 of 3: open .../art/fox/look.png (the picture, then every item close up); a line above that does not show at a glance: edit its section ... then studio add --from ...
+...
+NEXT: finished: the picture is .../night_walk.png (open it before you tell the user)
+```
+
+The look sheet the agent opens: the picture with a grid and every layer's box, then one close-up per checklist item.
+
+![The look sheet](gallery/studio/campfire_fox_look.jpg)
+
+- **The inventory lines are the contract.** Each section's first comment line becomes a numbered item (its count,
+  colours, quoted text and places) and is ticked from the layers when the measured parts hold and the layer is
+  visible in the picture. An open item names its fix: `apple: 1 drawn, the request says 3: copy apple --total 3`,
+  `apple is not in bowl (boxes: ...): put apple* in bowl`. Measured doubts appear as `worth checking` lines: a
+  requested thing under 1.5 % of the frame, copies that touch, a thing that blends into what is behind it.
+- **The smallest tool wins.** `move`, `scale`, `fit`, `put`, `order`, `crop`, `recolor`, `copy --total N --row`, `set L
+  outline=on shadow=ground glow=ffcf70`, `set scene light=top-right grade=golden`; a shape that does not read gets
+  its one section edited and redrawn with `add --from`. `scale` and `fit` pivot on the anchor point of a section placed
+  with `anchor("fox", "mouth")`, `copy --row` leaves a gap, `put` keeps things in the frame, and a command that
+  covers a thing or pushes it off the frame offers `undo`.
+- **Nothing breaks the picture.** A section that fails keeps its last good render and the report names the line of the draft;
+  `undo`, `redo` and `goto REV` restore code and parameters together; `compare 5 34` puts two revisions side by side.
+- **The file you asked for is always current.** `--out ./night_walk.png` is rewritten after every command; finishing
+  needs no extra step.
+- **Ask the tool, not the source.** `studio api sk.paint creature` prints each call's exact arguments with an
+  example; `studio api steam` lists every call with that word; `studio look --text` gives the numbers to a model
+  without vision.
+
+Every command and the picture folder: [studio.md](skills/pixelcanvas/references/studio.md).
+
+## Drawn in the studio
+
+Three pictures drawn through the CLI by following the loop above: first draft, then small fixes.
+Each session log lists every command with the request score at that revision.
+
+| | |
+|---|---|
+| ![Lantern Street poster](gallery/studio/night_market.jpg) | ![Still life](gallery/studio/still_life.jpg) |
+| *"A poster for a night market titled 'Lantern Street': three red paper lanterns hanging from a string across the top, a steaming bowl of noodles in the middle, the lines 'Every Friday & Saturday' and '18:00 - 23:00' at the bottom, deep indigo night"*: finished at rev 13, [session](gallery/studio/sessions/night_market.txt) | *"A still life on a wooden table: three green apples in a white bowl, a blue mug right of the bowl, two yellow lemons in front of the bowl, a glass bottle on the left"*: finished at rev 21, [session](gallery/studio/sessions/still_life.txt) |
+| ![Poster: first draft and delivered](gallery/studio/night_market_before_after.jpg) | ![Still life: first draft and delivered](gallery/studio/still_life_before_after.jpg) |
+| The fixes copied the lantern to three and hung them evenly from the string, moved the bowl down so the steam clears the title, and filled the bowl with noodles, an egg, greens and chopsticks. | The fixes tinted the bottle pale green, copied the apples to three in a larger bowl and the lemons to two in front of it, and cropped to the table. |
+
+![The delivered campfire fox](gallery/studio/campfire_fox.jpg)
+
+The look sheets: [poster](gallery/studio/night_market_look.jpg),
+[still life](gallery/studio/still_life_look.jpg).
+
+## Follow-up requests are one command
+
+A delivered picture keeps its state. "Make the fox bigger" is `studio -p campfire_fox scale fox 1.2`, and the file
+the user has is redrawn. Four requests after the picture was finished (revs 29 to 32), one command each: `scale fox 1.2`, `recolor moon ffb36b`, `move moon --to 0.3 0.24` and `add owl --kit "creature('owl', at=(0.885, 0.5), size=0.11, pose='perch', facing='left')"`:
+
+![Four follow-up commands on the delivered picture](gallery/studio/campfire_fox_follow_up.jpg)
+
+A request that changes what is asked (another colour, count or text) edits that section's inventory line in
+`draft.py`, then `studio -p NAME add --from ./art/NAME/draft.py`, and NEXT takes it from there.
+
+## Every object is a real layer
+
+`studio deliver PATH.png --layers` writes the picture as PSD (Photoshop, Photopea, GIMP, Affinity) and ORA (Krita, GIMP)
+next to the PNG, one layer per object, named as in the studio. The still life above, layer by layer (table, bottle, bowl, apple, apple2, apple3, mug, lemon, lemon2):
+
+![The layers of the delivered still life](gallery/studio/still_life_layers.jpg)
+
+`studio export NAME.py` writes the same picture as one scene file for `tools/render.py`.
+
+## Deliver it in a real art medium
+
+A finished drawing can be delivered as a render, a flat graphic, an oil painting, a watercolour, an ink drawing or pixel
+art. The layers become per-pixel buffers (local colour, a relief per shape, normals, depth, emission), one key light
+lights them with form shadow, cast shadows on the floor and contact occlusion, and the medium paints the result as a
+process of its own: oil strokes along the form, watercolour washes with pooled edges on paper, ink contours and hatching
+that wraps the form, a pixel grid in a small palette. `studio new` reads the medium from the request ("a watercolour
+of", "oil painting", "ink drawing", "pixel art", "3D render"); changing it later runs no section again.
+
+```bash
+studio set scene medium=watercolour          # render flat oil watercolour ink pixel off
+studio set scene medium_mark=2 medium_strength=0.7 medium_palette=12 medium_paper=f4ecd8
+studio stages                                # flat silhouettes -> relief clay -> lit colour -> the medium
+```
+
+The still life above, one `set scene medium=` per tile (render, flat, oil / watercolour, ink, pixel):
+
+![The still life in six media](gallery/studio/still_life_media.jpg)
+
+The medium checks keep the drawing's value pattern, the requested colours, the contrast of each thing and legible text;
+a failing one is the `NEXT:` line, with its fix. Every dial and what each medium paints:
+[medium.md](skills/pixelcanvas/references/medium.md).
 
 ## What you can ask for
+
+![Pictures drawn by coding agents with pixelcanvas](gallery/wall.jpg)
 
 Every picture below was drawn by pixelcanvas from the request under it. The scene files are in [`scenes/`](scenes/).
 
@@ -71,7 +201,7 @@ Every picture below was drawn by pixelcanvas from the request under it. The scen
 | ![aurora](gallery/aurora_lake.jpg) | ![sea sunset](gallery/sea_sunset.jpg) | ![studio still life](gallery/studio_still_life.jpg) |
 | *"A wide banner: aurora over a mirror lake between pine forests, the title 'pixelcanvas'"* | *"The sun setting over a calm sea, its path of light on the waves"* | *"A studio still life on a marble board: a glass bottle, a terracotta mug, a glass sphere and a gold ball"* |
 | ![art styles](gallery/art_styles.jpg) | ![pictograms](gallery/pictograms.jpg) | ![harbour light](gallery/harbour_light.jpg) |
-| *"The same landscape in twelve media"*: 43 named styles, from oil and watercolour to stained glass and blueprint | 633 pictograms in six styles, ready to place by name | *"A red and white lighthouse at dusk, titled 'Harbour Light'"*: the scene in the next section |
+| *"The same landscape in twelve media"*: 43 named styles, from oil and watercolour to stained glass and blueprint | 633 pictograms in six styles, ready to place by name | *"A red and white lighthouse at dusk, titled 'Harbour Light'"*: the scene file shown below |
 
 ## Install
 
@@ -88,13 +218,11 @@ The skill installs a `scripts/bootstrap.py` that sets up the runtime on first us
 `pixelcanvas doctor` checks Python, numpy, Pillow, fonts and write access; `uvx pixelcanvas doctor` runs it without
 installing. Every option, per tool and per project: [docs/INSTALL.md](docs/INSTALL.md).
 
-## How it works: plan, draw, check, look
+## Scene files: one picture as one script
 
-**1. Plan.** The agent writes an inventory of the picture in the scene's docstring and copies the request into
-`PROMPT`, word for word.
-
-**2. Draw.** It writes the whole scene in one go. Shapes are placed in fractions of the canvas, and every
-object comes out lit and shaded, with glow, soft-cel bands, outlines for flat and ink styles, and exact text built in:
+Everything the studio draws is Python on the kits, and a whole picture also fits in one scene file (`studio export
+NAME.py` writes one). Shapes are placed in fractions of the canvas, and every object comes out lit and shaded, with
+glow, soft-cel bands, outlines for flat and ink styles, and exact text built in:
 
 ```python
 """lighthouse: red and white, on a dark cliff at the right, lamp glowing, beam over the sea; title 'Harbour Light'"""
@@ -127,9 +255,8 @@ def render(width=1600, height=900, seed=1, log=lambda step: None):
     return cv
 ```
 
-**3. Check.** `python tools/render.py gallery/src/harbour_light.py --check` renders it and writes a report: image
-critique, a text audit, every object and where it landed, and the request checked item by item. It ends with a
-FIX block that names what to change, or clears the picture:
+`python tools/render.py gallery/src/harbour_light.py --check` renders it and writes a report: image critique, a
+text audit, every object and where it landed, and the request checked item by item, ending with a FIX block:
 
 ```text
 PROMPT "a red and white lighthouse at dusk, titled 'Harbour Light'"
@@ -142,17 +269,18 @@ PROMPT "a red and white lighthouse at dusk, titled 'Harbour Light'"
 FIX: nothing flagged - look at the picture once, then deliver
 ```
 
-**4. Look.** The agent opens the PNG, and zooms in with `tools/look.py` (guides, zoom, value map, edges, probe)
-where a detail needs a closer look. Here is the picture that scene draws:
+The picture that scene draws:
 
 ![Harbour Light](gallery/harbour_light.jpg)
 
-For structured pictures the agent starts from a template instead of a blank file:
+Charts, dashboards, diagrams, floor plans, drawings and UI start from one of 30 starter templates and come into the
+studio as one layer, with callouts and stamps on top as layers of their own:
 
 ```bash
-pixelcanvas kit find "a corgi sitting under an oak tree at sunset"      # the call for each subject
-pixelcanvas new corgi --prompt "a corgi sitting under an oak tree at sunset" --dir ./art
-pixelcanvas render ./art/corgi.py --scale 0.5 --check
+pixelcanvas new sales --dir . --prompt "quarterly sales as a bar chart, titled 'Sales 2025'"
+pixelcanvas studio new sales --prompt "quarterly sales as a bar chart, titled 'Sales 2025', stamped 'Draft'"
+pixelcanvas studio add base --scene sales.py
+pixelcanvas studio add stamp --text "Draft" --box 0.72 0.05 0.95 0.14 --color d63c2f --bold
 ```
 
 ## Match a reference image
@@ -215,11 +343,17 @@ same gaps as a REFERENCE block. The protocol: [reference.md](skills/pixelcanvas/
 `pixelcanvas kit find "REQUEST"` searches every kit at once, and 30 starter templates (`pixelcanvas new --list`)
 cover posters, charts, diagrams, UI, floor plans, product shots, people, pets and more.
 
-## Small local models
+## Local models
 
-A model running on your own machine draws through the **pixelcanvas-lite** skill: it writes one small JSON spec and
-`compose` draws it through the kits, in 16 kinds from posters and wallpapers to dashboards, rooms and 3D scenes.
-Every run ends with one `NEXT:` line that says what to do. No Python to write.
+The studio loop runs with a model on your own machine: one `NEXT:` line after every command keeps a small model on
+track, and a model without image input checks the picture with `studio look --text` (each layer's box, size and mean colour).
+It was tuned with Qwen 3.8 Flash Next driving it in Claude Code and in opencode. For a vision model in opencode,
+declare that the model takes images ([docs/INSTALL.md](docs/INSTALL.md#local-models-in-opencode-the-studio-with-vision))
+and it reads the `look` sheet itself.
+
+For the smallest models there is the **pixelcanvas-lite** skill: the model writes one small JSON spec and `compose`
+draws it through the kits, in 16 kinds from posters and wallpapers to dashboards, rooms and 3D scenes. Every run ends
+with one `NEXT:` line. No Python to write.
 
 ```bash
 pixelcanvas install-skill opencode --skill pixelcanvas-lite
@@ -230,11 +364,11 @@ pixelcanvas compose poster.json --deliver final/
 
 The spec format: [spec.md](skills/pixelcanvas/references/spec.md).
 
-## Editable layers, SVG and DXF
+## Layers, SVG and DXF from scene files
 
-Every `log("step")` in a scene becomes a layer. `--layers` writes the picture as `SCENE.psd` (Photoshop, Photopea,
-GIMP, Affinity), `SCENE.ora` (Krita, GIMP) and a folder of PNGs, so a person can move, hide or repaint any object.
-`--svg` writes the vector drawings (diagrams, charts, UI, icons) as SVG, and `--dxf` writes drafting sheets for CAD.
+In a scene file every `log("step")` becomes a layer: `render.py --layers` writes `SCENE.psd`, `SCENE.ora` and a
+folder of PNGs, as `studio deliver PATH.png --layers` does for studio pictures. `--svg` writes the vector drawings (diagrams,
+charts, UI, icons) as SVG, and `--dxf` writes drafting sheets for CAD.
 
 ```bash
 python tools/render.py drafting_bracket --svg --dxf
@@ -243,9 +377,11 @@ python tools/render.py clay_campsite --layers
 
 ## MCP server
 
-`pixelcanvas mcp` speaks the Model Context Protocol on stdin / stdout with 11 tools (`kinds`, `new_scene`,
-`write_scene`, `read_scene`, `render`, `look`, `find`, `reference`, `ask`, `animate`, `layers`) and every reference
-page as a resource.
+`pixelcanvas mcp` speaks the Model Context Protocol on stdin / stdout with 15 tools and every reference page as a
+resource. Four of them are the studio: `studio` (any studio command, returns the report and the look sheet),
+`studio_draft` (the whole draft in one call), `studio_layer` (redraw one object) and `studio_read`. The
+others: `kinds`, `new_scene`, `write_scene`, `read_scene`, `render`, `look`, `find`, `reference`, `ask`, `animate`,
+`layers`.
 
 ```bash
 claude mcp add --scope project pixelcanvas -- python -m pixelcanvas.mcp_server
@@ -256,12 +392,13 @@ Claude Desktop, Cursor and opencode configs: [docs/INSTALL.md](docs/INSTALL.md#a
 
 ## Reference pages
 
-- [SKILL.md](skills/pixelcanvas/SKILL.md): the loop, freehand drawing, checked pictures, art direction, the kit table
+- [SKILL.md](skills/pixelcanvas/SKILL.md): the studio loop, the first draft, checked pictures, art direction, the kit table
+- [studio.md](skills/pixelcanvas/references/studio.md): every studio command, the picture folder, the draft format, reports, looks
 - [api.md](skills/pixelcanvas/references/api.md): the full API index
 - [illustration.md](skills/pixelcanvas/references/illustration.md), [techniques.md](skills/pixelcanvas/references/techniques.md),
   [typography.md](skills/pixelcanvas/references/typography.md), [review.md](skills/pixelcanvas/references/review.md)
 - one page per kit in [`skills/pixelcanvas/references/`](skills/pixelcanvas/references/)
-- [CHANGELOG.md](CHANGELOG.md): what is new in 0.4
+- [CHANGELOG.md](CHANGELOG.md): what is new in 0.5
 
 ## Contributing
 
@@ -274,7 +411,8 @@ pip install -r requirements.txt pytest
 python -m pytest -q
 ```
 
-`python tools/build_gallery.py` rebuilds this gallery from the scenes.
+`python tools/build_gallery.py` rebuilds the gallery wall and its pictures from the scenes; `gallery/studio/` holds
+the studio pictures and their session logs.
 
 ## Licence
 

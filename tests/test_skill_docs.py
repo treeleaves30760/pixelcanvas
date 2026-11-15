@@ -135,8 +135,12 @@ def test_install_skill(tmp_path):
     r = _run("tools/install_skill.py", "--dest", str(tmp_path))
     assert r.returncode == 0, r.stderr
     with open(tmp_path / "pixelcanvas" / "SKILL.md", encoding="utf-8") as f:
-        assert ROOT in f.read()
+        text = f.read()
+    assert ROOT in text
     assert (tmp_path / "pixelcanvas" / "references" / "api.md").exists()
+    loc = text.split("## Local install location")[1]
+    m = re.search(r"^references: (\S+)/$", loc, re.M)                   # the pages, as an absolute folder
+    assert m and os.path.isabs(m.group(1)) and os.path.isfile(os.path.join(m.group(1), "solid.md")), loc
     assert _run("tools/install_skill.py", "--dest", str(tmp_path), "--uninstall").returncode == 0
     assert not (tmp_path / "pixelcanvas").exists()
 
@@ -166,31 +170,52 @@ def test_skill_md_stays_short():
     assert len(tiktoken.get_encoding("cl100k_base").encode(text)) <= 3700
 
 
-def test_skill_md_freehand_scene_runs(tmp_path, monkeypatch):
-    """The scene printed on the page renders and records what it names."""
+def test_skill_md_draft_runs_in_the_studio(tmp_path, monkeypatch):
+    """The draft printed on the page goes through the page's own command, `studio new NAME --prompt .. --from
+    draft.py`: every section renders as a layer, the inventory lines become the checklist and all are confirmed."""
+    import contextlib
+    import io
+    from pixelcanvas.studio import commands as SC
     monkeypatch.chdir(tmp_path)
     block = re.findall(r"```python\n(.*?)```", _skill_text(), re.S)[0]
-    assert "creature(cv, " in block and ".anchor(" in block and "sk.at(" in block
-    assert "Sketch(cv" in block and "cv.text(" in block and "line=True" not in block
-    g = {"__name__": "skill_scene"}
-    exec(compile(block, "SKILL.md scene", "exec"), g)
-    cv = g["render"](384, 216, 1, lambda step: None)
-    assert np.isfinite(cv.buf).all() and float(np.clip(cv.buf, 0, 1).std()) > 0.02
-    names = {e.get("name") for e in cv.manifest if isinstance(e, dict)}
-    assert {"fox", "lantern", "wood"} <= names
-    assert "DEFAULT_SIZE" in g and g["DEFAULT_SIZE"] == (1920, 1080)
-    assert block.lstrip().startswith('"""') and "fox:" in block.split('"""')[1]     # the inventory docstring
+    assert "creature(cv, " in block and 'anchor("fox", "mouth")' in block and "sk.at(" in block
+    assert "cv.text(" in block and "line=True" not in block
+    sections = re.findall(r"^# %% (\w+)(?: \[\w+\])?$", block, re.M)
+    assert sections == ["wood", "fox", "lantern", "title", "finish"]
+    assert "# fox: 1, orange, walking left to right | at centre" in block and "# title: 'Night Walk' | at top" in block
+
+    def run(*argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = SC.main(["--dir", "art"] + list(argv))
+        return code, buf.getvalue()
+
+    os.makedirs(tmp_path / "art" / "fox")
+    (tmp_path / "art" / "fox" / "draft.py").write_text(block, encoding="utf-8")
+    code, out = run("new", "fox", "--prompt", "a fox carrying a lantern through a snowy wood at night, "
+                    "titled 'Night Walk'", "--size", "384x216", "--out", "fox.png", "--from", "art/fox/draft.py")
+    assert code == 0 and "ERROR" not in out, out
+    assert re.search(r"request: (\d+) of \1 confirmed", out), out
+    assert "fox: 1, orange, walking left to right | at centre" in out          # the agent's line is the checklist line
+    assert "NEXT:" in out and (tmp_path / "fox.png").exists()
 
 
-def test_skill_md_points_freehand_first():
+def test_skill_md_teaches_the_studio_loop():
     text = _skill_text()
     low = " ".join(text.lower().split())
-    assert "render.py ./art/NAME.py --check --out <delivery path>.png" in text      # the loop: one command
-    assert "new_scene.py name --prompt" in low
-    assert "`prompt` = the request word for word" in low and "## checked pictures" in low
-    assert "names no requested item" in low and "every inventory line reads at a glance" in low
-    assert "edit values" not in low and "do not replace the template" not in low
-    assert "never filter a finished picture" in low
+    assert 'studio new name --prompt "<the request word for word>" --size wxh --out <delivery path>.png --from ' \
+           './art/name/draft.py' in low
+    assert "inventory" in low and "each implied fact worked out" in low and "one file write" in low
+    assert "studio add --from ./art/name/draft.py" in low and "names defined in one section are visible" in low
+    assert "do what the `next:` line says" in low and "never rewrite the whole picture" in low
+    assert "open `./art/name/look.png` in the same message" in low and "line by line" in low
+    assert "look again" in low and "studio note add" in low and "studio undo" in low and "studio -p name" in low
+    assert "the `--out` file is always current" in low
+    assert "studio note none" not in low and "studio deliver" not in low        # nothing to type blind at the end
+    assert "studio api" in low and "never read the package source" in low
+    assert "## checked pictures" in low and "never filter a finished picture" in low
+    assert "`new_scene.py` starter" in low and "add base --scene" in low and "no outlines" in low
+    assert "heredoc" in low
     from pixelcanvas import stylize
     desc = re.search(r"^description: >-\n((?:  .*\n)+)", text, re.M).group(1)
     assert f"{len(stylize.names())} named art styles" in " ".join(desc.split())
@@ -199,5 +224,5 @@ def test_skill_md_points_freehand_first():
 def test_freehand_names_are_exported():
     import pixelcanvas
     from pixelcanvas import illustrate, Sketch, paper, grade, limit_palette, MOODS, grow, edge, signed_distance  # noqa
-    assert illustrate.Sketch is Sketch and pixelcanvas.__version__ == "0.4.0"
+    assert illustrate.Sketch is Sketch and pixelcanvas.__version__ == "0.5.0"
     assert {"Sketch", "paper", "grade", "illustrate"} <= set(pixelcanvas.__all__)

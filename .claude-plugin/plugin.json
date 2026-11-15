@@ -1,8 +1,8 @@
 {
   "name": "pixelcanvas",
   "displayName": "pixelcanvas",
-  "version": "0.4.0",
-  "description": "Draw with code: posters, illustrations, landscapes, diagrams, charts, UI mock-ups, technical drawings and 3D objects rendered with numpy + Pillow, with a render -> look -> fix loop and exact text in any language.",
+  "version": "0.5.0",
+  "description": "Draw with code: posters, illustrations, landscapes, diagrams, charts, UI mock-ups, technical drawings and 3D objects rendered with numpy + Pillow, as layers your agent edits one command at a time (draft, look, fix, deliver), with exact text in any language and PSD / ORA layers.",
   "author": {
     "name": "treeleaves30760",
     "url": "https://github.com/treeleaves30760"
