@@ -39,7 +39,7 @@ KINDS_3D = ("block", "prop")
 
 USAGE = {
     "camera": "pixelcanvas camera --horizon 700 --eye-height 0.9 --fov 50",
-    "pose": "pixelcanvas pose girl --preset run --at 520,900 --yaw 30",
+    "pose": "pixelcanvas pose girl --preset run --at 520,900 --yaw 30 [--hand-shape-r fist|open|relaxed|point|grip|peace|cup]",
     "block": "pixelcanvas block wall box --at 300,820 --size 4,0.3,1.0",
     "prop": "pixelcanvas prop sword --kind sword --hand r",
     "form": "pixelcanvas form girl",
@@ -614,11 +614,12 @@ def cmd_pose(ctx, args):
                          {"preset": "value", "at": "value", "height": "value", "heads": "value", "chibi": "flag",
                           "yaw": "value", "set": "value", "mirror": "flag", "on": "value", "hand-r": "value",
                           "hand-l": "value", "foot-r": "value", "foot-l": "value", "show": "value", "lift": "value",
-                          "reset": "flag"},
+                          "reset": "flag", "hand-shape-r": "value", "hand-shape-l": "value"},
                          alias={"pose": "preset", "facing": "yaw", "face": "yaw", "turn": "yaw", "edit": "set",
                                 "joints": "set", "joint": "set", "sit-on": "on", "stand-on": "on", "size": "height",
                                 "right-hand": "hand-r", "left-hand": "hand-l", "right-foot": "foot-r",
-                                "left-foot": "foot-l", "hr": "hand-r", "hl": "hand-l", "flip": "mirror"},
+                                "left-foot": "foot-l", "hr": "hand-r", "hl": "hand-l", "flip": "mirror",
+                                "hand-r-shape": "hand-shape-r", "hand-l-shape": "hand-shape-l"},
                          min_pos=1))
     subj = str(a["subject"]).lower()
     if subj in P3.PRESETS:
@@ -664,6 +665,22 @@ def cmd_pose(ctx, args):
             else:
                 targets[k] = _target(ctx, a[k])
     spec["targets"] = targets
+    from .figure3d import HAND_SHAPES
+    hands = dict(spec.get("hands") or {})
+    if a.get("preset"):
+        hands = {}
+    for s in "rl":
+        v = a.get(f"hand-shape-{s}")
+        if v:
+            v = str(v).lower()
+            if v in ("auto", "default", "preset"):
+                hands.pop(s, None)
+            elif v not in HAND_SHAPES:
+                raise UsageError(f"--hand-shape-{s} is one of {', '.join(HAND_SHAPES)}",
+                                 f"pixelcanvas pose {subj} --hand-shape-{s} fist")
+            else:
+                hands[s] = v
+    spec["hands"] = hands
     if a.get("at"):
         spec["at"] = [float(v) for v in coords.parse_point(a["at"], ctx.notes, USAGE["pose"])]
     elif not spec.get("at") and not spec.get("on"):
@@ -784,8 +801,8 @@ def cmd_block(ctx, args):
         return _step(ctx, f"block delete {name}", mutate_del, lines)
     a = parse(args, Spec(USAGE["block"], ["name", "kind"],
                          {"at": "value", "size": "value", "rot": "value", "steps": "value", "lift": "value",
-                          "offset": "value"},
-                         alias={"rotate": "rot", "turn": "rot", "angle": "rot", "yaw": "rot", "n": "steps",
+                          "offset": "value", "color": "value"},
+                         alias={"rotate": "rot", "turn": "rot", "angle": "rot", "yaw": "rot", "n": "steps", "colour": "color",
                                 "height": "lift", "pos": "at", "move": "offset"}, min_pos=1))
     name = str(a["name"]).lower()
     old = next((e for e in blocks_rec(p) if e["name"] == name), None)
@@ -820,7 +837,11 @@ def cmd_block(ctx, args):
            "lift": float(coords.parse_float(a["lift"], "lift", 0, 100, ctx.notes)) if a.get("lift") is not None
            else (old.get("lift", 0.0) if old else 0.0),
            "offset": [v for v, _, _ in coords._numbers(a["offset"])][:2] if a.get("offset")
-           else (old.get("offset") if old else None)}
+           else (old.get("offset") if old else None),
+           "color": str(a["color"]) if a.get("color") else (old.get("color") if old else None)}
+    if a.get("color"):
+        from .draw_plan import swatch
+        swatch(p, a["color"], USAGE["block"])
     cam0 = camera_of(p)
     if rec["at"] is not None and cam0.ground_point(rec["at"][0], rec["at"][1]) is None:
         raise UsageError(f"--at {coords.fmt_point(rec['at'])} is not on the ground: it must be below the horizon "

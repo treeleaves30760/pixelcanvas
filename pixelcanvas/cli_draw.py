@@ -2371,6 +2371,9 @@ def cmd_band(ctx: Ctx, args: List[str]) -> Report:
     later = [n for n in d["bands"] if n != name and n not in keep
              and not (a.get("behind") and n in str(a["behind"]))]
     files = [f"regions/{name}.png"] + [f"regions/{n}.png" for n in later]
+    from . import draw_render
+    r3d_files = draw_render.band_files(p, layer)
+    pre_band = p.layer(layer).copy() if r3d_files else None
 
     def build():
         from .ops import Fill, mask_to_rle
@@ -2410,13 +2413,17 @@ def cmd_band(ctx: Ctx, args: List[str]) -> Report:
                         p.save_region_mask(n, nm2)
                         p.state["regions"][n]["area"] = round(float(nm2.mean()), 4)
                         cut.append(n)
+        if pre_band is not None:
+            # a band is the background: the rendered figures and blocks stay in front of it, and it shows where
+            # they move away
+            draw_render.band_behind_render(p, layer, pre_band, build())
         dn = depth_note or (f"behind {', '.join(keep)} (they keep their paint and regions)"
                             if a.get("behind") and keep else "")
         return [f"region {name}: {rm.mean() * 100:.0f}% of the canvas ({how}), depth {depth:g}"
                 + (f"; it covers part of {', '.join(cut)} (their regions now end at its edge)" if cut else "")
                 + (f"; drawn {dn}" if dn else "")] + ([ridge_note] if ridge_note else [])
     return draw_step(ctx, label=f"band {name} {coords.hex_colour(c1)}" + (f" -> {coords.hex_colour(c2)}" if c2 else ""),
-                     layer=layer, build=build, extra_files=files, post=post, full_view=True, clip=band_clip,
+                     layer=layer, build=build, extra_files=files + r3d_files, post=post, full_view=True, clip=band_clip,
                      note=f"the new {how}")
 
 
@@ -2690,7 +2697,7 @@ def _wrap_do(orig):
 
 
 EXTENSIONS = ("draw_face", "draw_hair", "draw_wear", "draw_scene", "draw_ref", "draw_text", "draw_canvas",
-              "draw_surface", "draw_finish", "draw_pose")
+              "draw_surface", "draw_finish", "draw_pose", "draw_render")
 
 
 def _extensions() -> list:

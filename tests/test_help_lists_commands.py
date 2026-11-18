@@ -24,14 +24,14 @@ def _help_text() -> str:
 
 def test_every_command_is_in_the_overview_or_a_listed_alias():
     text = _help_text()
-    words = set(re.findall(r"[A-Za-z][A-Za-z-]*", text))
+    words = set(re.findall(r"[A-Za-z][A-Za-z0-9-]*", text))
     missing = sorted(c for c in cli.COMMANDS if c not in words and c not in ALIASES)
     assert not missing, f"commands missing from `pixelcanvas help` (add them there, or list them in ALIASES): {missing}"
 
 
 def test_aliases_point_at_commands_that_are_listed():
     text = _help_text()
-    words = set(re.findall(r"[A-Za-z][A-Za-z-]*", text))
+    words = set(re.findall(r"[A-Za-z][A-Za-z0-9-]*", text))
     for alias, target in ALIASES.items():
         assert alias in cli.COMMANDS, f"{alias} is no longer a command: drop it from ALIASES"
         assert target in words, f"{alias} repeats {target}, which `pixelcanvas help` does not name"
