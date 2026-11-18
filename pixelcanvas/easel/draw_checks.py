@@ -99,13 +99,9 @@ def _rmask(p, n: str) -> np.ndarray:
 
 def is_animal(p, subject: Optional[str]) -> bool:
     """An animal subject (a fox mage is still a fox: its face needs a muzzle, not a human nose and mouth)."""
-    s = (subject or "").lower()
-    if any(w in s for w in ANIMAL_WORDS):
-        return True
-    req = str(p.state.get("request") or "").lower()
-    d = dstate(p)
-    return len(d["subjects"]) == 1 and any(w in req.split() or w + "," in req or w + "s" in req.split()
-                                           for w in ANIMAL_WORDS) and not any(w in s for w in FIGURE_WORDS)
+    from .workflow_draw import is_animal_state
+    dstate(p)
+    return is_animal_state(p.state, subject or "")
 
 
 def is_figure(p, subject: str) -> bool:
@@ -296,6 +292,8 @@ def sketch_holes(p) -> List[dict]:
     out = []
     for el in d["sketch"]:
         if el["kind"] == "figure":
+            if is_animal(p, el.get("subject")):
+                continue        # a mannequin under an animal is a guide: human limb proportions do not apply
             for ln in draw_sketch.figure_report(p, el):
                 if "move" in ln:
                     out.append(_hole("proportion", f"{el['id']}: {ln}   (easel sketch joint {el['id']} <joint> x,y)",
@@ -324,6 +322,15 @@ def _box_px(p, b):
     return coords.box_to_px(b, p.W, p.H)
 
 
+def hood_up(p, subject: Optional[str]) -> bool:
+    """The subject wears a hood up (``easel wear <subject> hood``): it closes round the face and hides the neck."""
+    for r in dstate(p)["lines"]:
+        w = r.get("wear") or {}
+        if w.get("piece") == "hood" and w.get("of") == subject and not str(w.get("item", "")).startswith("hood roll"):
+            return True
+    return False
+
+
 def part_area_holes(p) -> List[dict]:
     """A planned part with no coloured area of its own: name it, the area that holds its box, and where that area
     runs out of the box (the leak) into a neighbour or the background."""
@@ -347,6 +354,8 @@ def part_area_holes(p) -> List[dict]:
             continue
         if any(r.get("parent") == n for r in d.get("marks", {}).values()):
             continue
+        if n.startswith("neck") and hood_up(p, prt.get("of")):
+            continue            # the hood closes round the face: the neck is under it
         x0, y0, x1, y1 = _box_px(p, prt["box"])
         if x1 - x0 < 4 or y1 - y0 < 4:
             continue
@@ -463,15 +472,16 @@ def connection_holes(p) -> List[dict]:
     regs = p.state.get("regions", {})
     if not regs:
         return []
+    from .workflow_draw import is_scenery
     bg = _bg_mask(p)
     out = []
     S = max(p.W, p.H)
     seen = set()
     for a, pa in d["parts"].items():
-        if a not in regs:
-            continue
+        if a not in regs or is_scenery(p.state, a):
+            continue            # sky, sea and cliffs are bands of the scene: they meet by the horizon
         for b, pb in d["parts"].items():
-            if b == a or b not in regs or pa["of"] != pb["of"] or (b, a) in seen:
+            if b == a or b not in regs or pa["of"] != pb["of"] or (b, a) in seen or is_scenery(p.state, b):
                 continue
             seen.add((a, b))
             A, B = pa["box"], pb["box"]
@@ -554,8 +564,8 @@ def neck_holes(p) -> List[dict]:
         if h not in regs or h not in d["parts"]:
             continue
         subj = d["parts"][h]["of"]
-        if is_animal(p, subj):
-            continue
+        if is_animal(p, subj) or hood_up(p, subj):
+            continue            # fur runs into the body; a hood closes round the face and hides the neck
         body = [n for n, v in d["parts"].items() if v["of"] == subj and n in regs
                 and any(w in n for w in NECK_STOP) and n != h]
         if not body:
@@ -617,7 +627,13 @@ def background_holes(p) -> List[dict]:
     S = max(p.W, p.H)
     near = np.sqrt(((img - bgc) ** 2).sum(-1)) < 14.0
     line = _line_alpha(p) > 0.3
-    cand = near & ~line
+    # a band is painted whole, whatever its colours (a night sea's own gradient runs through the sky's blue): its
+    # pixels are that thing; background shows through only outside the bands
+    owned = np.zeros((p.H, p.W), bool)
+    for n in d.get("bands", {}):
+        if n not in ("background", "bg", "sky", key) and n in p.state.get("regions", {}):
+            owned |= _rmask(p, n)
+    cand = near & ~line & ~owned
     n, lab, stats, cent = cv2.connectedComponentsWithStats(cand.astype(np.uint8), 8)
     if n <= 2:
         return []
@@ -700,7 +716,13 @@ def detail_holes(p) -> List[dict]:
     if not mean_rest:
         return out
     surf = dstate(p).get("surface", {})
+    heads = {el.get("subject"): el for el in head_elements(p)}
     for n, (v, f) in dens.items():
+        if n in HEAD_PARTS:
+            el = heads.get(dstate(p)["parts"].get(n, {}).get("of")) or (list(heads.values())[-1] if heads else None)
+            if el is not None and not face_missing(p, el):
+                continue    # a face (skin or fur) is sparse in a professional picture too; its features are checked
+                #             on their own (face_holes), its eyes are parts of their own
         if surf.get(n, {}).get("material") in ("skin", "glass") and not (n in HEAD_PARTS and head_elements(p)
                                                                           and face_missing(p, head_elements(p)[-1])):
             continue        # a face is sparse in a professional picture too; its features are checked on their own
@@ -891,12 +913,20 @@ def depth_order(p) -> List[str]:
 
 
 def subject_of(p, name: str) -> Optional[str]:
+    """The subject a region or part name belongs to: the subject itself, a part's subject, or the subject the name
+    starts with (pines-l1, pines_2 and pines-shadow belong to pines; the longest subject name wins)."""
     d = dstate(p)
     if name in d["subjects"]:
         return name
     if name in d["parts"]:
         return d["parts"][name]["of"]
-    return None
+    pre = [s for s in d["subjects"] if name.startswith(s + "-") or name.startswith(s + "_")]
+    return max(pre, key=len) if pre else None
+
+
+def region_subject(p, name: str) -> Optional[str]:
+    """``subject_of``, else the subject whose box holds the region's middle (a band named for what it is)."""
+    return subject_of(p, name) or _band_subject(p, name)
 
 
 def nearer_mask(p, subject: str) -> Tuple[np.ndarray, List[str]]:
@@ -913,7 +943,7 @@ def nearer_mask(p, subject: str) -> Tuple[np.ndarray, List[str]]:
     for s in near:
         own = [s] + [n for n, v in d["parts"].items() if v["of"] == s] + \
             [n for n in d.get("bands", {}) if n not in d["subjects"] and n not in d["parts"]
-             and _band_subject(p, n) == s]
+             and region_subject(p, n) == s]
         hit = False
         for n in own:
             if n in regs:
@@ -935,6 +965,13 @@ def _band_subject(p, name: str) -> Optional[str]:
     return hits[0][1] if hits else None
 
 
+WATER_WORDS = ("water", "lake", "sea", "river", "ocean", "pond", "bay", "harbour", "harbor")
+
+
+def _is_water(name: str) -> bool:
+    return any(t in WATER_WORDS for t in re.split(r"[-_\s]+", name.lower()))
+
+
 def depth_holes(p) -> List[dict]:
     """A farther subject (or a part of it) whose colour is drawn over a nearer subject's area: the sun in front of
     the mountains it should set behind."""
@@ -947,6 +984,11 @@ def depth_holes(p) -> List[dict]:
     img = dc_composite(p).astype(np.float32)
     out = []
     regs = p.state.get("regions", {})
+
+    def bands_of(s):
+        # bands named after the subject (pines-l1, pines-shadow) are the subject's areas too
+        return [n for n in d.get("bands", {}) if n not in d["subjects"] and n not in d["parts"]
+                and subject_of(p, n) == s]
     for i, far in enumerate(order[:-1]):
         names = [n for n, v in d["parts"].items() if v["of"] == far] + [far]
         for n in names:
@@ -964,20 +1006,36 @@ def depth_holes(p) -> List[dict]:
                 nm = marks.get(near)
                 if nm is None or not nm.any():
                     continue
-                own = [q for q in [near] + [k for k, v in d["parts"].items() if v["of"] == near] if q in regs]
+                own = [q for q in [near] + [k for k, v in d["parts"].items() if v["of"] == near] + bands_of(near)
+                       if q in regs]
                 if not own:
                     continue
                 try:
                     oc = np.array(swatch(p, d["parts"].get(own[0], {}).get("swatch") or own[0]), float)
                 except Exception:  # noqa: BLE001
                     oc = None
+                if oc is not None and float(np.sqrt(((oc - c) ** 2).sum())) < 45.0:
+                    continue    # two greens a few steps apart: the colours cannot tell the two things apart
                 area = np.zeros((p.H, p.W), bool)
                 for q in own:
                     area |= _rmask(p, q)
+                # a wet brush picks up the colour next to it along the edge of an area: a spill lies inside it
+                area = cv2.erode(area.astype(np.uint8), np.ones((3, 3), np.uint8),
+                                 iterations=max(2, int(0.005 * max(p.W, p.H)))).astype(bool)
                 close = np.sqrt(((img - c) ** 2).sum(-1)) < 22.0
                 if oc is not None:
                     close &= np.sqrt(((img - oc) ** 2).sum(-1)) > 40.0
                 hit = close & area
+                if _is_water(near) and n in regs:
+                    # water mirrors what stands above it: the far thing's colour in its own columns is its
+                    # reflection (the sun's path down the lake), not the far thing drawn in front
+                    fb = coords.mask_bbox_px(_rmask(p, n))
+                    if fb:
+                        w_ = fb[2] - fb[0]
+                        pad = max(0.5 * w_, 0.1 * p.W)
+                        cols = np.zeros(p.W, bool)
+                        cols[int(max(0, fb[0] - pad)):int(min(p.W, fb[2] + pad))] = True
+                        hit &= ~cols[None, :]
                 bx0 = d["parts"][n]["box"] if n in d["parts"] else d["subjects"][far]["box"]
                 backdrop = (bx0[2] - bx0[0]) * (bx0[3] - bx0[1]) >= 0.8e6
                 # a backdrop shares hues with what stands on it (an orange cat on a warm wall): only a real

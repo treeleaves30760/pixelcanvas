@@ -135,7 +135,42 @@ def auto_assign(p, labels, table) -> Dict[int, Tuple[str, str]]:
         from .draw_wear import wear_corrections
         out.update(wear_corrections(p, labels, table, out))
     out.update(outline_corrections(p, labels, table, out))
+    out.update(eye_corrections(p, labels, table, out))
     out.update(lock_corrections(p, labels, table, out))
+    return out
+
+
+def eye_corrections(p, labels, table, assigned) -> Dict[int, Tuple[str, str]]:
+    """A small area inside the closed outline of an eye part is that eye, whatever box or garment holds it: on a
+    small figure the eye's box is smaller than the area its outline makes, and a hood round the face would take it."""
+    d = dstate(p)
+    from .draw_core import poly_mask, u2px
+    inside: List[Tuple[str, np.ndarray]] = []
+    for r in d["lines"]:
+        part = str(r.get("part") or "")
+        if r.get("wear") or not r.get("closed") or not part.startswith("eye") or part not in d["parts"]:
+            continue
+        P = u2px(p, r["path"])
+        if len(P) >= 3:
+            inside.append((part, poly_mask(p.H, p.W, P)))
+    out: Dict[int, Tuple[str, str]] = {}
+    if not inside:
+        return out
+    # the area that fills the inside of the eye's outline (off the lines) is the eye
+    alpha, _ = barrier_source(p)
+    off = ~(alpha > 0.3) if alpha is not None else np.ones((p.H, p.W), bool)
+    shares = {r["n"]: r["share"] for r in table}
+    for part, q in inside:
+        lab = labels[q & off]
+        lab = lab[lab > 0]
+        if not len(lab):
+            continue
+        n = int(np.bincount(lab).argmax())
+        if (lab == n).mean() < 0.5 or shares.get(n, 1.0) > 0.01:
+            continue
+        cur = assigned.get(n)
+        if cur is None or not str(cur[0]).startswith(("eye", "iris", "pupil")):
+            out[n] = (part, d["parts"][part].get("swatch") or part)
     return out
 
 

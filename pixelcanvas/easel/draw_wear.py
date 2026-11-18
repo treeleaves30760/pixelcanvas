@@ -566,6 +566,9 @@ def add_neck(p, body: Body, subj: str) -> Tuple[list, Optional[tuple], List[str]
     cut it where they cover it. Returns (ops, touched px box, report lines)."""
     d = dc.dstate(p)
     done = d.setdefault("necks", {})
+    from .draw_checks import is_animal
+    if is_animal(p, subj):
+        return [], None, []         # an animal's head runs into its body through fur: no human neck lines
     if done.get(subj) or _neck_lines_of(p, subj) or detect_neck(p, body):
         done[subj] = True
         return [], None, []

@@ -612,6 +612,17 @@ def _far_scene(p, img: np.ndarray, h: float, water: str) -> np.ndarray:
     return out
 
 
+def _row_runs(row: np.ndarray, gap: int = 3) -> List[Tuple[float, float]]:
+    """The stretches ``[x_lo, x_hi)`` where a mask row is on; gaps narrower than ``gap`` pixels are bridged."""
+    cols = np.nonzero(row)[0]
+    if not len(cols):
+        return []
+    cut = np.nonzero(np.diff(cols) > gap)[0]
+    starts = np.r_[cols[0], cols[cut + 1]]
+    ends = np.r_[cols[cut], cols[-1]] + 1
+    return [(float(a), float(b)) for a, b in zip(starts, ends)]
+
+
 def reflect_ops(mask: np.ndarray, src: np.ndarray, h: float, water_rgb, near_w: float, strength: float,
                 glow_x: Optional[float], glow_rgb, seed: int) -> Tuple[list, int, int]:
     """Horizontal broken strokes mirroring ``src`` about the row ``h``; thinner, shorter and fainter toward the
@@ -631,14 +642,14 @@ def reflect_ops(mask: np.ndarray, src: np.ndarray, h: float, water_rgb, near_w: 
         t = float(np.clip((y - h) / span, 0, 1))
         th = far_w + (near_w - far_w) * t ** 1.15
         yi = min(H - 1, int(y))
-        cols = np.nonzero(mask[yi])[0]
-        if len(cols):
-            x_lo, x_hi = float(cols.min()), float(cols.max() + 1)
-            cover = 0.95 - 0.4 * t
-            Lm = th * (11.0 - 5.0 * t)
+        cover = 0.95 - 0.4 * t
+        Lm = th * (11.0 - 5.0 * t)
+        # each stretch of water on the row on its own: a curved shore leaves short stretches and bays, and a
+        # stroke is never longer than the water it lies on
+        for x_lo, x_hi in _row_runs(mask[yi]):
             n = int(cover * (x_hi - x_lo) / Lm) + 1
             for _ in range(n):
-                Ld = Lm * rng.uniform(0.6, 1.4)
+                Ld = min(Lm * rng.uniform(0.6, 1.4), x_hi - x_lo)
                 x0 = rng.uniform(x_lo - 0.3 * Ld, x_hi - 0.7 * Ld)
                 yy = y + rng.normal(0, 0.25 * th)
                 xs3 = np.clip(np.array([x0 + 0.2 * Ld, x0 + 0.5 * Ld, x0 + 0.8 * Ld]), 0, W - 1).astype(int)
@@ -1721,8 +1732,16 @@ def cmd_window(ctx: Ctx, args: List[str]) -> Report:
                     share.append((float(mk[max(0, y0):y1, max(0, x0):x1].mean()), n))
             best = max(share) if share else (0.0, None)
             hold = cli.resolve_region(p, best[1], ctx.notes, u) if best[0] >= 0.3 else None
+        view: List[str] = []
         if hold is not None:
             later = _later_regions(p, hold.name, WINDOW_WORDS)
+            # what belongs to the window's own subject (the hills, sky or street seen through it, even drawn with
+            # --front) is the view behind the glass: the frame goes over it
+            from .draw_checks import region_subject
+            own = region_subject(p, hold.name)
+            if own is not None:
+                view = [n for n in later if region_subject(p, n) == own]
+                later = [n for n in later if n not in view]
         else:
             later = _subjects(p, skip=[n for n in p.region_names() if _named(n, WINDOW_WORDS)])[1]
         g = int(math.ceil(0.6 * ft)) + 2
@@ -1736,7 +1755,12 @@ def cmd_window(ctx: Ctx, args: List[str]) -> Report:
             ring = np.zeros((H, W), bool)
             ring[max(0, y0 - g):min(H, y1 + g), max(0, x0 - g):min(W, x1 + g)] = True
             ring[max(0, y0):min(H, y1), max(0, x0):min(W, x1)] = False
-            clip = (reg.mask | ring) & ~front_m
+            seen = reg.mask.copy()
+            for n in view:
+                mk = _region_mask(p, n)
+                if mk is not None:
+                    seen |= mk
+            clip = (seen | ring) & ~front_m
         elif front:
             clip = ~front_m
     lines = [f"frame {coords.hex_colour(frame)} {ft:.0f}px, glass {coords.hex_colour(glass)} ({how})"

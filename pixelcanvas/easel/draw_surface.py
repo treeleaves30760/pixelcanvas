@@ -76,9 +76,11 @@ MATERIALS: Dict[str, dict] = {
                  edge="hard", occl=0.6, spec="none", hue=0.3, jit=(2.0, 3.0), lines=0.8, form=0.9, curve=0.6),
     "stone": dict(tone=(6.0, 4.0), tk="dabs", fine="speckle", fw=1.2, fl=3.0, dens=1.0, fc=1.3, kmax=14.0,
                   dir="random", edge="hard", occl=0.5, spec="none", hue=0.3, jit=(2.5, 4.0), lines=0.7, form=1.0),
+    # water is a flat plane: no form light or sheen from its outline (that lit side reads as a pale slab laid over
+    # the lake); its light is the reflection of the sky and the sun's path (easel reflect)
     "water": dict(tone=(4.0, 3.0), tk="dabs", fine="ripples", fw=0.8, fl=22.0, dens=1.2, fc=1.4, kmax=16.0,
-                  lit=0.45, dir="horizontal", edge="soft", occl=0.2, spec="band", spa=0.8, hue=0.5, jit=(1.5, 3.0),
-                  lines=0.0, form=0.2, curve=0.1),
+                  lit=0.45, dir="horizontal", edge="soft", occl=0.2, spec="none", spa=0.8, hue=0.5, jit=(1.5, 3.0),
+                  lines=0.0, form=0.0, curve=0.1),
     "sky": dict(tone=(3.0, 2.0), tk="brush", bs=45.0, fine="hatch", fw=0.6, fl=60.0, dens=0.5, fc=1.0,
                 kmax=3.5, lit=0.5, op=(0.3, 0.5), dir="horizontal", edge="soft",
                 occl=0.0, spec="none", hue=0.3, jit=(1.0, 2.0), desat=0.15, lines=0.0, form=0.0, curve=0.1),
@@ -1426,6 +1428,10 @@ def detail_lines(p, masks=None, limit: int = 3) -> List[str]:
     except Exception as e:  # noqa: BLE001
         return [f"(detail measure failed: {type(e).__name__}: {e})"]
     cel_pic = style_mode(p) in ("cel", "soft") and group.startswith("anime")
+    if _free(p) and style_mode(p) != "paint":
+        # a flat style drawn from a request: no hint asks for more texture
+        g = [x for x in g if not _asks_for_more(x)]
+        cel_pic = True
     low = [r for r in worst if r["ratio"] < 0.6][:2] if not cel_pic else []
     if cel_pic:     # cel: the fine bands are not asked of the fills; the flats and the line weight are
         g = [x for x in g if not (x["key"].startswith(("bandL", "bandC")) or x["key"] in ("edge_density", "lc_p50"))
@@ -1495,8 +1501,24 @@ def _amount_spent(p) -> bool:
     return bool(sd) and all(float(v.get("amount", 1.0)) >= 2.0 for v in sd.values())
 
 
+def _free(p) -> bool:
+    """A picture drawn from a request (no reference picture, not hand mode)."""
+    st = p.state
+    return st.get("mode") != "hand" and not st.get("has_ref", st.get("reference") is not None)
+
+
+def _asks_for_more(x: dict) -> bool:
+    """A measure below the range that only more marks would raise: fine energy too low, too many empty tiles, too
+    much flat area, too few tapered form lines. Without a reference these are not holes (a flat style is flat on
+    purpose, and more marks on a plain sky or lake read as noise); a picture that is too busy still is."""
+    k = x["key"]
+    return (k.startswith("bandL") and x["low"]) or (k in ("det_empty", "flat_share") and not x["low"]) or \
+        (k == "line_taper" and x["low"])
+
+
 def gate_holes(p, stage: str) -> List[dict]:
-    """The detail measures outside the professional interquartile range (gate of the detail and finish stages)."""
+    """The detail measures outside the professional interquartile range (gate of the detail and finish stages).
+    Drawn from a request, only a picture that is too busy is held: the gate never asks for more texture."""
     from .detail_measure import outside, profile_name
     if dc.work_scale(p) <= 1 and max(p.W, p.H) < 640:
         return []
@@ -1507,8 +1529,11 @@ def gate_holes(p, stage: str) -> List[dict]:
     except Exception:  # noqa: BLE001
         return []
     cel_pic = style_mode(p) in ("cel", "soft") and group.startswith("anime")
+    free = _free(p)
     out = []
     for x in bad:
+        if free and _asks_for_more(x):
+            continue                     # drawn from a request: a picture is as plain as its style wants
         # too much fine energy is a softer failure than too little: allow up to 1.5x the upper quartile
         if x["key"].startswith("bandL") and not x["low"] and x["value"] <= 1.5 * x["q3"]:
             continue

@@ -235,14 +235,12 @@ def test_detail_gate_includes_surface_measures(draw, monkeypatch):
     hs = [h for h in draw_checks.holes(project(), "detail") if h["metric"].startswith("detail ")]
     assert hs, draw_checks.holes(project(), "detail")
     assert hs[0]["metric"] == "detail flat_share" and hs[0]["fix"].startswith("easel surface auto --again --amount")
-    # line taper: a high one passes, a low one blocks
+    # line taper: drawn from a request, neither a high nor a low one asks for more lines
     p = project()
     monkeypatch.setattr(detail_measure, "outside", lambda m, group, keys=None: [_entry("line_taper", False, 0.96)])
     assert draw_surface.gate_holes(p, "detail") == []
     monkeypatch.setattr(detail_measure, "outside", lambda m, group, keys=None: [_entry("line_taper", True, 0.3)])
-    hs = draw_surface.gate_holes(p, "detail")
-    assert len(hs) == 1 and hs[0]["metric"] == "detail line_taper"
-    assert hs[0]["fix"].startswith("easel surface auto --again --lines")
+    assert draw_surface.gate_holes(p, "detail") == []
 
 
 # ============================================================================================ 7 working canvas

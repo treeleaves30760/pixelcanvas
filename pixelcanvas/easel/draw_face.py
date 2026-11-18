@@ -155,8 +155,8 @@ def cmd_face(ctx, args):
     guides = draw_sketch.head_guides(p, el)
     eye_parts = sorted([n for n in d["parts"] if n.startswith("eye")], key=lambda n: d["parts"][n]["box"][0])
     boxes = [d["parts"][n]["box"] for n in eye_parts[:2]] if len(eye_parts) >= 2 else None
-    from .draw_checks import is_animal
-    kind = str(a.get("kind") or ("animal" if is_animal(p, el.get("subject")) else "human")).lower()
+    from .draw_checks import HEAD_PARTS, is_animal
+    kind =str(a.get("kind") or ("animal" if is_animal(p, el.get("subject")) else "human")).lower()
     if kind not in ("human", "animal"):
         raise UsageError(f"unknown --kind {kind!r}: human or animal", "easel face s2 --kind animal")
     specs = face_parts(el, guides, expr, boxes, kind=kind)
@@ -169,6 +169,18 @@ def cmd_face(ctx, args):
     new_ids: List[str] = []
     lines: List[str] = []
     extra: List[str] = []
+    # each feature belongs to its own part: an eye and its lash to that eye, the brows, nose and mouth to the head
+    # (on a small face the plan boxes overlap, and the nearest box would hand a brow or the nose to an eye)
+    subj = el.get("subject")
+    head_part = next((n for n in HEAD_PARTS if n in d["parts"] and (not subj or d["parts"][n].get("of") == subj)),
+                     None)
+    side_eye = {"l": eye_parts[0], "r": eye_parts[1]} if len(eye_parts) >= 2 else {}
+
+    def part_of(name: str, guess):
+        kind, _, side = name.partition("-")
+        if kind in ("eye", "lash"):
+            return side_eye.get(side, guess)
+        return head_part or (None if str(guess or "").startswith("eye") else guess)
 
     def mutate():
         ops, bb = [], None
@@ -176,12 +188,14 @@ def cmd_face(ctx, args):
             path, _ = draw_line.fit(p, sp["pts"], closed=sp["closed"], snap=False, join=False, bow=0.0)
             rec = draw_line.make_record(p, path, sp["pts"], weight=sp["weight"] * wscale, taper=sp["taper"],
                                         color="line", closed=sp["closed"], src=f"face {sp['name']}")
+            rec["part"] = part_of(sp["name"], rec.get("part"))
             d["lines"].append(rec)
             new_ids.append(rec["id"])
             lines.append(f"{rec['id']} {sp['name']}")
             ops += draw_line.render_ops(p, rec)
             bb = coords.union_box(bb, C._path_box(p, path))
-        nops, nbb, nlines = face_neck(p, el)
+        # an animal's head runs into its body through fur: no human neck lines
+        nops, nbb, nlines = face_neck(p, el) if kind != "animal" else ([], None, [])
         extra.extend(nlines)
         return ops + nops, coords.union_box(bb, nbb)
     owned = C._line_owned(p, mutate)

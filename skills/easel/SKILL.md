@@ -209,26 +209,30 @@ easel new pic --size 1000x1200 --request "a chibi fox mage holding a staff"
    behind nearer ones; change the order with `easel plan order sky,mountains,lake,pines`.
 2. **sketch** - people: `easel sketch figure fox --pose stand|walk|hold|wave|sit|bust` (`--heads 2.5` for
    chibi), then `easel sketch head fox --yaw 15`; `easel face <head id>` lays brows, nose and mouth (an animal
-   gets a muzzle with `--kind animal`). Things: `easel sketch curve "x,y x,y ..."`. Landscapes:
-   `easel sketch horizon 560`.
+   gets a muzzle with `--kind animal`). Animals: `easel sketch ellipse 320,500,660,710` for the body and
+   `easel sketch head cat`; a dressed animal (a fox mage in a robe) stands on a mannequin. Things:
+   `easel sketch curve "x,y x,y ..."`. Landscapes: `easel sketch horizon 560`.
 3. **line** (cel, ink) - 3-8 points per line: `easel line "330,190 300,280 305,350"`; the tool smooths, tapers
    and joins ends. Eyes: `easel line eye eye-l,eye-r`. Leaks: `easel line gaps`, then all closes in ONE
-   command: `easel line close G1,G3` (ids renumber after a close).
+   command: `easel line close G1,G3` (ids renumber after a close). Sky, sea and cliffs need no lines.
 4. **flat** - `easel flat auto`, look at the numbered VIEW, fix one area: `easel flat 8 --color fur --part paw`;
    the area under a point: `easel flat 500,700 --color robe`; background showing inside a figure:
-   `easel flat hole 230,640`.
+   `easel flat hole 230,640`. Sky, sea and cliffs are colour bands: `easel band sea "0,700 1000,700" --below
+   --color sea`.
 5. **shade** - `easel shade all --soft 0.3`, cast shadows `easel shadow --from hair --onto face`, `easel rim hair`.
 6. **detail** - `easel eye eye-l,eye-r --color iris` · `easel hair hair --flow "x,y x,y x,y"` ·
    `easel fold "x,y x,y x,y" --region robe` · `easel blush face` ·
    `easel scatter robe --kind star --count 14` · `easel text "BLUE NOTE" --box 60,50,940,240 --color "#f1e3c3"`.
    Then `easel surface auto` and look at the view; change one area with `easel surface coat --material
-   cloth-rough`. If the gate says detail is short, run the command it prints. For anime and cel pictures the
-   surface keeps the flats clean: a few cel-shadow shapes, grouped hair light, no texture.
+   cloth-rough`. If the gate says detail is short, run the command it prints: it asks for detail where the
+   viewer looks and holds a picture that turned busy; plain skies, water and flat styles stay plain. For anime
+   and cel pictures the surface keeps the flats clean: a few cel-shadow shapes, grouped hair light, no texture.
 7. **finish** - `easel look`, fix, `easel export final.png --stages stages`, `easel stage done`.
 
 Painterly (`paint` style): block-in with bands, `easel band sky "0,560 1000,560" --above --color sky`,
 `easel band pines "x,y x,y ..." --closed --color pines --rough 0.15`. A plain band is a placeholder: draw the
-trees over it, `easel band pines "100,900 150,600" --tiers 5 --color pines`; move a band with
+trees over it, `easel band pines "100,900 150,600" --tiers 5 --color pines` (a band named `pines-2` belongs to
+`pines` in the depth order); move a band with
 `--shift dx,dy`; a sunset or night sky: `--color sky --color2 sky-low`. Forms `easel paint pines --dir 80`;
 detail `easel haze --amount 0.4`, `easel rim`, `easel scatter`. Poster style: flat shapes with
 `band ... --closed`, then `text`; no outlines.

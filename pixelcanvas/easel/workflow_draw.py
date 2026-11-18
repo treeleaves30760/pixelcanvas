@@ -62,6 +62,25 @@ def is_ground(name: str) -> bool:
     return any(w in name for w in GROUND_WORDS)
 
 
+SCENERY_WORDS = ("cliff", "cliffs", "mountain", "mountains", "hill", "hills", "rock", "rocks", "ridge", "dune",
+                 "dunes", "forest", "treeline", "horizon")
+
+
+def is_scenery(state: dict, part: str) -> bool:
+    """A part that is a band of the scene (sky, sea, a cliff, the land of a backdrop subject): it is laid as a
+    colour band, not outlined."""
+    if is_ground(part) or any(t in SCENERY_WORDS for t in re.split(r"[-_\s]+", part.lower())):
+        return True
+    sub = _subjects(state).get(_parts(state).get(part, {}).get("of") or "", {})
+    b = sub.get("box")
+    if not b:
+        return False
+    backdrop = (b[2] - b[0]) * (b[3] - b[1]) >= 0.8e6
+    return backdrop and not any(v.get("of") == _parts(state)[part].get("of") and
+                                any(w in n for w in ("head", "face", "eye", "arm", "leg", "hand", "torso"))
+                                for n, v in _parts(state).items())
+
+
 def is_draw(obj) -> bool:
     """True for a project (or its state) without a reference picture, or in hand mode (draw with a reference)."""
     st = obj if isinstance(obj, dict) else getattr(obj, "state", {})
@@ -86,6 +105,7 @@ def _ordered_parts(state: dict) -> List[str]:
 
 
 LOCK_WORDS = ("hair", "bangs", "fringe", "ponytail", "braid", "pigtail")
+FIGURE_PARTS = ("face", "head", "arm", "arms", "leg", "legs", "torso", "body", "hand", "hands")
 
 
 def _tokens(name: str) -> List[str]:
@@ -156,6 +176,25 @@ def face_item(state: dict, part: str) -> Tuple[str, str]:
     return text, cmd + "   (each feature is an ordinary line you can move or redo)"
 
 
+def is_animal_state(state: dict, subject: str) -> bool:
+    """``draw_checks.is_animal`` on a state (an animal subject, or the one subject of a request about an animal)."""
+    from .draw_checks import ANIMAL_WORDS, FIGURE_WORDS
+    s = (subject or "").lower()
+    if any(w in s for w in ANIMAL_WORDS):
+        return True
+    req = str(state.get("request") or "").lower()
+    return len(_subjects(state)) == 1 and any(w in req.split() or w + "," in req or w + "s" in req.split()
+                                              for w in ANIMAL_WORDS) and not any(w in s for w in FIGURE_WORDS)
+
+
+def _plain_animal(state: dict, subject: str) -> bool:
+    """An animal that is not dressed and holds nothing: no mannequin, no human proportions."""
+    if not is_animal_state(state, subject):
+        return False
+    return not any(v.get("of") == subject and wear_piece(n) is not None and "paw" not in n
+                   for n, v in _parts(state).items())
+
+
 TEXT_WORDS = ("title", "text", "logo", "letter", "caption", "words", "headline")
 
 
@@ -191,10 +230,18 @@ def build_todo(state: dict) -> None:
             add("plan", "palette: make, look, pick one", 'easel palette make --base "#rrggbb"', key="palette")
         elif stage == "sketch":
             for s in subjects:
-                figure = any(n in parts and parts[n]["of"] == s for n in ("face", "head", "arm", "arms", "leg", "legs",
-                                                                         "torso", "body")) or \
-                    any(parts[n]["of"] == s and any(w in n for w in ("arm", "leg", "hand", "head")) for n in parts)
+                # body parts by word (a title's "heading" is not a head)
+                figure = not is_text(s) and any(
+                    parts[n]["of"] == s and any(t in FIGURE_PARTS or t.endswith(("arm", "leg", "hand"))
+                                                for t in _tokens(n)) for n in parts)
                 if figure and ref:
+                    if any(parts[n]["of"] == s and n in ("face", "head") for n in parts):
+                        add("sketch", f"head construction for {s}", f"easel sketch head {s}", region=s, key="head")
+                elif figure and _plain_animal(state, s):
+                    # an animal on its own legs (not dressed, no hands): its body and head shapes, no mannequin
+                    b = subjects[s]["box"]
+                    add("sketch", f"big shapes of {s}: body and head", f"easel sketch ellipse {coords.fmt_box(b)}"
+                        f"   (the body; a curve for a curled or lying pose)", region=s, key="construct")
                     if any(parts[n]["of"] == s and n in ("face", "head") for n in parts):
                         add("sketch", f"head construction for {s}", f"easel sketch head {s}", region=s, key="head")
                 elif figure:
@@ -216,6 +263,8 @@ def build_todo(state: dict) -> None:
             for n in _ordered_parts(state):
                 if is_text(n) or poster:
                     continue        # lettering is set with easel text; poster shapes need no outline
+                if not ref and is_scenery(state, n):
+                    continue        # sky, sea, a cliff: colour bands in the flat stage, not outlines
                 # every part needs an outline of its own, or flat cannot give it an area (a torso left unlined
                 # merges with the background)
                 if True:
@@ -248,9 +297,15 @@ def build_todo(state: dict) -> None:
         elif stage == "flat":
             add("flat", "flat colours from the plan", "easel flat auto", key="auto")
             add("flat", "fill the areas flat auto left open, fix wrong ones", "easel flat", key="fix")
+            if "line" in plan and not ref:
+                for n in _ordered_parts(state):
+                    if is_scenery(state, n) and not is_text(n):
+                        side = "--above" if "sky" in n else "--closed"
+                        add("flat", f"{n} as a colour band", f'easel band {n} "x,y x,y x,y ..." {side} --color {n}',
+                            region=n, key="mass")
         elif stage == "shade":
             for n in sorted(parts, key=lambda k: -parts[k].get("focus", 2)):
-                if not is_text(n):
+                if not is_text(n) and (ref or not is_scenery(state, n)):     # sky and sea bands carry their light
                     add("shade", f"shade {n}", f"easel shade {n}", region=n, key="shade")
             hair = [n for n in parts if any(w in n for w in ("hair", "bangs", "fringe"))]
             face = [n for n in parts if n in ("face", "head", "neck")]
@@ -268,6 +323,8 @@ def build_todo(state: dict) -> None:
                 add("block-in", f"big shape of {s}", cmd, region=s, key="mass")
         elif stage == "forms":
             for s in list(subjects) + [b for b in state.get("draw", {}).get("bands", {}) if b not in subjects]:
+                if is_text(s):
+                    continue        # lettering is set with easel text, not painted
                 add("forms", f"brushwork on {s}", f"easel paint {s} --dir 0", region=s, key="forms")
         elif stage == "detail":
             add("detail", "surface on every area: materials chosen from the part names, marks at every scale",
@@ -395,6 +452,8 @@ def refresh(p) -> List[int]:
             from . import draw_flat
             if k == "auto":
                 return bool(d.get("fills"))
+            if k == "mass":
+                return r in d.get("bands", {}) or r in st.get("regions", {})
             if k == "fix":
                 labels, table, _ = draw_flat.compute_areas(p)
                 un = [t for t in draw_flat.unfilled(p, labels, table) if t["share"] > 0.0004]

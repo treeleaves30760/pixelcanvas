@@ -2152,8 +2152,8 @@ def cmd_paint(ctx: Ctx, args: List[str]) -> Report:
     order = depth_order(p)
 
     def subject_of(n):
-        n0 = d.get("parts", {}).get(n, {}).get("of") or n
-        return n0 if n0 in order else next((s for s in order if n.startswith(s + "-")), None)
+        s0 = draw_checks.subject_of(p, n)
+        return s0 if s0 in order else None
 
     def visible(r):
         s0 = subject_of(r.name)
@@ -2445,7 +2445,7 @@ def _band_nearer_regions(p, subject: Optional[str]) -> List[str]:
     for s in order[order.index(subject) + 1:]:
         own = [s] + [n for n, v in d["parts"].items() if v["of"] == s] + \
             [n for n in d.get("bands", {}) if n not in d["subjects"] and n not in d["parts"]
-             and draw_checks._band_subject(p, n) == s]
+             and draw_checks.region_subject(p, n) == s]
         out += [n for n in own if n in regs and n not in out]
     return out
 
