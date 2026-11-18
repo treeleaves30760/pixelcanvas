@@ -56,7 +56,7 @@ An editable install keeps `easel` in step with the clone; `easel-install-skill -
 
 A small open-weight model drives easel through Claude Code or opencode like any other model: point the framework at
 your model server, install the skill, and ask for a picture. The model needs vision (it opens the `VIEW:` pictures).
-A redraw takes about 46-75 commands, and a session ends at about 55k tokens of context.
+A redraw takes about 44-86 commands, and a session ends at about 55k tokens of context.
 
 ## Check the install
 

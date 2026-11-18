@@ -235,8 +235,7 @@ The todo list, the loop and the stall rules above apply as in trace mode.
 
 ## Without a reference picture
 
-Free mode gives a tidy, complete picture at hobbyist level; redrawing a reference (trace mode) is the mode that
-reaches the reference's quality. You say what the picture is, the tool builds it stage by stage, on a working canvas 3x the
+Free mode draws from a text request. You say what the picture is, the tool builds it stage by stage, on a working canvas 3x the
 picture you export (coordinates stay 0-1000; `--scale 1|2|3` on `easel new` sets it). Follow `NEXT:`. When
 `stage done` refuses, run the command on its `NEXT:` line: every refused line names the place and the fix.
 ```bash

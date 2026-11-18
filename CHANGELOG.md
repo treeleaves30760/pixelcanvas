@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 (unreleased)
+## 0.6.0 (2026-11-18)
 
 pixelcanvas is now **easel**, a command-line paint program an agent drives stage by stage. The old tool, where the
 model wrote Python that drew vector art with kits of subject generators, is gone: the studio, the kits (flora,
@@ -19,18 +19,48 @@ skills and the gallery. The `pixelcanvas` command now runs easel.
   canvas, a `VIEW-REF:` picture of the reference and one `NEXT:` line. `easel todo --all` prints the work list.
 - **Three modes**: `trace` (stage commands follow the reference; the agent plans regions, orders the work, checks and
   refines), `hand` (the agent places every mark, the reference beside it) and `free` (a text request, no reference).
+- **Redraw it, but ...**: `easel new pic --ref reference.jpg --request "..."` asks, after the plan, for each change the
+  request names (`easel change add ...`, or `easel change none` for a plain copy) and adds a change stage that makes
+  them. A change edits the target, the picture the stages trace and score against; the original stays as
+  `orig.png`. `easel look --show changes` shows original and target side by side, `easel change list` and `drop`
+  manage the list, and a change made after tracing has begun marks only the affected regions and stages stale;
+  `easel undo` restores target and layers exactly. A project without a request, or with `change none`, runs the plain
+  redraw unchanged.
+  - Recolour: `easel recolor hair --to "#8fdcb4"` moves a region to a new colour and keeps its shading, lines and
+    highlights; the report gives hue before -> after, shading kept and stray patches of the old hue, and
+    `easel region refine hair --by hue|lines` snaps the region to a hue band or to the areas its lines enclose.
+  - Poster: `easel canvas --size 900x1200 --place x0,y0,x1,y1` places the reference in a new canvas (the regions move
+    with it), `easel palette map --to "dark,...,light" --accent "jacket=#e8644a"` maps the target to a few colours by
+    value, `easel graphic disc|rect|ring|frame <box> --color` lays a shape on the ground behind the figure, and
+    `easel change add text ...` letters the title in the finish stage. When the target no longer reads as the project's
+    style, the change gate asks for `easel style poster`.
+  - New setting: `easel cutout figure --regions a,b,c` cuts the figure out (it reports ground left inside, figure
+    lost and edge width, and boxes the three weakest edge spots), `easel background --from lake.easel | picture.png |
+    --gradient "#a,#b" | --color "#hex"` puts it in front of a new background, `easel light` tints the figure toward
+    the background's light and adds a rim light, and `easel shadow figure` lays a contact shadow on the ground.
+  - List options (`--minus`, `--plus`, `--regions`) accept repeats and comma lists.
 - **Detail levels**: `easel detail all`, then `easel detail <region> --level 1` region by region in the ranked order,
   `easel dot all`, `easel sharpen`. The strokes follow the reference and take their colours from it along the stroke; every
   report prints the share retouched.
+- **Drawing from a text request** (`easel new pic --mode free --request "..."`): plan subjects and parts with boxes,
+  then the same stages with construction tools (`sketch figure`, `face`, `line`, `flat auto`, `shade`, `eye`,
+  `hair --flow`, `fold`, `text`, `band`, `surface`). `easel polish` is the finish stage's default pass on the fx layer:
+  strays painted out, streaks smoothed inside each colour area, line art coloured from the fills it borders, far things
+  lighter and cooler under a sky, lights graded toward the light's colour, soft edges for painterly styles; each part
+  has a `--no-<part>` switch, and the report gives numbers per part, a `VIEW:` and one `NEXT:`. The todo list is the
+  same after a rebuild in the middle of a stage, brush seeds follow the command and its target, and sky, sea and cliffs
+  are colour bands in the flat stage.
+- **Projects survive being copied or moved**: a missing working-size or delivery-size reference file is rebuilt from
+  the other.
 - **Hand tools** for what a stage misses: `stroke` (with `--color pick --snap`), `fill`, `shape`, `gradient`,
   `erase`, `smooth`, `adjust`.
 - **Export**: `easel export final.png --psd --ora --timelapse film.gif --stages dir`.
 - **Results**: on a private set of 93 reference pictures the redraw path reaches a judge mean of 9.42 of 10, with
   88 of 93 rated the same quality as the reference. In the redraw path the strokes follow the reference and take
-  their colours from it along the stroke, and no picture is retouched pixel by pixel. A Qwen 3.8 Flash class model driving the
-  skill in Claude Code or opencode finishes a redraw in about 22-45 minutes and 46-75 commands; on 14 anime pictures its
-  redraws have a judge mean of 9.57, with 13 of 14 rated the same quality as the reference (the scripted path on the
-  same pictures: 9.50, 13 of 14).
+  their colours from it along the stroke, and no picture is retouched pixel by pixel. A Qwen 3.8 Flash class model
+  driving the skill in Claude Code or opencode finishes a redraw in about 19-45 minutes and 44-86 commands; its
+  sessions now cover 23 anime pictures, with a judge mean of 9.52 and 21 of 23 rated the same quality as the
+  reference (the scripted path on the same pictures: 9.48, 22 of 23).
 
 ### Install and packaging
 

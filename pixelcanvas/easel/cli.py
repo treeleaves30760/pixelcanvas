@@ -539,7 +539,7 @@ def cmd_help(ctx: Ctx, args: List[str]) -> Report:
     rep = Report()
     rep.add("easel: a paint program. Coordinates are 0-1000 on each axis (x right, y down).")
     rep.add("after each command: read the report, open VIEW (the canvas) and, to compare, VIEW-REF (the reference)")
-    rep.add("setup:   new  style  status  next  todo [--all]  stage  undo [n]  redo")
+    rep.add("setup:   new  style  mode hand  status  next  todo [--all]  stage  undo [n]  redo")
     rep.add("look:    look [region|box] [--show both|canvas|ref|diff|marks|layers] [--grid]   marks   pick   "
             "palette   score")
     rep.add("regions: region add <name> --marks 3,4 | --box x0,y0,x1,y1 | --poly \"x,y ...\" | --wand x,y  "
@@ -547,11 +547,24 @@ def cmd_help(ctx: Ctx, args: List[str]) -> Report:
     rep.add("stages:  sketch  ink  flat  shade  paint [--size N]  airbrush  detail [--level 2|1]  dot  retouch <region>   "
             "(each takes a region, default all; no options = the engine's own settings for the style)")
     rep.add("hand:    stroke  fill  shape  gradient  erase  smooth  adjust   (act on the stage's layer or --layer)")
-    rep.add("finish:  sharpen (the finishing sharpen, fitted to the reference)   "
+    rep.add("changes: change add <kind> ...  change list  change drop <n>  change none   (state what the request changes "
+            "from the reference; kinds: canvas recolor palette graphic cutout background light shadow text shape)")
+    rep.add("         recolor <region> --to \"#hex\"   region refine <region> --by lines|hue   "
+            "canvas --size WxH --place x0,y0,x1,y1 [--color \"#hex\"]   "
+            "palette map --to \"dark,...,light\" [--accent \"region=#hex\"]   "
+            "graphic disc|rect|ring|frame <box> --color \"#hex\"")
+    rep.add("         cutout <subject> --regions a,b,c   background --from <easel project|picture> | --gradient "
+            "\"#a,#b\" | --color \"#hex\"   light [--tint \"#hex\"] [--rim left|right]   shadow <subject>")
+    rep.add("free:    no reference: plan  palette make|pick|set  sketch figure|head|ellipse|box|curve  line  band  "
+            "face  eye  hair  locks  blush  hand  wear  fold  crease  tufts  mark  pattern  scatter  surface  "
+            "highlight  rim  shadow --from <part> --onto <part>  reflect  wet  haze  atmosphere  glow  cloud  "
+            "ground  foliage  window  linestyle")
+    rep.add("finish:  polish (one finishing pass over a drawn picture; --no-<part> leaves a part out)   "
+            "sharpen (the finishing sharpen, fitted to the reference)   "
             "fx <glow|grain|blur|vignette|paper|sharpen|levels> [region] [--amount 0..1]   "
             "text \"<string>\" --box x0,y0,x1,y1 [--font --color --align --outline px,#hex --vertical --fit]   fonts")
     rep.add("other:   layer  export <file.png> [--psd] [--ora] [--timelapse film.gif|film.mp4] [--stages dir]   "
-            "do \"<cmd>; <cmd>\"")
+            "do \"<cmd>; <cmd>\"   help [command]")
     if args:
         c = args[0].lower()
         if c in USAGE:

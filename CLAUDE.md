@@ -12,6 +12,11 @@ pixelcanvas/__init__.py        __version__ only
 pixelcanvas/easel/
   cli.py, __main__.py          the `easel` command: argument parsing, the command table, reports, NEXT
   cli_draw.py                  commands for drawing without a reference, hooked into the command table
+  cli_change.py                "redraw it, but ...": change add / drop / list / none, region refine, recolor, canvas,
+                               palette map, graphic, cutout, background, light, shadow
+  change.py                    the change list, the target (orig.png kept) and the change gates
+  change_ops.py                pure operations on the target: recolour keeping shading, palette map, region refine
+  change_scene.py              pure operations for a new setting: cut-out, background, light, contact shadow
   skill_install.py             `easel-install-skill`: copies the packaged skill into an agent's skills folder
   project.py                   the project folder <name>.easel/: state, layers, regions, history / undo / redo, journal
   compose.py, coords.py        layer compositing; 0-1000 coordinates and lenient argument parsing
@@ -25,13 +30,14 @@ pixelcanvas/easel/
   pipeline.py                  the scripted reference pipeline (no model in the loop): the engine's ceiling
   manual.py                    hand tools: stroke, fill, shape, gradient, erase, smooth, adjust, pick, palette
   draw_*.py                    drawing without a reference (plan, sketch, line, flat, shade, face, hair, wear,
-                               scene, surface, detail, text, checks, canvas) and hand mode (draw_ref.py)
+                               scene, surface, detail, text, checks, canvas, finish) and hand mode (draw_ref.py);
+                               draw_finish.py is `easel polish`, the finishing pass of a drawn picture
   detail_measure.py, detail_profiles.json   measures by scale and kind against professional pictures
   export.py                    PNG, layered PSD / ORA, time-lapse GIF / MP4, stage pictures
   fx.py, text.py, fonts.py     finishing effects; lettering; font lookup with CJK fallback
 skills/easel/SKILL.md          the skill agents read (shipped in the wheel as pixelcanvas/easel/skill/)
 tests/easel/                   pytest
-.claude-plugin/                plugin.json and marketplace.json
+.claude-plugin/                plugin.json, marketplace.json and icon.png
 docs/INSTALL.md, docs/PYPI.md  install guide; the PyPI page
 README.md, README-zh.md, AGENTS.md, CHANGELOG.md
 ```

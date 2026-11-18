@@ -6,7 +6,7 @@ it whenever the user asks to draw, paint, illustrate, sketch, copy or redraw a p
 image.
 
 **Read [`skills/easel/SKILL.md`](skills/easel/SKILL.md) before drawing.** It holds the loop, the three modes, the
-todo list, every stage and the hand tools.
+todo list, every stage, the hand tools and the section "Redraw it, but ...".
 
 ## Install
 
@@ -36,6 +36,16 @@ easel new pic --ref reference.jpg --mode trace                       # redraw a 
 easel new pic --size 1000x1200 --request "a chibi fox mage holding a staff"   # no reference
 easel help                                                           # every command
 easel next                                                           # the next command, always
+```
+
+A redraw whose request asks for changes ("with mint-green hair", "as a poster", "in front of a lake") starts with the
+request, `easel new pic --ref reference.jpg --mode trace --request "..."`. After the regions, state each change and
+close the plan; the change stage makes them, and the stages that follow trace the changed picture:
+
+```bash
+easel change add recolor hair --to "#8fdcb4"       # or: change add canvas | palette map | graphic | cutout | background | light | text
+easel stage done
+easel recolor hair --to "#8fdcb4"                  # `easel next` names each command
 ```
 
 Finish = `easel export final.png` and `easel stage done` in the finish stage, with every todo line completed.
