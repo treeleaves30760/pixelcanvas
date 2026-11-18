@@ -674,7 +674,8 @@ def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, li
     figs = DP.figures(p)
     rep.add(f"step {step}  {label or 'render'}  (layers line, flat, shade)  {len(all_ops)} marks: "
             f"{L['n_strokes']} lines, {len(L['flat'])} flat colours, {len(L['shade'])} shade bands, "
-            f"{len(f_ops)} face fills  ({t3 - t0:.1f} s)")
+            f"{len(f_ops)} face fills  ({t3 - t0:.1f} s: 3D render {t1 - t0:.1f}, lines and fills "
+            f"{t2 - t1:.1f}, layers {t3 - t2:.1f})")
     for el in figs:
         lk = look_of(el)
         g = ", ".join(lk["garments"]) or "no clothes (pixelcanvas dress)"
@@ -695,7 +696,6 @@ def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, li
                                    "the toon render: line, flat and shade")
     cli_draw._tail(ctx, rep)
     rep.summary = f"render {len(all_ops)} marks"
-    _ = (t1, t2)
     return rep
 
 
@@ -985,7 +985,6 @@ def wrap_change(orig):
         rep = orig(ctx, args)
         try:
             p = ctx.project
-            p.reload() if False else None
             if getattr(rep, "mutated", False) and render_state(p) and is_stale(p):
                 return _after_change(ctx, rep, (ctx.cmdline or "change").split()[0] if ctx.cmdline else "change")
         except UsageError:

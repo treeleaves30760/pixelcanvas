@@ -1117,7 +1117,13 @@ def _render_filter(p, out: List[dict]) -> List[dict]:
     def concerns(h):
         t = str(h.get("text", ""))
         return any(t.startswith(n + " ") or t.startswith(n + ":") or f" inside {n} " in t for n in names)
-    return [h for h in out if not (h.get("metric") in drop and concerns(h))]
+
+    def between_rendered(h):
+        # overlap of two rendered figures: the z-buffer decided it (the check matches colours, which two figures
+        # can share)
+        t = str(h.get("text", ""))
+        return h.get("metric") == "depth" and sum(f"({s}, " in t or f"over {s} " in t for s in rig) >= 2
+    return [h for h in out if not (h.get("metric") in drop and concerns(h)) and not between_rendered(h)]
 
 
 def _holes(p, stage: str) -> List[dict]:

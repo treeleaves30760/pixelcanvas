@@ -414,13 +414,11 @@ def _bow(owner: str, centre, R: np.ndarray, size: float, mat: str, pc: str, tail
     x, y, z = R[:, 0], R[:, 1], R[:, 2]
     out = []
     for sg in (1.0, -1.0):
-        Rl = _frame(x * sg * math.cos(0.35) + y * math.sin(0.35), y)
         out.append(_P(ell_prim(centre + x * sg * 0.62 * size + y * 0.1 * size, np.stack([x, y, z], 1),
                                (0.62 * size, 0.38 * size, 0.2 * size)), owner, pc, mat))
         if tails:
             out.append(_P(rcone(centre - y * 0.1 * size, centre - y * 0.95 * size + x * sg * 0.35 * size,
                                 0.13 * size, 0.1 * size), owner, pc, mat))
-        _ = Rl
     out.append(_P(ell_prim(centre + z * 0.05 * size, np.stack([x, y, z], 1), (0.2 * size, 0.24 * size, 0.2 * size)),
                   owner, pc + "-knot", mat))
     return out
@@ -619,10 +617,15 @@ def garment_prims(rig: Rig, owner: str, piece: str, o: dict, motion: np.ndarray,
     elif piece in ("shoes", "boots"):
         for s in "rl":
             heel, toe, rh, rt = rig.foot(s)
-            up = F[f"foot-{s}"][:, 1]
+            Ft = F[f"foot-{s}"]
             fwd = unit(toe - heel)
-            out.append(_P(rcone(heel - fwd * 0.012 - up * 0.004, toe + fwd * 0.014 - up * 0.004, rh + 0.014,
-                                rt + 0.012), owner, f"{piece}-{s}", mat))
+            R = _frame(Ft[:, 0], Ft[:, 1])
+            R = np.stack([R[:, 0], R[:, 1], fwd - np.dot(fwd, R[:, 1]) * R[:, 1]], 1)
+            R[:, 2] = unit(R[:, 2])
+            L = float(np.linalg.norm(toe - heel)) / 2 + 0.024
+            # a loafer: rounded, wider than tall, the sole a little below the foot
+            out.append(_P(ell_prim((heel + toe) / 2 + fwd * 0.006 - Ft[:, 1] * 0.002, R,
+                                   (rh + 0.017, rh + 0.01, L)), owner, f"{piece}-{s}", mat))
             if piece == "boots":
                 a, bb, ra, rb = rig.limb(s, "shin")
                 top = a + (bb - a) * 0.35
@@ -884,9 +887,6 @@ def dressed_prims(body: Body, J, F, rig_spec: dict, look: dict, owner: str,
     hair = (look or {}).get("hair")
     if hair:
         out += hair_prims(rig, owner, hair, motion, floating)
-    for pr in out:
-        if pr.get("inflate"):
-            pass
     return out
 
 
