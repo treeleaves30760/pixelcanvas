@@ -1165,6 +1165,11 @@ def question(p, stage: str, subject: Optional[str] = None) -> str:
                "If not: plan part <name> --box ... again."
     if stage == "sketch":
         figs = [el for el in d["sketch"] if el["kind"] == "figure"]
+        posed = [el for el in figs if el.get("rig") and el.get("rig_joints") == el.get("joints")]
+        if posed:
+            s = posed[0].get("subject")
+            return (f"Does {s}'s pose read as what the request says (lean, which foot is down, where the hands go)? "
+                    f"If not: pixelcanvas pose {s} --set \"<joint>: <angle> <degrees>\" (--show joints names them).")
         if figs:
             return (f"Does the mannequin {figs[0]['id']} stand the way the request needs (arms, legs, lean)? If not: "
                     f"pixelcanvas sketch joint {figs[0]['id']} <joint> x,y for each joint that is off.")

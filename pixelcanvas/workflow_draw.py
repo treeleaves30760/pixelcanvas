@@ -219,6 +219,10 @@ def _plain_animal(state: dict, subject: str) -> bool:
                    for n, v in _parts(state).items())
 
 
+SCENE_BLOCK_WORDS = ("street", "bench", "wall", "stairs", "steps", "staircase", "chair", "sofa", "couch", "table",
+                     "railing", "fence", "ledge", "road", "room", "building", "city", "roof", "bridge", "station",
+                     "platform", "classroom", "alley", "lamp", "pole", "pillar", "desk", "bed", "crate")
+
 TEXT_WORDS = ("title", "text", "logo", "letter", "caption", "words", "headline")
 
 
@@ -269,8 +273,19 @@ def build_todo(state: dict) -> None:
                     if any(parts[n]["of"] == s and n in ("face", "head") for n in parts):
                         add("sketch", f"head construction for {s}", f"pixelcanvas sketch head {s}", region=s, key="head")
                 elif figure:
-                    add("sketch", f"mannequin for {s}", f"pixelcanvas sketch figure {s} --pose stand", region=s,
-                        key="construct")
+                    if not any(t.get("key") == "camera" for t in items):
+                        add("sketch", "camera: horizon and eye height of the scene",
+                            "pixelcanvas camera --horizon 450 --eye-height 1.5   (low angle: --horizon 750 "
+                            "--eye-height 0.7; high: --eye-height 4)", key="camera")
+                    add("sketch", f"mannequin for {s}: a 3D pose",
+                        f"pixelcanvas pose {s} --preset stand   (pixelcanvas pose list shows run, jump, sit-ledge ...; "
+                        f"a flat mannequin: pixelcanvas sketch figure {s} --pose stand)", region=s, key="construct")
+                    req = str(state.get("request") or "").lower()
+                    if not any(t.get("key") == "blocks" for t in items) and \
+                            any(w in req for w in SCENE_BLOCK_WORDS):
+                        add("sketch", "blocks the figures stand, sit or lean on (a bench, a wall, stairs, a building)",
+                            "pixelcanvas block bench box --at x,y --size 1.5,0.45,0.45   (then pixelcanvas pose "
+                            "<subject> --preset sit-chair --on bench)", key="blocks")
                     if any(parts[n]["of"] == s and n in ("face", "head") for n in parts):
                         add("sketch", f"head construction for {s}", f"pixelcanvas sketch head {s}", region=s, key="head")
                 elif is_ground(s):
@@ -474,6 +489,13 @@ def refresh(p) -> List[int]:
                 return False
             if k == "horizon":
                 return any(el["kind"] == "horizon" for el in d.get("sketch", []))
+            if k == "camera":       # set, or a figure is placed (posing one sets the default camera)
+                return any(el["kind"] == "horizon" and el.get("camera") or el["kind"] == "figure"
+                           for el in d.get("sketch", []))
+            if k == "blocks":       # a block, or the figures are flat mannequins (no 3D scene to stand in)
+                return any(el["kind"] == "block" for el in d.get("sketch", [])) or \
+                    (any(el["kind"] == "figure" for el in d.get("sketch", [])) and
+                     not any(el["kind"] == "figure" and el.get("rig") for el in d.get("sketch", [])))
         if k == "face":
             from .draw_checks import face_missing, head_elements
             els = [el for el in head_elements(p) if el.get("subject") == d.get("parts", {}).get(r, {}).get("of")]

@@ -746,8 +746,13 @@ def cmd_sketch(ctx: Ctx, args: List[str]) -> Report:
                               "shape": "value"},
                              alias={}))
         subj = (a.get("subject") or "").lower()
-        yaw = _num(a, "yaw", _num(a, "turn", 0.0, -80, 80, ctx), -80, 80, ctx)
-        pitch = _num(a, "pitch", _num(a, "tilt", 0.0, -60, 60, ctx), -60, 60, ctx)
+        # a figure posed in 3D gives the head's turn as the viewer sees it
+        posed = next((e for e in d["sketch"] if e["kind"] == "figure" and e.get("head_view") and
+                      (not subj or e.get("subject") == subj)), None)
+        y0, p0 = (float(np.clip(posed["head_view"][0], -80, 80)), float(np.clip(posed["head_view"][1], -60, 60))) \
+            if posed is not None else (0.0, 0.0)
+        yaw = _num(a, "yaw", _num(a, "turn", y0, -80, 80, ctx), -80, 80, ctx)
+        pitch = _num(a, "pitch", _num(a, "tilt", p0, -60, 60, ctx), -60, 60, ctx)
         if a.get("box"):
             box = list(coords.parse_box(a["box"], ctx.notes, USAGE["sketch"]))
         else:
@@ -1650,6 +1655,7 @@ def cmd_shade(ctx: Ctx, args: List[str]) -> Report:
     for r in regs:
         clip |= r.mask
     info = []
+    nm_form: List[str] = []
 
     def build():
         from .ops import Fill, mask_to_rle
@@ -1663,7 +1669,14 @@ def cmd_shade(ctx: Ctx, args: List[str]) -> Report:
             size = math.sqrt(max(1, r.mask.sum()))
             fe = 1.0 + soft * 0.06 * size
             amt = amount if amount is not None else (0.25 if nm in ("skin", "face") else 0.35)
-            tones = draw_shade.form_masks(r.mask, light, levels, amt, rnd_, body=_inner_parts(p, r))
+            tones = None
+            if not a.get("light") and r.name not in ("face", "head") and not r.name.startswith("eye"):
+                from . import draw_pose          # an area on a figure posed in 3D: shaded from its 3D form
+                tones = draw_pose.form_tones(p, r.mask, levels, amt)
+                if tones is not None:
+                    nm_form.append(r.name)
+            if tones is None:
+                tones = draw_shade.form_masks(r.mask, light, levels, amt, rnd_, body=_inner_parts(p, r))
             heads = [e for e in d["sketch"] if e["kind"] == "head"]
             if nm in ("skin", "face") and heads and r.name in ("face", "head", "skin"):
                 # the nose throws a small shadow on the side away from the light
@@ -1687,7 +1700,9 @@ def cmd_shade(ctx: Ctx, args: List[str]) -> Report:
                         + (f" {coords.hex_colour(sh)}" if nm.startswith("#") else ""))
         return ops
     rep = draw_step(ctx, label=f"shade {', '.join(r.name for r in regs)} levels {levels} soft {soft:g}",
-                    layer=_shade_layer(p), build=build, clip=clip, post=lambda: ["; ".join(info)[:300]],
+                    layer=_shade_layer(p), build=build, clip=clip,
+                    post=lambda: ["; ".join(info)[:300]] + ([f"shaded from the 3D pose (light, core and cast shadow "
+                                                              f"of the forms): {', '.join(nm_form)}"] if nm_form else []),
                     full_view=len(regs) > 2, area_extra=None,
                     note=f"shading, light from the {dc.light_words(d['light'].get('deg', 135))}")
     return rep
@@ -2675,7 +2690,7 @@ def _wrap_do(orig):
 
 
 EXTENSIONS = ("draw_face", "draw_hair", "draw_wear", "draw_scene", "draw_ref", "draw_text", "draw_canvas",
-              "draw_surface", "draw_finish")
+              "draw_surface", "draw_finish", "draw_pose")
 
 
 def _extensions() -> list:

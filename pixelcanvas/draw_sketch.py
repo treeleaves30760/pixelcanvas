@@ -202,6 +202,12 @@ def _capsule(A, B, wa, wb) -> np.ndarray:
 
 def figure_report(p, el) -> List[str]:
     """Measured proportions in plain sentences, each with the joint to move when something is off."""
+    from . import draw_pose
+    if draw_pose.is_rigged(el):
+        # a posed 3D figure: its proportions are built in, and foreshortening is not a fault
+        rig = el["rig"]
+        return [f"posed in 3D: {el.get('pose')}, {float(rig.get('heads', 6.5)):g} heads, {float(rig.get('height', 1.6)):g} m "
+                f"(change it with pixelcanvas pose {el.get('subject')} --preset / --set)"]
     J = {k: np.array(v, float) for k, v in el["joints"].items()}
     # measure in pixels so non-square canvases are fair
     Jp = {k: u2px(p, [v])[0] for k, v in J.items()}
@@ -337,6 +343,11 @@ def head_guides(p, el) -> Dict[str, Tuple[float, float]]:
 def shapes(p, el) -> List[Tuple[np.ndarray, bool, float]]:
     """(polyline px, closed, weight factor) list for any element."""
     k = el["kind"]
+    if k in ("block", "prop") or (k == "figure" and el.get("rig")) or (k == "horizon" and el.get("camera")):
+        from . import draw_pose          # the 3D layout: camera, posed figures, blocks, props
+        out = draw_pose.element_shapes(p, el)
+        if out is not None:
+            return out
     if k in ("ellipse", "box"):
         x0, y0, x1, y1 = u2px(p, [el["box"][:2], el["box"][2:]]).reshape(-1)
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -401,8 +412,9 @@ def render_ops(p, el) -> list:
         w = max(1.2, w0 * (0.8 + 0.4 * wf))
         if L < 4 * w:
             continue
+        light = wf < 0.4                 # a ground grid, a dashed line hidden behind the figure's own parts
         ops.append(Stroke(pts=pts, width=w, color=GUIDE_RGB if (guide or wf < 0.7) else SKETCH_RGB,
-                          opacity=0.7 if (guide or wf < 0.7) else 1.0, brush="pencil",
+                          opacity=0.35 if light else 0.7 if (guide or wf < 0.7) else 1.0, brush="pencil",
                           seed=zlib.crc32(el["id"].encode()) % 9973))
     return ops
 
@@ -432,6 +444,8 @@ def element_points(el) -> List[List[float]]:
         return list(el["joints"].values())
     if k == "horizon":
         return [[500, el["y"]]] + list(el.get("vps", []))
+    if k in ("block", "prop"):
+        return [el.get("at") or [500, 500]]
     return []
 
 
@@ -443,6 +457,10 @@ def centre(el) -> Tuple[float, float]:
 def transform(el, fn) -> None:
     """Apply fn(points [N,2] units) -> points to an element's geometry."""
     k = el["kind"]
+    if k in ("block", "prop") or (k == "horizon" and el.get("camera")):
+        what = {"block": f"pixelcanvas block {el.get('name')} --at x,y", "prop": "pixelcanvas prop <name> --hand l",
+                "horizon": "pixelcanvas camera --horizon 600"}[k]
+        raise UsageError(f"{el['id']} is part of the 3D layout: it changes with its own command", what)
     if k in ("ellipse", "box", "head"):
         b = np.array([el["box"][:2], el["box"][2:]], float)
         nb = fn(b)
@@ -509,7 +527,15 @@ def describe(el) -> str:
     if k == "head":
         return f"{el['id']} head {coords.fmt_box(el['box'])} yaw {el.get('yaw', 0):g} pitch {el.get('pitch', 0):g}"
     if k == "horizon":
+        if el.get("camera"):
+            c = el["camera"]
+            return f"{el['id']} camera: horizon {el['y']:g}, eye height {c.get('eye', 1.5):g} m, fov " \
+                   f"{c.get('fov', 50):g}, tilt {c.get('tilt', 0):g}"
         return f"{el['id']} horizon y {el['y']:g}" + "".join(f" vp {coords.fmt_point(v)}" for v in el.get("vps", []))
+    if k == "block":
+        return f"{el['id']} block {el['name']}: {el['type']} {'x'.join(f'{v:g}' for v in el['size'])} m"
+    if k == "prop":
+        return f"{el['id']} prop {el['name']}: {el['type']} in {el.get('subject')}'s hand {el.get('hand')}"
     return el["id"]
 
 
@@ -517,6 +543,9 @@ def label_points(p, el) -> List[Tuple[str, Tuple[float, float]]]:
     """Where to put tags in a view (px): the id, and for a figure every joint's short name."""
     out = []
     k = el["kind"]
+    if k in ("block", "prop"):
+        from . import draw_pose
+        return draw_pose.label_points(p, el)
     if k == "figure":
         for j, v in el["joints"].items():
             if el.get("pose") == "bust" and j not in ("head", "chin", "lshoulder", "rshoulder", "lelbow", "relbow"):

@@ -559,6 +559,10 @@ def cmd_help(ctx: Ctx, args: List[str]) -> Report:
             "face  eye  hair  locks  blush  hand  wear  fold  crease  tufts  mark  pattern  scatter  surface  "
             "highlight  rim  shadow --from <part> --onto <part>  reflect  wet  haze  atmosphere  glow  cloud  "
             "ground  foliage  window  linestyle")
+    rep.add("3D:      camera --horizon <y> --eye-height <m>   pose <subject> --preset run --at x,y --yaw <deg> "
+            "--set \"arm-r: raise 90; knee-l: 60\" [--on <block>] [--hand-r <block|x,y>]   pose list   "
+            "block <name> box|stairs|cylinder|plane|railing --at x,y --size w,d,h   prop <name> --kind sword --hand r   "
+            "form <subject>")
     rep.add("finish:  polish (one finishing pass over a drawn picture; --no-<part> leaves a part out)   "
             "sharpen (the finishing sharpen, fitted to the reference)   "
             "fx <glow|grain|blur|vignette|paper|sharpen|levels> [region] [--amount 0..1]   "
