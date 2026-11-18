@@ -213,6 +213,7 @@ class Project:
         if s == 1:
             self.save_state()
             return
+        ref = self.ref                  # read at the delivered size, before the canvas grows
         self.state["deliver"] = [W, H]
         self.state["width"], self.state["height"] = W * s, H * s
         for e in self.state["layers"]:
@@ -220,7 +221,6 @@ class Project:
             if arr is not None:
                 arr = cv2.resize(arr, (W * s, H * s), interpolation=cv2.INTER_NEAREST)
             self._write_layer_file(e["name"], arr)
-        ref = self.ref
         if ref is not None:
             # the delivered-size reference is kept: scores, views of the error and the coarse passes use it
             save_png(self.root / "ref_deliver.png", ref)
@@ -234,12 +234,69 @@ class Project:
     def ref_deliver(self) -> Optional[np.ndarray]:
         """The reference at the delivered size (the reference itself on a 1x canvas)."""
         if getattr(self, "_ref_d", None) is None:
-            f = self.root / "ref_deliver.png"
-            if f.exists() and int(self.state.get("work_scale", 1) or 1) > 1:
-                self._ref_d = load_image_rgb(f)
-            else:
+            if int(self.state.get("work_scale", 1) or 1) <= 1 or not self.state.get("has_ref"):
                 return self.ref
+            f = self.root / "ref_deliver.png"
+            if not f.exists():
+                self._rebuild_ref_files()
+            self._ref_d = self._check_ref_size(load_image_rgb(f), self.deliver_size(), "ref_deliver.png")
         return self._ref_d
+
+    def _source_ref_at(self, W: int, H: int) -> Optional[np.ndarray]:
+        """The original reference file named in the state, at W x H, when it is still there and fits that size."""
+        src = self.state.get("reference")
+        if not src or not Path(src).exists():
+            return None
+        try:
+            img = load_image_rgb(Path(src))
+        except Exception:  # noqa: BLE001
+            return None
+        h, w = img.shape[:2]
+        if fit_size(w, h) != (W, H):
+            return None
+        if (w, h) != (W, H):
+            img = np.asarray(Image.fromarray(img).resize((W, H), Image.LANCZOS), dtype=np.uint8)
+        return img
+
+    def _rebuild_ref_files(self) -> None:
+        """Put back ref.png / ref_deliver.png when a copied or moved folder lost one of them: from the other file,
+        else from the original reference named in the state. Raises a UsageError when neither is left."""
+        import cv2
+        s = self.scale
+        f_ref, f_d = self.root / "ref.png", self.root / "ref_deliver.png"
+        dw, dh = self.deliver_size()
+        if s <= 1:
+            if not f_ref.exists():
+                img = self._source_ref_at(self.W, self.H)
+                if img is None:
+                    raise self._ref_missing()
+                save_png(f_ref, img)
+            return
+        if not f_d.exists():
+            img = self._source_ref_at(dw, dh)
+            if img is None and f_ref.exists():
+                img = self.to_deliver(load_image_rgb(f_ref))
+            if img is None:
+                raise self._ref_missing()
+            save_png(f_d, img)
+        if not f_ref.exists():
+            big = cv2.resize(load_image_rgb(f_d), (self.W, self.H), interpolation=cv2.INTER_CUBIC)
+            save_png(f_ref, np.clip(big, 0, 255).astype(np.uint8))
+
+    def _ref_missing(self) -> UsageError:
+        where = self.rel(self.root / ("ref_deliver.png" if self.scale > 1 else "ref.png"))
+        return UsageError(f"the project's reference picture is missing ({where}, and the original "
+                          f"{self.state.get('reference')} is not there either); copy the whole project folder, "
+                          f"or put the reference back as {where}",
+                          f"cp reference.png {where}")
+
+    def _check_ref_size(self, img: np.ndarray, size, name: str) -> np.ndarray:
+        if (img.shape[1], img.shape[0]) != tuple(size):
+            raise UsageError(f"{self.rel(self.root / name)} is {img.shape[1]}x{img.shape[0]} but this project needs "
+                             f"{size[0]}x{size[1]}; copy the whole project folder, or delete that file and put the "
+                             f"reference back as {self.rel(self.root / ('ref_deliver.png' if self.scale > 1 else 'ref.png'))}",
+                             f"cp reference.png {self.rel(self.root / ('ref_deliver.png' if self.scale > 1 else 'ref.png'))}")
+        return img
 
     @property
     def scale(self) -> int:
@@ -314,6 +371,8 @@ class Project:
         self.state = _read_json(self.root / "state.json")
         self._layers.clear()
         self._regions.clear()
+        self._ref = None            # undo / redo may restore another target (easel recolor ...)
+        self._ref_d = None
 
     def rel(self, path: Path) -> str:
         """Path as printed in reports: relative to the cwd when possible, forward slashes."""
@@ -325,7 +384,10 @@ class Project:
     @property
     def ref(self) -> Optional[np.ndarray]:
         if self._ref is None and self.state.get("has_ref"):
-            self._ref = np.asarray(Image.open(self.root / "ref.png").convert("RGB"), dtype=np.uint8)
+            if not (self.root / "ref.png").exists():
+                self._rebuild_ref_files()
+            self._ref = self._check_ref_size(
+                np.asarray(Image.open(self.root / "ref.png").convert("RGB"), dtype=np.uint8), (self.W, self.H), "ref.png")
         return self._ref
 
     def require_ref(self, what: str) -> np.ndarray:
