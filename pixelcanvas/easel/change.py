@@ -20,9 +20,21 @@ from .coords import UsageError
 
 # kind -> where it runs, whether it edits the target, one line for the todo
 KINDS: Dict[str, Dict] = {
-    "recolor": {"stage": "change", "target": True,
+    "canvas": {"stage": "change", "target": False, "phase": 0,
+               "words": "a new canvas size with the reference placed in it"},
+    "recolor": {"stage": "change", "target": True, "phase": 1,
                 "words": "recolour a region with its shading kept"},
+    "palette": {"stage": "change", "target": True, "phase": 2,
+                "words": "map the picture to a few colours by value, with accent regions"},
+    "graphic": {"stage": "change", "target": True, "phase": 3,
+                "words": "a flat shape (disc, rectangle, band) on the ground, behind the figure"},
+    "text": {"stage": "finish", "target": False, "phase": 9,
+             "words": "lettering over the finished picture"},
+    "shape": {"stage": "finish", "target": False, "phase": 9,
+              "words": "a crisp shape over the finished picture (a frame)"},
 }
+VALUE_ORDER_MIN = 0.90  # correlation of luminance before / after a palette map (outside accents)
+ACCENT_EDGE_MIN = 0.85  # share of an accent region's edge that lies on line art
 TARGET_FILES = ["ref.png", "ref_deliver.png", "orig.png"]
 STAGE_LAYERS = ("line", "flat", "shade", "paint", "detail")
 HUE_TOL = 15.0          # degrees between the asked hue and the hue reached
@@ -54,7 +66,7 @@ def describe(it: dict) -> str:
     p = it.get("params") or {}
     if it["kind"] == "recolor":
         return f"recolor {it['region']} to {p.get('to') or it.get('to') or '?'}"
-    return f"{it['kind']} {it.get('region') or ''}".strip()
+    return it["cmd"].replace("easel ", "", 1)
 
 
 # ----------------------------------------------------------------------------------------------- the target
@@ -148,7 +160,10 @@ def apply_item(p, img_d: np.ndarray, it: dict, orig: Optional[np.ndarray] = None
     original (``orig``), as  easel region refine  takes them."""
     par = it.get("params") or {}
     if it["kind"] == "recolor":
-        mask = region_d(p, it["region"]) & ~small_others(p, it["region"])
+        base0 = img_d if orig is None else orig
+        # a pixel the region shares with another one stays that region's when it is of its colour (a face under a
+        # rough hair outline); small parts keep all theirs
+        mask = region_d(p, it["region"]) & ~protected(p, it["region"], base0, par.get("band"))
         if taken is not None:
             mask = mask & ~taken
         rgb = tuple(par["rgb"])
@@ -169,7 +184,64 @@ def apply_item(p, img_d: np.ndarray, it: dict, orig: Optional[np.ndarray] = None
                  "L_after": round(c["L_after"], 1), "from_C": round(info["from_C"], 1),
                  "to_C": round(info["to_C"], 1), "edited": round(c["edited_share"], 4), "grey": info["grey"]}
         return out, check, info["edited"]
+    if it["kind"] == "palette":
+        acc = [(region_d(p, r), tuple(c)) for r, c in par.get("accents", []) if r in p.state["regions"]]
+        g = ground_mask(p, img_d)
+        light_at = None
+        if g.any():
+            light_at = float(np.median((img_d[g].astype(np.float32) / 255.0) @ np.array([0.299, 0.587, 0.114])))
+        out, info = co.palette_map(img_d, [tuple(c) for c in par["rgbs"]], acc, gamma=par.get("gamma", 1.1),
+                                   light_at=light_at)
+        line = co.line_barrier(orig if orig is not None else img_d)
+        edges = {}
+        for r, _c in par.get("accents", []):
+            if r in p.state["regions"]:
+                edges[r] = round(co.edge_on_lines(region_d(p, r), line), 3)
+        refined = [r for r, _c in par.get("accents", []) if r in p.state["regions"] and
+                   "refined by lines" in str(p.state["regions"][r].get("how") or "")]
+        check = {"value_order": round(info["value_order"], 3), "colours": info["colours"], "accent_edge": edges,
+                 "lines_refined": refined,
+                 "accent_share": {r: round(float(region_d(p, r).mean()), 4) for r, _c in par.get("accents", [])
+                                  if r in p.state["regions"]}}
+        return out, check, np.zeros(img_d.shape[:2], bool)
+    if it["kind"] == "graphic":
+        ground = ground_mask(p, img_d)
+        dw, dh = img_d.shape[1], img_d.shape[0]
+        bp = [par["box"][0] * dw / 1000.0, par["box"][1] * dh / 1000.0, par["box"][2] * dw / 1000.0,
+              par["box"][3] * dh / 1000.0]
+        out, info = co.graphic(img_d, par["shape"], bp, tuple(par["rgb"]),
+                               ground if par.get("behind", True) else None, width=par.get("width", 0.0))
+        check = {"drawn_px": info["drawn"], "box_share": round(info["box_share"], 3),
+                 "behind_px": info["held_back"]}
+        return out, check, np.zeros(img_d.shape[:2], bool)
     raise UsageError(f"unknown change kind {it['kind']!r}", "easel change list")
+
+
+def ground_mask(p, img_d: np.ndarray) -> np.ndarray:
+    """The ground of the picture at the delivered size: pixels close to the rest region's main colour that
+    reach the canvas edge without crossing line art (a flat shape laid 'behind' covers only these: the white of a
+    shirt enclosed by its outline stays the figure's)."""
+    from scipy import ndimage as ndi
+    out = np.zeros(img_d.shape[:2], bool)
+    lab = co.to_lab(img_d)
+    for r, e in p.state["regions"].items():
+        if is_rest(e):
+            m = region_d(p, r)
+            if m.any():
+                med = np.median(lab[m], axis=0)
+                d = np.linalg.norm(lab - med, axis=-1)
+                out |= d < 12.0           # any pixel of the ground colour: the plan's polygons are rough
+    if not out.any():
+        L, C, _h = co.lch(lab)
+        out = (L > 92) & (C < 6)
+    barrier = ndi.binary_dilation(co.line_barrier(img_d), iterations=2)
+    cand = out & ~barrier
+    lbl, n = ndi.label(cand)
+    if n:
+        edge = np.unique(np.concatenate([lbl[0], lbl[-1], lbl[:, 0], lbl[:, -1]]))
+        reach = np.isin(lbl, edge[edge > 0])
+        out = ndi.binary_dilation(reach, iterations=2) & out          # back over the thickened line edge
+    return out
 
 
 def rebuild(p) -> Tuple[np.ndarray, np.ndarray]:
@@ -180,7 +252,8 @@ def rebuild(p) -> Tuple[np.ndarray, np.ndarray]:
     base = orig_d(p)
     img = base
     taken = np.zeros(base.shape[:2], bool)
-    for it in cstate(p.state).get("items") or []:
+    order = sorted(cstate(p.state).get("items") or [], key=lambda x: KINDS.get(x["kind"], {}).get("phase", 5))
+    for it in order:
         if not it.get("params") or not KINDS.get(it["kind"], {}).get("target"):
             continue
         img, check, edited = apply_item(p, img, it, base, taken)
@@ -194,6 +267,12 @@ def rebuild(p) -> Tuple[np.ndarray, np.ndarray]:
     p._ref = None
     p._ref_d = None
     p.state["target_rev"] = int(p.state.get("step", 0))
+    try:                    # the stages trace by style: a change can turn what the target reads as (a palette map)
+        from .workflow import guess_style
+        g, why = guess_style(img, "")
+        cstate(p.state)["target_style"] = [g, why]
+    except Exception:  # noqa: BLE001
+        pass
     return old, img
 
 
@@ -208,14 +287,41 @@ def cmd_for(it: dict, **override) -> str:
     return it["cmd"]
 
 
-def item_unmet(it: dict) -> List[dict]:
+def item_unmet(it: dict, state: Optional[dict] = None) -> List[dict]:
     """What keeps a change from done: each with a sentence and the command that fixes it."""
     c = it.get("check")
     n = it["id"]
+    if KINDS.get(it["kind"], {}).get("stage") == "finish":
+        if state is not None and finish_done(state, it):
+            return []
+        return [{"region": None, "metric": f"change {n}", "value": "not made", "need": "made",
+                 "text": f"change {n} ({describe(it)}) is not made yet", "fix": it["cmd"]}]
     if not it.get("params") or not c:
         return [{"region": it.get("region"), "metric": f"change {n}", "value": "not made", "need": "made",
                  "text": f"change {n} ({describe(it)}) is not made yet", "fix": it["cmd"]}]
     out = []
+    if it["kind"] == "palette":
+        rgbs = (it.get("params") or {}).get("rgbs") or []
+        lums = [0.299 * r + 0.587 * g + 0.114 * b for r, g, b in rgbs]
+        if c["value_order"] < VALUE_ORDER_MIN and lums != sorted(lums):
+            order = [x for _l, x in sorted(zip(lums, [co_hex(c_) for c_ in rgbs]))]
+            out.append({"region": None, "metric": "value order", "value": c["value_order"], "need": VALUE_ORDER_MIN,
+                        "text": f"change {n}: the palette map kept the light-dark order only {c['value_order']:.2f} "
+                                f"(need {VALUE_ORDER_MIN}): the colours go dark to light",
+                        "fix": it["cmd"].replace((it.get("params") or {}).get("to", ""), ",".join(order))})
+        for r, e in (c.get("accent_edge") or {}).items():
+            if e < ACCENT_EDGE_MIN and r not in (c.get("lines_refined") or []):
+                out.append({"region": r, "metric": "accent edge on lines", "value": e, "need": ACCENT_EDGE_MIN,
+                            "text": f"change {n}: only {100 * e:.0f}% of accent region {r}'s edge follows the line "
+                                    f"art (need {100 * ACCENT_EDGE_MIN:.0f}%): the accent spills past its outlines",
+                            "fix": f"easel region refine {r} --by lines"})
+        return out
+    if it["kind"] == "graphic":
+        if c["drawn_px"] == 0:
+            out.append({"region": None, "metric": "drawn", "value": 0, "need": 1,
+                        "text": f"change {n}: the shape covers no ground pixel (the figure fills its box)",
+                        "fix": 'easel graphic disc <x0,y0,x1,y1> --color "#rrggbb"   (another place)'})
+        return out
     if it["kind"] == "recolor":
         r = it["region"]
         if c["stray"] > 0:
@@ -236,18 +342,52 @@ def item_unmet(it: dict) -> List[dict]:
     return out
 
 
-def unmet_all(state: dict) -> List[dict]:
+def unmet_all(state: dict, stage: str = "change") -> List[dict]:
     out = []
+    ts = cstate(state).get("target_style")
+    if stage == "change" and ts and ts[0] != state.get("style") and not state.get("style_kept"):
+        out.append({"region": None, "metric": "style", "value": state.get("style"), "need": ts[0],
+                    "text": f"the target now reads as {ts[0]} ({str(ts[1]).split(';')[0]}), the project traces it as "
+                            f"{state.get('style')}",
+                    "fix": f"easel style {ts[0]}"})
     for it in items(state):
-        out += item_unmet(it)
+        if KINDS.get(it["kind"], {}).get("stage", "change") == stage:
+            out += item_unmet(it, state)
     return out
+
+
+def co_hex(rgb) -> str:
+    return "#%02x%02x%02x" % tuple(int(v) for v in rgb)
+
+
+def finish_done(state: dict, it: dict) -> bool:
+    """A finishing change is made when the picture holds it: the text item with that string, or the shape step
+    with that command, still applied (not undone)."""
+    par = it.get("params") or {}
+    if it["kind"] == "text":
+        return any(str(t.get("text")) == str(par.get("text")) for t in state.get("texts") or [])
+    if it["kind"] == "shape":
+        return str(it.get("cmd")) in (state.get("finish_made") or [])
+    return False
 
 
 def check_lines(it: dict) -> List[str]:
     """The measured result of one change, in words."""
     c = it.get("check")
+    if KINDS.get(it["kind"], {}).get("stage") == "finish":
+        return [f"change {it['id']}: {describe(it)} (made in the finish stage, over the traced picture)"]
     if not c:
         return [f"change {it['id']}: {describe(it)}: not made yet"]
+    if it["kind"] == "palette":
+        acc = ", ".join(f"{r} {100 * v:.1f}% of the picture, edge on lines {100 * c['accent_edge'].get(r, 0):.0f}%"
+                        for r, v in (c.get("accent_share") or {}).items())
+        return [f"palette: {c['colours']} colours; light-dark order kept {c['value_order']:.2f} (need >= "
+                f"{VALUE_ORDER_MIN})" + (f"; accents: {acc}" if acc else "")]
+    if it["kind"] == "graphic":
+        return [f"{describe(it)}: {c['drawn_px']} px drawn on the ground ({100 * c['box_share']:.0f}% of its box); "
+                f"{c['behind_px']} px held back behind the figure"]
+    if it["kind"] == "canvas":
+        return [f"canvas {c.get('size')}: the reference placed at {c.get('box')} (scale {c.get('scale')})"]
     if it["kind"] == "recolor":
         r = it["region"]
         light = (f"lightness kept (median {c['from_L']:.0f} -> {c['L_after']:.0f}; asked colour {c['to_L']:.0f}: "
@@ -356,12 +496,12 @@ def clear_stale(state: dict, stage: str, region: Optional[str]) -> None:
 
 # ----------------------------------------------------------------------------------------------- workflow hooks
 
-def todo_items(state: dict) -> List[dict]:
+def todo_items(state: dict, stage: str = "change") -> List[dict]:
     out = []
     for it in items(state):
-        if KINDS.get(it["kind"], {}).get("stage") != "change":
+        if KINDS.get(it["kind"], {}).get("stage") != stage:
             continue
-        done = bool(it.get("check")) and not item_unmet(it)
+        done = finish_done(state, it) if stage == "finish" else (bool(it.get("check")) and not item_unmet(it))
         out.append({"text": f"change {it['id']}: {describe(it)}", "cmd": it["cmd"], "region": it.get("region"),
                     "key": f"change{it['id']}", "status": "done" if done else "open"})
     return out
@@ -390,7 +530,10 @@ def next_step(project, phase: str) -> Optional[Tuple[str, str]]:
     if st["stage"] == "plan" or not active(st):
         return None
     for it in items(st):
-        if KINDS.get(it["kind"], {}).get("stage") != "change":
+        kstage = KINDS.get(it["kind"], {}).get("stage")
+        if kstage == "finish":
+            if st["stage"] == "finish" and not finish_done(st, it):
+                return f"change {it['id']} ({describe(it)}) goes over the traced picture", it["cmd"]
             continue
         um = item_unmet(it)
         if um:

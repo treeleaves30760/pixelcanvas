@@ -266,3 +266,36 @@ def test_a_small_region_keeps_its_pixels_under_a_larger_regions_recolor(changed)
     inner = ndi.binary_erosion(badge, iterations=2)
     orig = np.asarray(Image.open(changed / "orig.png").convert("RGB"))
     assert np.abs(p.ref_deliver[inner].astype(int) - orig[inner]).max() <= 2       # the feather's edge only
+
+
+def ink_girl(w=300, h=360) -> np.ndarray:
+    """A monochrome ink drawing: white paper, a grey-hatched hair mass with a dark outline, a white face inside."""
+    img = np.full((h, w, 3), 252, np.uint8)
+    cv2.ellipse(img, (150, 140), (110, 120), 0, 0, 360, (190, 190, 190), -1)
+    for k in range(10):
+        cv2.line(img, (60 + k * 20, 40), (70 + k * 18, 250), (120, 120, 120), 2)
+    cv2.ellipse(img, (150, 140), (110, 120), 0, 0, 360, (30, 30, 30), 2)
+    cv2.circle(img, (150, 170), 70, (252, 252, 252), -1)
+    cv2.circle(img, (150, 170), 70, (30, 30, 30), 2)
+    return img
+
+
+def test_grey_region_takes_the_hue_and_a_face_under_a_rough_outline_stays(tmp_path):
+    os_ = __import__("os")
+    os_.chdir(tmp_path)
+    Image.fromarray(ink_girl()).save(tmp_path / "ref.png")
+    ok("new", "pic", "--ref", "ref.png", "--request", "auburn hair")
+    ok("region", "add", "face", "--wand", "500,470", "--focus", "3")
+    ok("region", "add", "hair", "--box", "120,60,880,740", "--no-refine")          # covers the face too
+    ok("region", "rest", "background")
+    ok("change", "add", "recolor", "hair", "--to", "#a0522d")
+    ok("stage", "done")
+    out = ok("recolor", "hair", "--to", "#a0522d")
+    it = state(tmp_path / "pic.easel")["changes"]["items"][0]
+    assert it["check"]["hue_off"] < 15, out
+    p = Project(tmp_path / "pic.easel")
+    from scipy import ndimage as ndi
+    face = ndi.binary_erosion(p.mask_to_deliver(p.region_mask("face")), iterations=3)
+    orig = np.asarray(Image.open(tmp_path / "pic.easel" / "orig.png").convert("RGB"))
+    assert (co.delta_e(orig, p.ref_deliver)[face] > 3).mean() < 0.01
+    assert out.splitlines()[-1].startswith("NEXT: easel stage done") or "done" in out

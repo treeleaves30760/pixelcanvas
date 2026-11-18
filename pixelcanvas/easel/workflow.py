@@ -248,6 +248,11 @@ def build_todo(state: dict) -> None:
                 add("change", "task", e["text"], e["cmd"], region=e["region"], key=e["key"])
                 items[-1]["status"] = e["status"]
         elif stage == "finish":
+            if (state.get("changes") or {}).get("items"):
+                from .change import todo_items
+                for e in todo_items(state, "finish"):           # lettering, a frame: over the traced picture
+                    add("finish", "task", e["text"], e["cmd"], region=e["region"], key=e["key"])
+                    items[-1]["status"] = e["status"]
             add("finish", "task", "compare the whole picture with the reference", "easel look", key="look")
             if _pipe_has(state, "finish", "grain"):
                 add("finish", "task", "photo grain, measured from the reference (as the scripted pipeline)",
@@ -471,6 +476,9 @@ def check_gate(project, stage: str, comparison=None) -> Tuple[bool, List[dict]]:
         if _open_key(st, "finish", "sharpen"):
             unmet.append({"region": None, "metric": "sharpened", "value": "no", "need": "yes",
                           "fix": "easel sharpen", "text": "the finishing sharpen is not applied yet"})
+        if (st.get("changes") or {}).get("items"):
+            from .change import unmet_all
+            unmet = unmet_all(st, "finish") + unmet
         if not st.get("exported"):
             unmet.append({"region": None, "metric": "exported", "value": "no", "need": "yes",
                           "fix": "easel export final.png"})

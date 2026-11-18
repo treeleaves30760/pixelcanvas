@@ -17,8 +17,18 @@ USAGE = {
     "change": 'easel change add recolor hair --to "#5fbf6a"',
     "recolor": 'easel recolor hair --to "#5fbf6a"',
     "refine": "easel region refine hair --by hue",
+    "canvas": 'easel canvas --size 900x1200 --place 60,190,940,930 --color "#f3e9d8"',
+    "graphic": 'easel graphic disc 300,280,820,700 --color "#e8644a"',
+    "palette map": 'easel palette map --to "#1d2a44,#f3e9d8" --accent "jacket=#e8644a"',
 }
-KIND_EXAMPLES = {"recolor": 'easel change add recolor hair --to "#5fbf6a"'}
+KIND_EXAMPLES = {
+    "recolor": 'easel change add recolor hair --to "#5fbf6a"',
+    "palette": 'easel change add palette map --to "#1d2a44,#f3e9d8" --accent "jacket=#e8644a"',
+    "canvas": 'easel change add canvas --size 900x1200 --place 60,190,940,930 --color "#f3e9d8"',
+    "graphic": 'easel change add graphic disc 300,280,820,700 --color "#e8644a"',
+    "text": 'easel change add text "SLOW SUMMER" --box 70,40,930,175 --font display --weight black',
+    "shape": 'easel change add shape rect 22,18,978,982 --outline 4 --color "#1d2a44" --layer text',
+}
 
 
 def _cli():
@@ -192,30 +202,31 @@ def cmd_change(ctx, args: List[str]):
         if kind not in chg.KINDS:
             raise UsageError(f"unknown change kind {rest[0]!r}; kinds: {', '.join(chg.KINDS)}", USAGE["change"])
         if not p.state["regions"]:
-            raise UsageError("define the plan's regions first: a change works on a region",
+            raise UsageError("define the plan's regions first: changes work on the plan's regions",
                              "easel region add hair --marks 3,4,9")
-        a = cli.parse(rest[1:], _recolor_spec())
-        region = _region_name(p, a.get("region"), KIND_EXAMPLES[kind])
-        par = _recolor_params(p, a, ctx.notes)
+        key, region, par, cmd = parse_kind(ctx, kind, rest[1:])
         c = _changes(st)
         step = p.begin_step([])
-        it = _find(c, kind, region)
-        cmd = _cmdline(kind, region, par)
+        it = next((x for x in c["items"] if x["kind"] == kind and x.get("key", x.get("region")) == key), None)
         if it is None:
-            it = {"id": len(c["items"]) + 1, "kind": kind, "region": region, "cmd": cmd, "params": None,
-                  "check": None, "to": par["to"]}
+            it = {"id": len(c["items"]) + 1, "kind": kind, "key": key, "region": region, "cmd": cmd,
+                  "params": par if chg.KINDS[kind]["stage"] == "finish" else None, "check": None,
+                  "to": (par or {}).get("to")}
             c["items"].append(it)
             word = "added"
         else:
-            it["cmd"], it["to"] = cmd, par["to"]
+            it["cmd"], it["to"] = cmd, (par or {}).get("to")
+            if chg.KINDS[kind]["stage"] == "finish":
+                it["params"] = par
             word = "replaced"
         c["decided"], c["none"] = True, False
         workflow.build_todo(st)
         p.end_step(step, {"cmd": ctx.cmdline})
         rep.mutated = True
-        rep.add(f"step {step}  change {it['id']} {word}: {describe_cmd(it)}")
-        rep.add("stages: " + " > ".join(workflow.plan_of(st)) + "   (the change stage makes it on the target the "
-                "next stages trace)")
+        where = "in the finish stage, over the traced picture" if chg.KINDS[kind]["stage"] == "finish" else \
+            "in the change stage, on the target the next stages trace"
+        rep.add(f"step {step}  change {it['id']} {word}: {describe_cmd(it)}  (made {where})")
+        rep.add("stages: " + " > ".join(workflow.plan_of(st)))
         rep.add(f"changes stated: {len(c['items'])}; add one per change the request asks for")
         rep.next = cli._finish_next(ctx)
         return rep
@@ -328,8 +339,8 @@ def region_refine(ctx, args: List[str]):
     sb = co.stray_patches(img_d, old_d, s_info, reach, min_px, focus)
     sa = co.stray_patches(img_d, new_d, s_info, reach, min_px, focus)
     sa["boxes"] = [tuple(int(v * p.scale) for v in b) for b in sa["boxes"]]
-    uses = [it for it in (p.state.get("changes") or {}).get("items") or [] if it.get("region") == name
-            and it.get("params")]
+    uses = [it for it in (p.state.get("changes") or {}).get("items") or [] if it.get("params") and
+            (it.get("region") == name or name in [r for r, _c in (it["params"].get("accents") or [])])]
     rep = cli.Report(mutated=True)
     files = [f"regions/{name}.png"]
     step = _target_step(ctx, files) if uses else p.begin_step(files)
@@ -348,6 +359,9 @@ def region_refine(ctx, args: List[str]):
         raise
     lines = [f"step {step}  region {name} refined by {by}: {100 * old.mean():.1f}% -> {100 * new.mean():.1f}% of the "
              f"canvas (+{info['added']} px, -{info['removed']} px)"]
+    if info.get("kept"):
+        lines.append(f"the line art does not close around {name} (gaps join it to the areas beside it), so it stays "
+                     f"as it was; to move its edge draw it:  easel region add {name} --poly \"x,y x,y ...\"")
     if not dom["grey"]:
         lines.append(f"patches of {name}'s colour touching it but outside it: {sb['n']} -> {sa['n']}")
     for it in uses:
@@ -385,6 +399,286 @@ def look_changes(ctx, args: List[str]):
     return rep
 
 
+# ----------------------------------------------------------------------------------------------- kinds: parsing
+
+def _join(toks: List[str]) -> str:
+    import shlex
+    return "easel " + " ".join(shlex.quote(t) if (" " in t or not t or "#" in t or "=" in t) else t for t in toks)
+
+
+def _palette_spec():
+    cli = _cli()
+    return cli.Spec(USAGE["palette map"], [], {"to": "value", "accent": "value", "gamma": "value"},
+                    alias={"colors": "to", "colours": "to", "accents": "accent"})
+
+
+def _palette_params(p, a: dict, notes: list) -> dict:
+    cli = _cli()
+    u = USAGE["palette map"]
+    if not a.get("to"):
+        raise UsageError("palette map needs its colours, dark to light: --to \"#1d2a44,#f3e9d8\"", u)
+    parts = [x for x in re.split(r"[,;\s]+", str(a["to"]).strip()) if x]
+    if len(parts) < 2:
+        raise UsageError("palette map needs at least two colours, dark to light", u)
+    rgbs = [list(coords.parse_colour(x, u)) for x in parts]
+    accents = []
+    if a.get("accent"):
+        for part in re.split(r"[,;]+", str(a["accent"])):
+            part = part.strip()
+            if not part:
+                continue
+            if "=" not in part:
+                raise UsageError(f"--accent takes region=colour pairs, got {part!r}", u)
+            r, col = part.split("=", 1)
+            accents.append([_region_name(p, r.strip(), u), list(coords.parse_colour(col.strip(), u))])
+    return {"rgbs": rgbs, "to": ",".join(coords.hex_colour(c) for c in rgbs), "accents": accents,
+            "gamma": cli._num(a, "gamma", 1.1, 0.4, 3.0, notes, u)}
+
+
+def _canvas_spec():
+    cli = _cli()
+    return cli.Spec(USAGE["canvas"], [], {"size": "value", "place": "value", "color": "value"},
+                    alias={"colour": "color", "box": "place"})
+
+
+def _canvas_params(p, a: dict, notes: list) -> dict:
+    u = USAGE["canvas"]
+    if not a.get("size") or not a.get("place"):
+        raise UsageError("canvas needs the new size and where the reference goes in it: --size WxH --place "
+                         "x0,y0,x1,y1 (0-1000 of the new canvas)", u)
+    nums = [int(float(x)) for x in re.findall(r"\d+(?:\.\d+)?", str(a["size"]))]
+    if len(nums) != 2:
+        raise UsageError("--size needs WxH like 900x1200", u)
+    box = coords.parse_box(a["place"], notes, u)
+    col = coords.parse_colour(a["color"], u) if a.get("color") else tuple(p.state.get("paper") or (255, 255, 255))
+    return {"size": nums, "place": list(box), "rgb": list(col)}
+
+
+def _graphic_spec():
+    cli = _cli()
+    return cli.Spec(USAGE["graphic"], ["shape", "box"], {"color": "value", "width": "value", "front": "flag"},
+                    alias={"colour": "color"}, min_pos=2)
+
+
+def _graphic_params(p, a: dict, notes: list) -> dict:
+    cli = _cli()
+    u = USAGE["graphic"]
+    shape = str(a["shape"]).lower()
+    shape = {"circle": "disc", "oval": "disc", "ellipse": "disc", "rectangle": "rect", "box": "rect",
+             "band": "rect", "outline": "frame"}.get(shape, shape)
+    if shape not in ("disc", "rect", "ring", "frame"):
+        raise UsageError(f"unknown graphic {a['shape']!r}; one of disc, rect, ring, frame", u)
+    box = coords.parse_box(a["box"], notes, u)
+    if not a.get("color"):
+        raise UsageError("graphic needs its colour: --color \"#rrggbb\"", u)
+    rgb = coords.parse_colour(a["color"], u)
+    width = cli._num(a, "width", 6.0 if shape in ("ring", "frame") else 0.0, 0, 200, notes, u)
+    return {"shape": shape, "box": list(box), "rgb": list(rgb), "width": width, "behind": not a.get("front")}
+
+
+TEXT_OPTS = {"box": "value", "font": "value", "color": "value", "weight": "value", "align": "value",
+             "outline": "value", "vertical": "flag", "fit": "flag", "size": "value"}
+SHAPE_OPTS = {"color": "value", "outline": "value", "fill": "flag", "layer": "value", "opacity": "value",
+              "brush": "value"}
+
+
+def parse_kind(ctx, kind: str, toks: List[str]):
+    """(key, region, params, command line) of a change stated with  easel change add <kind> ..."""
+    cli = _cli()
+    p = ctx.project
+    if kind == "recolor":
+        a = cli.parse(toks, _recolor_spec())
+        region = _region_name(p, a.get("region"), KIND_EXAMPLES[kind])
+        par = _recolor_params(p, a, ctx.notes)
+        return region, region, par, _cmdline(kind, region, par)
+    if kind == "palette":
+        if not toks or toks[0].lower() != "map":
+            raise UsageError("a palette change is a map:  change add palette map --to ...", KIND_EXAMPLES[kind])
+        _palette_params(p, cli.parse(toks[1:], _palette_spec()), ctx.notes)
+        return "palette", None, None, _join(["palette", *toks])
+    if kind == "canvas":
+        _canvas_params(p, cli.parse(toks, _canvas_spec()), ctx.notes)
+        return "canvas", None, None, _join(["canvas", *toks])
+    if kind == "graphic":
+        _graphic_params(p, cli.parse(toks, _graphic_spec()), ctx.notes)
+        cmd = _join(["graphic", *toks])
+        return cmd, None, None, cmd
+    if kind == "text":
+        a = cli.parse(toks, cli.Spec(KIND_EXAMPLES[kind], ["string*"], TEXT_OPTS, alias={"colour": "color"}))
+        if not a.get("string"):
+            raise UsageError("a text change needs its words", KIND_EXAMPLES[kind])
+        return str(a["string"]), None, {"text": str(a["string"])}, _join(["text", *toks])
+    if kind == "shape":
+        cli.parse(toks, cli.Spec(KIND_EXAMPLES[kind], ["kind", "coords*"], SHAPE_OPTS, alias={"colour": "color"},
+                                 min_pos=2))
+        cmd = _join(["shape", *toks])
+        return cmd, None, {"tokens": list(toks)}, cmd
+    raise UsageError(f"unknown change kind {kind!r}", USAGE["change"])
+
+
+def _item_for(st: dict, kind: str, key, cmd: str, region=None) -> tuple:
+    c = _changes(st)
+    it = next((x for x in c["items"] if x["kind"] == kind and x.get("key", x.get("region")) == key), None)
+    added = it is None
+    if added:
+        it = {"id": len(c["items"]) + 1, "kind": kind, "key": key, "region": region, "check": None}
+        c["items"].append(it)
+    it["cmd"] = cmd
+    c["decided"], c["none"] = True, False
+    return it, added
+
+
+def _target_change(ctx, kind: str, key, cmd: str, par: dict, head: str, region=None, extra_files=()):
+    """Make (or remake) one target change: rebuild the target, report its check, show it."""
+    cli = _cli()
+    p = ctx.project
+    rep = cli.Report(mutated=True)
+    step = _target_step(ctx, list(extra_files))
+    try:
+        it, added = _item_for(p.state, kind, key, cmd, region)
+        it["params"] = par
+        _apply_target(ctx, rep)
+        p.end_step(step, {"cmd": ctx.cmdline, "change": it["id"]})
+    except Exception:
+        p.abort_step(step)
+        raise
+    rep.lines = [f"step {step}  {head}  (change {it['id']}" + (", added" if added else "") + ")"] + \
+        chg.check_lines(it) + rep.lines
+    um = chg.item_unmet(it, p.state)
+    if not um:
+        rep.add(f"change {it['id']} done")
+    _change_view(ctx, rep, [it], step, "change")
+    rep.next = um[0]["fix"] if um else cli._finish_next(ctx)
+    return rep
+
+
+# ----------------------------------------------------------------------------------------------- palette map
+
+def cmd_palette_map(ctx, args: List[str]):
+    cli = _cli()
+    p = ctx.project
+    if p.ref is None:
+        raise UsageError("palette map changes a reference picture and this project has none", USAGE["palette map"])
+    par = _palette_params(p, cli.parse(args, _palette_spec()), ctx.notes)
+    cmd = _join(["palette", "map", *args])
+    return _target_change(ctx, "palette", "palette", cmd, par,
+                          f"palette map {par['to']}" + "".join(f" + {r} {coords.hex_colour(c)}"
+                                                               for r, c in par["accents"]))
+
+
+# ----------------------------------------------------------------------------------------------- graphic
+
+def cmd_graphic(ctx, args: List[str]):
+    cli = _cli()
+    p = ctx.project
+    if p.ref is None:
+        raise UsageError("graphic lays a shape on a reference picture's ground; this project has none (draw it "
+                         "with  easel shape)", USAGE["graphic"])
+    par = _graphic_params(p, cli.parse(args, _graphic_spec()), ctx.notes)
+    cmd = _join(["graphic", *args])
+    return _target_change(ctx, "graphic", cmd, cmd, par,
+                          f"graphic {par['shape']} {coords.hex_colour(par['rgb'])}"
+                          + (" behind the figure" if par["behind"] else " in front"))
+
+
+# ----------------------------------------------------------------------------------------------- canvas
+
+def cmd_canvas(ctx, args: List[str]):
+    """The reference placed (scaled to fit, centred) in a new canvas of another size; margins in one colour. Made
+    once, before tracing: the regions move with it, the marks are made again."""
+    import cv2
+    from .project import fit_size, save_png
+    cli = _cli()
+    p = ctx.project
+    st = p.state
+    u = USAGE["canvas"]
+    if p.ref is None:
+        raise UsageError("canvas places a reference picture; this project has none (easel new --size)", u)
+    painted = [e["name"] for e in st["layers"] if e["name"] != "paper" and not e.get("empty", True)]
+    if st.get("stage") not in ("plan", "change") or painted:
+        raise UsageError("canvas changes the picture's size: make it before tracing (stage plan or change, nothing "
+                         "painted yet)", "easel stage back change")
+    if any(it["kind"] == "canvas" and it.get("params") for it in (st.get("changes") or {}).get("items") or []):
+        raise UsageError("the canvas is already set; easel undo takes it back", "easel undo")
+    par = _canvas_params(p, cli.parse(args, _canvas_spec()), ctx.notes)
+    s = p.scale
+    dw, dh = p.deliver_size()
+    nw, nh = fit_size(int(par["size"][0]), int(par["size"][1]))
+    bx = coords.box_to_px(par["place"], nw, nh)
+    sc = min((bx[2] - bx[0]) / dw, (bx[3] - bx[1]) / dh)
+    pw, ph = max(1, int(round(dw * sc))), max(1, int(round(dh * sc)))
+    ox = int(round((bx[0] + bx[2]) / 2 - pw / 2))
+    oy = int(round((bx[1] + bx[3]) / 2 - ph / 2))
+    files = list(chg.TARGET_FILES) + [f"layers/{e['name']}.png" for e in st["layers"]] + \
+        [f"regions/{n}.png" for n in p.region_names()]
+    rep = cli.Report(mutated=True)
+    step = p.begin_step(files)
+    try:
+        src = chg.orig_d(p)
+        interp = cv2.INTER_AREA if sc < 1 else cv2.INTER_CUBIC
+        placed = cv2.resize(src, (pw, ph), interpolation=interp)
+        new = np.empty((nh, nw, 3), np.uint8)
+        new[:] = np.asarray(par["rgb"], np.uint8)
+        x0, y0 = max(0, ox), max(0, oy)
+        x1, y1 = min(nw, ox + pw), min(nh, oy + ph)
+        new[y0:y1, x0:x1] = placed[y0 - oy:y1 - oy, x0 - ox:x1 - ox]
+        save_png(p.root / "orig.png", new)
+        W2, H2 = nw * s, nh * s
+        inside = np.zeros((H2, W2), bool)
+        inside[y0 * s:y1 * s, x0 * s:x1 * s] = True
+        for n in p.region_names():
+            m = p.region_mask(n)
+            mm = cv2.resize(m.astype(np.uint8), (pw * s, ph * s), interpolation=cv2.INTER_NEAREST) > 0
+            out = np.zeros((H2, W2), bool)
+            out[y0 * s:y1 * s, x0 * s:x1 * s] = mm[(y0 - oy) * s:(y1 - oy) * s, (x0 - ox) * s:(x1 - ox) * s]
+            if chg.is_rest(st["regions"][n]):
+                out |= ~inside                                  # the new margins belong to the rest region
+            p.save_region_mask(n, out)
+            st["regions"][n]["area"] = round(float(out.mean()), 4)
+            st["regions"][n]["box"] = list(coords.px_box_to_units(coords.mask_bbox_px(out) or (0, 0, W2, H2), W2, H2))
+        st["width"], st["height"] = W2, H2
+        st["deliver"] = [nw, nh] if s > 1 else None
+        if s == 1:
+            st.pop("deliver", None)
+        st["marks"] = None
+        paper = np.zeros((H2, W2, 4), np.float32)
+        paper[..., :3] = np.asarray(st.get("paper") or (255, 255, 255), np.float32) / 255.0
+        paper[..., 3] = 1.0
+        p._layers.clear()
+        for e in st["layers"]:
+            p._write_layer_file(e["name"], paper if e["name"] == "paper" else None)
+        it, added = _item_for(st, "canvas", "canvas", _join(["canvas", *args]))
+        it["params"] = par
+        it["check"] = {"size": f"{nw}x{nh}", "box": coords.fmt_box(coords.px_box_to_units((ox, oy, ox + pw, oy + ph),
+                                                                                         nw, nh)),
+                       "scale": round(sc, 3)}
+        _apply_target(ctx, rep)
+        p.end_step(step, {"cmd": ctx.cmdline, "change": it["id"]})
+    except Exception:
+        p.abort_step(step)
+        raise
+    rep.lines = [f"step {step}  canvas {nw}x{nh} (working {W2}x{H2}): the reference at scale {sc:.2f}, placed at "
+                 f"{it['check']['box']}  (change {it['id']})",
+                 f"margins {coords.hex_colour(par['rgb'])}; the regions moved with the picture (the rest region "
+                 "takes the margins); marks are made again with  easel marks"] + rep.lines
+    _change_view(ctx, rep, [it], step, "canvas")
+    rep.next = cli._finish_next(ctx)
+    return rep
+
+
+# ----------------------------------------------------------------------------------------------- finishing changes
+
+def _tick_finish(ctx) -> None:
+    p = getattr(ctx, "_project", None)
+    if p is None or not (p.state.get("changes") or {}).get("items"):
+        return
+    try:
+        workflow.build_todo(p.state)
+        p.save_state()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ----------------------------------------------------------------------------------------------- install
 
 def install(commands: Dict) -> None:
@@ -411,6 +705,43 @@ def install(commands: Dict) -> None:
     commands["region"] = region_cmd
     commands["look"] = look_cmd
     commands["view"] = look_cmd
+    commands["canvas"] = cmd_canvas
+    commands["graphic"] = cmd_graphic
+    palette = commands.get("palette")
+    text = commands.get("text")
+    shape = commands.get("shape")
+
+    def palette_cmd(ctx, args, _orig=palette):
+        if args and str(args[0]).lower() == "map":
+            return cmd_palette_map(ctx, args[1:])
+        return _orig(ctx, args)
+
+    def text_cmd(ctx, args, _orig=text):
+        rep = _orig(ctx, args)
+        _tick_finish(ctx)
+        return rep
+
+    def shape_cmd(ctx, args, _orig=shape):
+        import shlex
+        p = None
+        try:
+            p = ctx.project
+        except Exception:  # noqa: BLE001
+            pass
+        if p is not None:
+            mine = ["shape", *[str(a) for a in args]]
+            for it in (p.state.get("changes") or {}).get("items") or []:
+                if it["kind"] == "shape" and shlex.split(it["cmd"])[1:] == mine:
+                    made = p.state.setdefault("finish_made", [])   # saved with the shape's own undo step
+                    if it["cmd"] not in made:
+                        made.append(it["cmd"])
+        rep = _orig(ctx, args)
+        _tick_finish(ctx)
+        return rep
+
+    commands["palette"] = palette_cmd
+    commands["text"] = text_cmd
+    commands["shape"] = shape_cmd
     try:
         cli = _cli()
         for k, v in USAGE.items():

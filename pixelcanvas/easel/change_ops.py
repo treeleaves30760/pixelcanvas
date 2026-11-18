@@ -110,7 +110,10 @@ def recolor(img_u8: np.ndarray, mask: np.ndarray, to_rgb, chroma: float = 1.0, l
     if dom["grey"]:
         # a grey region has no hue to turn: lay the asked hue over it at the asked chroma, lightness kept
         w = f
-        k = Ct * chroma
+        # the asked colour by value: full at its own lightness, fading toward white and black (highlights stay white,
+        # lines stay dark, nothing leaves the gamut)
+        fade = np.where(L >= Lt, (100.0 - L) / max(100.0 - Lt, 1.0), L / max(Lt, 1.0))
+        k = Ct * chroma * np.clip(fade, 0.0, 1.0)
         a_n = lab[..., 1] * (1 - w) + w * k * np.cos(np.radians(ht))
         b_n = lab[..., 2] * (1 - w) + w * k * np.sin(np.radians(ht))
     else:
@@ -244,14 +247,15 @@ def line_barrier(img_u8: np.ndarray) -> np.ndarray:
     """Line art of a picture: pixels clearly darker than their neighbourhood, or very dark."""
     lum = cv2.cvtColor(img_u8, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
     local = cv2.GaussianBlur(lum, (0, 0), 3.0)
-    return (lum < local - 0.10) | (lum < 0.22)
+    dark = max(0.22, 0.5 * float(np.median(lum)))     # an ink drawing on white: its grey hatching closes areas too
+    return (lum < local - 0.10) | (lum < dark)
 
 
 def refine_by_lines(img_u8: np.ndarray, region: np.ndarray, share: float = 0.5,
                     min_area: int = 30) -> Tuple[np.ndarray, Dict]:
     """Snap a region to the areas its line art encloses: every area between lines that lies mostly inside the
     region joins it, every area mostly outside leaves it; the line pixels between kept areas stay in."""
-    barrier = line_barrier(img_u8)
+    barrier = ndi.binary_dilation(line_barrier(img_u8), iterations=1)     # one px closes the small gaps in the lines
     lab_, n = ndi.label(~barrier)
     if n == 0:
         return region.copy(), {"added": 0, "removed": 0}
@@ -262,5 +266,96 @@ def refine_by_lines(img_u8: np.ndarray, region: np.ndarray, share: float = 0.5,
     kept = np.isin(lab_, keep)
     small = np.isin(lab_, ids[tot < min_area]) & region            # tiny areas keep their old membership
     out = kept | small
-    out = out | (ndi.binary_closing(out, iterations=2) & barrier)    # the lines between kept areas
+    out = out | (ndi.binary_closing(out, iterations=3) & barrier)    # the lines between kept areas
+    if out.sum() < 0.5 * region.sum():
+        # the line art does not close around the region (gaps join it to the areas beside it): left as it was
+        return region.copy(), {"added": 0, "removed": 0, "kept": True}
     return out, {"added": int((out & ~region).sum()), "removed": int((region & ~out).sum())}
+
+
+# ----------------------------------------------------------------------------------------------- palette map
+
+def palette_map(img_u8: np.ndarray, colours, accents=(), gamma: float = 1.1, accent_mix: float = 0.65,
+                light_at: Optional[float] = None) -> Tuple[np.ndarray, Dict]:
+    """Map the picture to a few colours by value: ``colours`` dark to light, each pixel takes the colour at its
+    lightness (piecewise between them). ``accents``: (mask, colour) pairs; inside the mask the light end becomes the
+    accent colour (``accent_mix`` of it over the plain map), so lines stay dark and the accent sits on the lights."""
+    rgb = img_u8.astype(np.float32) / 255.0
+    lum = rgb @ np.array([0.299, 0.587, 0.114], np.float32)
+    lo, hi = np.percentile(lum, 0.5), np.percentile(lum, 99.5)
+    if light_at is not None:                       # the ground and anything lighter: the light end
+        hi = min(hi, float(light_at))
+    t = np.clip((lum - lo) / max(hi - lo, 1e-3), 0.0, 1.0) ** gamma
+    cols = np.asarray(colours, np.float32) / 255.0
+    n = len(cols)
+    pos = t * (n - 1)
+    i0 = np.clip(np.floor(pos).astype(int), 0, n - 2)
+    f = (pos - i0)[..., None]
+    out = cols[i0] * (1.0 - f) + cols[i0 + 1] * f
+    share = {}
+    for k, (m, c) in enumerate(accents):
+        ac = np.asarray(c, np.float32) / 255.0
+        # the region's own value range: a dark garment still carries the accent on its lighter parts
+        tl = t
+        if m.any():
+            r0, r1 = np.percentile(lum[m], 5), np.percentile(lum[m], 95)
+            if r1 - r0 < 0.15:                      # a flat area: its own colour is the light end, lines the dark
+                r1 = float(np.median(lum[m]))
+                r0 = r1 - 0.15
+            tl = np.clip((lum - r0) / (r1 - r0), 0.0, 1.0) ** gamma
+        acc = cols[0] * (1.0 - tl[..., None]) + ac * tl[..., None]
+        mm = m[..., None]
+        out = np.where(mm, out * (1.0 - accent_mix) + acc * accent_mix, out)
+        share[k] = float(m.mean())
+    out_u8 = (np.clip(out, 0, 1) * 255.0 + 0.5).astype(np.uint8)
+    lum2 = out @ np.array([0.299, 0.587, 0.114], np.float32)
+    plain = np.ones(lum.shape, bool)                  # the accents change value on purpose: measured outside them
+    for m, _c in accents:
+        plain &= ~m
+    step = max(1, int(plain.sum() // 200000))
+    a, b = lum[plain][::step], lum2[plain][::step]
+    order = float(np.corrcoef(a, b)[0, 1]) if a.std() > 1e-6 and b.std() > 1e-6 else 1.0
+    return out_u8, {"value_order": order, "colours": n + len(accents), "accent_share_list": list(share.values()),
+                    "accent_share": {}}
+
+
+def edge_on_lines(region: np.ndarray, line: np.ndarray, near: int = 2) -> float:
+    """Share of a region's edge pixels that lie on (within ``near`` px of) the line art."""
+    edge = region & ~ndi.binary_erosion(region, iterations=1)
+    if not edge.any():
+        return 1.0
+    close = ndi.binary_dilation(line, iterations=near)
+    return float((edge & close).sum() / edge.sum())
+
+
+# ----------------------------------------------------------------------------------------------- graphic
+
+def graphic(img_u8: np.ndarray, shape: str, box_px, rgb, ground: Optional[np.ndarray] = None,
+            width: float = 0.0) -> Tuple[np.ndarray, Dict]:
+    """A flat shape in one colour: disc (an ellipse filling the box), rect, or ring / frame (an outline of
+    ``width`` px). With ``ground`` it is laid only on those pixels: behind the figure."""
+    H, W = img_u8.shape[:2]
+    x0, y0, x1, y1 = (float(v) for v in box_px)
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    if shape in ("disc", "ellipse", "ring"):
+        cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, max(1.0, (x1 - x0) / 2), max(1.0, (y1 - y0) / 2)
+        d = np.sqrt(((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2)
+        dist = (d - 1.0) * min(rx, ry)                       # about px from the edge, negative inside
+    else:
+        dx = np.maximum(x0 - xx, xx - x1)
+        dy = np.maximum(y0 - yy, yy - y1)
+        dist = np.maximum(dx, dy)
+    if shape in ("ring", "frame") and width > 0:
+        cover = np.clip(0.5 - (np.abs(dist + width / 2.0) - width / 2.0), 0.0, 1.0)
+    else:
+        cover = np.clip(0.5 - dist, 0.0, 1.0)                 # one px of anti-aliasing
+    full = cover.copy()
+    if ground is not None:
+        g = ndi.gaussian_filter(ground.astype(np.float32), 0.7)
+        cover = cover * np.clip(g * 1.4 - 0.2, 0.0, 1.0)
+    c = np.asarray(rgb, np.float32)
+    out = img_u8.astype(np.float32) * (1.0 - cover[..., None]) + c * cover[..., None]
+    drawn = int((cover > 0.5).sum())
+    box_n = max(1, int((full > 0.5).sum()))
+    return (out + 0.5).astype(np.uint8), {"drawn": drawn, "box_share": drawn / box_n,
+                                           "held_back": int(((full > 0.5) & (cover <= 0.5)).sum())}

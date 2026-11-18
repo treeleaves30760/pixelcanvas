@@ -690,7 +690,7 @@ def cmd_style(ctx: Ctx, args: List[str]) -> Report:
     step = p.begin_step([])
     old = p.state["style"]
     p.state["style"] = name
-    plan = workflow.PLANS[name]
+    plan = workflow.plan_of(p.state)          # the style's stages (with a change stage when changes are stated)
     if p.state["stage"] not in plan:
         ctx.notes.append(f"stage {p.state['stage']} is not in the {name} plan; back to sketch")
         p.state["stage"] = "sketch"
