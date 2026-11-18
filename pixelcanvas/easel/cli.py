@@ -86,6 +86,9 @@ class Spec:
     min_pos: int = 0
 
 
+LIST_OPTS = ("plus", "minus", "accent", "regions")   # options that take a list: repeats join with ';'
+
+
 def parse(tokens: List[str], spec: Spec) -> Dict[str, object]:
     import difflib
     out: Dict[str, object] = {}
@@ -125,7 +128,10 @@ def parse(tokens: List[str], spec: Spec) -> Dict[str, object]:
                             re.search(r"[,(\[]\s*$", val):
                         i += 1
                         val += " " + tokens[i]
-                out[key] = val
+                if key in LIST_OPTS and out.get(key) is not None:
+                    out[key] = f"{out[key]};{val}"      # a repeated list option adds to it (--minus face --minus pin)
+                else:
+                    out[key] = val
         else:
             posvals.append(t)
         i += 1
@@ -240,7 +246,8 @@ def _ref_view(ctx: Ctx, area) -> Optional[str]:
     if p.ref is None:
         return None
     x0, y0, x1, y1 = (int(v) for v in area)
-    path = p.root / "views" / f"ref-{x0}-{y0}-{x1}-{y1}.png"
+    rev = p.state.get("target_rev")            # a changed target (easel recolor ...) gets views of its own
+    path = p.root / "views" / (f"ref-{x0}-{y0}-{x1}-{y1}" + (f"-t{rev}" if rev else "") + ".png")
     if not path.exists():
         save_png(path, view.render([view.Panel(p.ref, "REFERENCE")], (x0, y0, x1, y1)))
     return p.rel(path)
@@ -580,7 +587,8 @@ def cmd_new(ctx: Ctx, args: List[str]) -> Report:
         size = (max(16, nums[0]), max(16, nums[1]))
     p = Project.create(a["dir"], a.get("ref"), size, a.get("request") or "", notes=ctx.notes)
     ctx._project = p
-    style, why = workflow.guess_style(p.ref, a.get("request") or "")
+    # with a reference the picture decides the style (the request may ask for changes: easel change ...)
+    style, why = workflow.guess_style(p.ref, (a.get("request") or "") if p.ref is None else "")
     p.state["style"] = style
     if p.ref is not None:
         try:
@@ -688,7 +696,7 @@ def cmd_style(ctx: Ctx, args: List[str]) -> Report:
     step = p.begin_step([])
     old = p.state["style"]
     p.state["style"] = name
-    plan = workflow.PLANS[name]
+    plan = workflow.plan_of(p.state)          # the style's stages (with a change stage when changes are stated)
     if p.state["stage"] not in plan:
         ctx.notes.append(f"stage {p.state['stage']} is not in the {name} plan; back to sketch")
         p.state["stage"] = "sketch"
@@ -1333,8 +1341,10 @@ def _region_add(ctx: Ctx, args: List[str]) -> Report:
             mask = filled
     for key, op in (("plus", "|"), ("minus", "-")):
         if a.get(key):
-            val = str(a[key]).strip()
-            items = [val] if coords.looks_like_box(val) else re.split(r"[,\s]+", val)
+            items = []
+            for val in str(a[key]).split(";"):                # repeats of the option
+                val = val.strip()
+                items += [val] if coords.looks_like_box(val) else re.split(r"[,\s]+", val)
             for other in items:
                 if not other:
                     continue
@@ -3016,6 +3026,18 @@ def _install_draw() -> None:
 _install_draw()
 
 
+def _install_change() -> None:
+    """A redraw that differs from its reference (cli_change): change, recolor, region refine, look --show changes."""
+    try:
+        from . import cli_change as _cc
+        _cc.install(COMMANDS)
+    except Exception as _e:  # noqa: BLE001
+        sys.stderr.write(f"easel: the change commands failed to load ({type(_e).__name__}: {_e})\n")
+
+
+_install_change()
+
+
 def _log_seconds(ctx, seconds: float, code: int) -> None:
     """Seconds per command, kept beside the project (outside the undo history), for the session record."""
     p = getattr(ctx, "_project", None)
@@ -3100,6 +3122,7 @@ def _pop_project(argv: List[str]) -> Tuple[Optional[str], List[str]]:
 def run(argv: List[str]) -> Tuple[int, str]:
     """Run one command line; returns (exit code, report text). Never raises."""
     _install_draw()
+    _install_change()
     _wrap_mode()
     proj, argv = _pop_project(list(argv))
     ctx = Ctx(proj)

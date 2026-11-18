@@ -52,6 +52,8 @@ STAGES = {
     "detail": {"cmd": "detail", "layer": "detail", "what": "fine brush on the worst spots, focus regions first"},
     "finish": {"cmd": None, "layer": "detail",
                "what": "compare the whole picture, fix what remains, finishing touches (fx, text), export"},
+    "change": {"cmd": None, "layer": None,
+               "what": "make the request's changes on the target (the picture the next stages trace)"},
 }
 # command -> stage it belongs to (for ticking todo items); paint is resolved by --size
 CMD_STAGE = {"sketch": "sketch", "ink": "line", "flat": "flat", "shade": "shade", "detail": "detail",
@@ -223,7 +225,7 @@ def _open_key(state: dict, stage: str, key: str) -> bool:
 
 def build_todo(state: dict) -> None:
     """(Re)generate the todo list for the style and regions, keeping the status of existing items."""
-    plan = PLANS[state.get("style") or "paint"]
+    plan = plan_of(state)
     old = {(t["stage"], t.get("region"), t["kind"], t.get("key")): t for t in state.get("todo", [])}
     user = [t for t in state.get("todo", []) if t["kind"] == "user"]
     items: List[dict] = []
@@ -240,7 +242,17 @@ def build_todo(state: dict) -> None:
             add("plan", "task", "define 4-12 regions (focus 3 for face / eyes / hands)",
                 "easel region add <name> --marks <numbers> --focus 3", key="regions")
             add("plan", "task", "cover the rest of the canvas", "easel region rest background", key="rest")
+        elif stage == "change":
+            from .change import todo_items
+            for e in todo_items(state):
+                add("change", "task", e["text"], e["cmd"], region=e["region"], key=e["key"])
+                items[-1]["status"] = e["status"]
         elif stage == "finish":
+            if (state.get("changes") or {}).get("items"):
+                from .change import todo_items
+                for e in todo_items(state, "finish"):           # lettering, a frame: over the traced picture
+                    add("finish", "task", e["text"], e["cmd"], region=e["region"], key=e["key"])
+                    items[-1]["status"] = e["status"]
             add("finish", "task", "compare the whole picture with the reference", "easel look", key="look")
             if _pipe_has(state, "finish", "grain"):
                 add("finish", "task", "photo grain, measured from the reference (as the scripted pipeline)",
@@ -303,6 +315,7 @@ STAGE_LOOKS = {
     "forms": "masses turned into forms: light and shadow sides, main edges",
     "detail": "coarse pass on all, then fine detail region by region (focus 3 first): eyes, mouth, hands crisp",
     "finish": "the whole picture matches the reference; exported",
+    "change": "the target shows every change; nothing of the old colours left at the edges",
 }
 
 
@@ -343,6 +356,9 @@ def gate_words(stage: str, style: Optional[str] = None) -> str:
         return "every region sketched"
     if stage == "finish":
         return "a last close look at every focus-3 region, picture exported"
+    if stage == "change":
+        from .change import GATE_WORDS
+        return GATE_WORDS
     g = gate_for(stage, style)
     parts = []
     for k, v in g.items():
@@ -357,6 +373,9 @@ def gate_words(stage: str, style: Optional[str] = None) -> str:
 
 def tick(state: dict, stage: str, region: Optional[str], key: Optional[str] = None, note: str = "") -> List[int]:
     """Mark matching open task items done. region 'all' ticks every task of the stage."""
+    if state.get("stale"):
+        from .change import clear_stale
+        clear_stale(state, stage, region)
     done = []
     for t in state.get("todo", []):
         if t["kind"] != "task" or t["stage"] != stage or t["status"] != "open":
@@ -384,7 +403,10 @@ def open_tasks(state: dict, stage: str) -> List[dict]:
 
 
 def plan_of(state: dict) -> List[str]:
-    return PLANS[state.get("style") or "paint"]
+    plan = PLANS[state.get("style") or "paint"]
+    if (state.get("changes") or {}).get("items"):
+        return plan[:1] + ["change"] + plan[1:]          # stated changes: their own stage right after the plan
+    return plan
 
 
 # ----------------------------------------------------------------------------------------------- gates
@@ -432,6 +454,13 @@ def check_gate(project, stage: str, comparison=None) -> Tuple[bool, List[dict]]:
             first = max(st["regions"], key=lambda n: st["regions"][n].get("focus", 1))
             unmet.append({"region": None, "metric": "focus-3 regions", "value": 0, "need": 1,
                           "fix": f"easel region focus {first} 3   (the place the viewer looks first)"})
+        if st.get("request") and st.get("has_ref"):
+            from .change import decision_unmet
+            unmet += decision_unmet(st)
+        return not unmet, unmet
+    if stage == "change":
+        from .change import unmet_all
+        unmet = unmet_all(st)
         return not unmet, unmet
     if stage == "sketch":
         for t in st["todo"]:
@@ -447,6 +476,9 @@ def check_gate(project, stage: str, comparison=None) -> Tuple[bool, List[dict]]:
         if _open_key(st, "finish", "sharpen"):
             unmet.append({"region": None, "metric": "sharpened", "value": "no", "need": "yes",
                           "fix": "easel sharpen", "text": "the finishing sharpen is not applied yet"})
+        if (st.get("changes") or {}).get("items"):
+            from .change import unmet_all
+            unmet = unmet_all(st, "finish") + unmet
         if not st.get("exported"):
             unmet.append({"region": None, "metric": "exported", "value": "no", "need": "yes",
                           "fix": "easel export final.png"})
@@ -621,6 +653,11 @@ def next_action(project, comparison=None) -> Tuple[str, str]:
     stage = st["stage"]
     if project.ref is None and stage != "finish":
         return _next_without_reference(project)
+    if st.get("changes") and stage != "plan":
+        from .change import next_step
+        nc = next_step(project, "top")
+        if nc:
+            return nc
     if stage == "plan":
         if not st.get("marks") and project.ref is not None:
             return "see the reference cut into numbered areas", "easel marks"
@@ -635,6 +672,11 @@ def next_action(project, comparison=None) -> Tuple[str, str]:
         if not f["focus3"] and not st.get("no_focus"):
             first = max(st["regions"], key=lambda n: (st["regions"][n].get("focus", 1), -st["regions"][n]["area"]))
             return "no region has focus 3 (where the viewer looks first)", f"easel region focus {first} 3"
+        if st.get("request") and st.get("has_ref"):
+            from .change import next_step
+            nc = next_step(project, "plan")
+            if nc:
+                return nc
         return "plan gate passes; check the regions over the reference, then close the plan", "easel stage done"
     tasks = open_tasks(st, stage)
     if stage == "finish":

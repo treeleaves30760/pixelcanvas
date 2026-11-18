@@ -167,6 +167,46 @@ After the fix open VIEW again. Keep it only when the score line (`before -> afte
 3. After 3 tries, if the picture matches the reference there: `easel stage done --because "<what you see>"`.
    Give the real reason ("the reference has no lines on the background"), never just "done".
 
+## "Redraw it, but ...": a picture that differs from its reference
+
+When the request asks for something the reference does not have (another colour, a poster, a new setting), state
+each change after the regions, before `easel stage done`; the plan's NEXT asks for it. A plain copy:
+`easel change none`. Each change edits the target, the picture the stages trace (the original stays as
+`orig.png`). After `easel stage done` the change stage makes them: follow NEXT until it says `easel stage done`, then
+trace as usual. `easel look --show changes` shows original and target side by side.
+
+Recolour ("with mint-green hair and a dark red top"):
+```bash
+easel change add recolor hair --to "#8fdcb4"
+easel change add recolor clothes --to "#7b2635"
+easel stage done
+easel recolor hair --to "#8fdcb4"            # NEXT gives each command; stray patches:  easel region refine hair --by hue
+easel recolor clothes --to "#7b2635"
+```
+Poster ("a minimalist poster titled SLOW SUMMER, navy line art on cream, coral accents"):
+```bash
+easel change add canvas --size 900x1200 --place 186,240,814,930 --color "#f3e9d8"
+easel change add palette map --to "#1d2a44,#f3e9d8" --accent "jacket=#e8644a"
+easel change add graphic disc 260,295,860,745 --color "#e97a62"
+easel change add text "SLOW SUMMER" --box 70,40,930,175 --font display --weight black --color "#1d2a44"
+easel stage done                             # then NEXT: canvas, palette map, graphic; the lettering comes in finish
+```
+New setting ("in front of a mountain lake at sunset"). Draw the setting first as a free picture in its own folder
+(`easel new lake --mode free --size 850x1511 --request "a mountain lake at sunset"`, through to `easel export`), or
+take a picture file, a gradient or one colour:
+```bash
+easel change add cutout figure --regions face,ear,headwrap,hair,collar,cloak
+easel change add background --from ../lake/lake.easel     # or --from sky.png, --gradient "#f2a65a,#5b5f8f", --color "#88aacc"
+easel change add light                                     # tint and rim light from the background's light
+easel stage done
+easel cutout figure --regions face,ear,headwrap,hair,collar,cloak
+easel background --from ../lake/lake.easel
+easel light
+```
+The cut-out report names its three weakest edge spots (boxed in VIEW, close up below). Ground left in the figure:
+`easel region add stick --box <spot box>`, then the cutout command again with `--minus stick`; a part left out:
+`--plus <region>`. A figure standing inside the picture gets a contact shadow: `easel shadow figure`.
+
 ## Hand mode (experimental): draw it yourself, with the reference beside you
 
 Every line, fill and shadow is a mark you place; the reference supplies edges, colours and shadow shapes.
