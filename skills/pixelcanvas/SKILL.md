@@ -34,7 +34,10 @@ Colours: always quote them, `--color "#202020"`. In the shell an unquoted `#` st
   then "Start" and the sections after it.
 - Only when the user asks you to draw every mark yourself: **hand mode** (experimental),
   `pixelcanvas new pic --ref reference.jpg --mode hand`, then the section "Hand mode" below.
-- No picture: **free mode**, `pixelcanvas new pic --mode free --request "..."`, then "Without a reference picture".
+- No picture: **a new picture**. With the pixelcanvas plugin's subagents available, follow `new-picture.md` in this
+  skill's folder: you direct, `pixelcanvas-director`, `pixelcanvas-blocker`, `pixelcanvas-painter` and
+  `pixelcanvas-critic` build it coarse to fine. Without them: free mode, `pixelcanvas new pic --mode free --request
+  "..."`, then "Without a reference picture".
 
 ## Start (trace mode)
 
