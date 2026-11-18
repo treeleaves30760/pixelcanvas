@@ -190,6 +190,10 @@ def face_item(state: dict, part: str) -> Tuple[str, str]:
                                                       any(w in req.split() for w in ANIMAL_WORDS))
     hid = next((e["id"] for e in reversed(d.get("sketch", [])) if e["kind"] == "head"
                 and (not e.get("subject") or e.get("subject") == subj)), None)
+    if subj in rigged_subjects(state) and not animal:
+        return (f"face of {subj} on the 3D head: brows, eyes, nose, mouth (it turns with the head)",
+                f"pixelcanvas face {subj} --expression neutral   (smile, open, grin, angry, sad, crying, surprised, "
+                f"panicked, sleepy; --eyes <colour>)")
     if animal:
         text = f"muzzle, nose and mouth on {part} (an animal face: no human nose and mouth)"
         cmd = (f"pixelcanvas face {hid} --kind animal" if hid else
@@ -229,6 +233,17 @@ TEXT_WORDS = ("title", "text", "logo", "letter", "caption", "words", "headline")
 def is_text(name: str) -> bool:
     """A part that is lettering: it is set with  pixelcanvas text, not inked, flatted or shaded."""
     return any(w in name for w in TEXT_WORDS)
+
+
+def rigged_subjects(state: dict) -> List[str]:
+    """Subjects posed in 3D (their clothes, hair and face are rendered from the 3D figure)."""
+    return [el.get("subject") for el in state.get("draw", {}).get("sketch", [])
+            if el.get("kind") == "figure" and el.get("rig") and el.get("rig_joints") == el.get("joints")]
+
+
+def flat_mannequins(state: dict) -> List[str]:
+    return [el.get("subject") for el in state.get("draw", {}).get("sketch", [])
+            if el.get("kind") == "figure" and not el.get("rig")]
 
 
 def build_todo(state: dict) -> None:
@@ -277,16 +292,25 @@ def build_todo(state: dict) -> None:
                         add("sketch", "camera: horizon and eye height of the scene",
                             "pixelcanvas camera --horizon 450 --eye-height 1.5   (low angle: --horizon 750 "
                             "--eye-height 0.7; high: --eye-height 4)", key="camera")
-                    add("sketch", f"mannequin for {s}: a 3D pose",
-                        f"pixelcanvas pose {s} --preset stand   (pixelcanvas pose list shows run, jump, sit-ledge ...; "
-                        f"a flat mannequin: pixelcanvas sketch figure {s} --pose stand)", region=s, key="construct")
                     req = str(state.get("request") or "").lower()
                     if not any(t.get("key") == "blocks" for t in items) and \
                             any(w in req for w in SCENE_BLOCK_WORDS):
                         add("sketch", "blocks the figures stand, sit or lean on (a bench, a wall, stairs, a building)",
                             "pixelcanvas block bench box --at x,y --size 1.5,0.45,0.45   (then pixelcanvas pose "
                             "<subject> --preset sit-chair --on bench)", key="blocks")
-                    if any(parts[n]["of"] == s and n in ("face", "head") for n in parts):
+                    add("sketch", f"mannequin for {s}: a 3D pose",
+                        f"pixelcanvas pose {s} --preset stand   (pixelcanvas pose list shows run, jump, sit-ledge ...; "
+                        f"a flat mannequin: pixelcanvas sketch figure {s} --pose stand)", region=s, key="construct")
+                    if s not in flat_mannequins(state):
+                        add("sketch", f"clothes for {s}: garments on the 3D figure",
+                            f"pixelcanvas dress {s} blouse,skirt,socks,shoes --color <name>   (pixelcanvas dress list; "
+                            f"one piece at a time takes --length, --fit, --sleeve, --style)", region=s, key="dress")
+                        add("sketch", f"hair for {s}: 3D locks",
+                            f"pixelcanvas hair3d {s} --style long --bangs blunt --color <name>   (long, medium, bob, "
+                            f"short, spiky, ponytail, twintails, braid, bun)", region=s, key="hair3d")
+                    if s in flat_mannequins(state) and any(parts[n]["of"] == s and n in ("face", "head")
+                                                           for n in parts):
+                        # a flat mannequin's face is laid on a head construction; a 3D figure has its 3D head
                         add("sketch", f"head construction for {s}", f"pixelcanvas sketch head {s}", region=s, key="head")
                 elif is_ground(s):
                     continue            # placed by the horizon line
@@ -299,6 +323,11 @@ def build_todo(state: dict) -> None:
                 add("sketch", "horizon line", "pixelcanvas sketch horizon 500", key="horizon")
         elif stage == "line":
             poster = state.get("style") == "poster"
+            rig3 = [s for s in rigged_subjects(state) if s]
+            if rig3 and not ref:
+                add("line", "render the 3D figures and blocks: line art, flat colours and shading in one step",
+                    "pixelcanvas render   (then look; a re-pose, dress or hair3d renders again by itself)",
+                    key="render")
             for n in _ordered_parts(state):
                 if is_text(n) or poster:
                     continue        # lettering is set with pixelcanvas text; poster shapes need no outline
@@ -329,6 +358,10 @@ def build_todo(state: dict) -> None:
                         cmd = f"pixelcanvas line trace {hid}   (the jaw and chin from the head construction)"
                     else:
                         cmd = f'pixelcanvas line "x,y x,y x,y ..."   (along the {n} outline)'
+                    if parts[n].get("of") in rig3 and not ref:
+                        if parts[n].get("r3d"):
+                            continue            # a material of the render: it has its outline already
+                        cmd = f"pixelcanvas render   (draws {n} from the 3D figure)"
                     add("line", f"line {n}", cmd, region=n, key="line")
                     if n in ("face", "head") and not ref and not poster:
                         add("line", *face_item(state, n), region=n, key="face")
@@ -496,12 +529,30 @@ def refresh(p) -> List[int]:
                 return any(el["kind"] == "block" for el in d.get("sketch", [])) or \
                     (any(el["kind"] == "figure" for el in d.get("sketch", [])) and
                      not any(el["kind"] == "figure" and el.get("rig") for el in d.get("sketch", [])))
+        if k in ("dress", "hair3d") and r:
+            figs = [el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == r]
+            if figs and not figs[0].get("rig"):
+                return True             # a flat mannequin: clothes and hair are drawn on it in the line stage
+            lk = (figs[0].get("look") or {}) if figs else {}
+            return bool(lk.get("garments")) if k == "dress" else bool(lk.get("hair"))
+        if k == "render":
+            from .draw_render import is_stale
+            return bool(d.get("render")) and not is_stale(p)
+        subj_r = d.get("parts", {}).get(r, {}).get("of") if r else None
+        if k == "face" and subj_r in rigged_subjects(st):
+            fig = next(el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == subj_r)
+            return bool((fig.get("look") or {}).get("face")) and bool(d.get("render"))
+        if r and str(r).startswith("eye") and subj_r in rigged_subjects(st) and k in ("line", "detail", "shade"):
+            fig = next(el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == subj_r)
+            return bool((fig.get("look") or {}).get("face")) and bool(d.get("render"))
         if k == "face":
             from .draw_checks import face_missing, head_elements
             els = [el for el in head_elements(p) if el.get("subject") == d.get("parts", {}).get(r, {}).get("of")]
             return bool(els) and not any(face_missing(p, el) for el in els)
         if stage == "line":
             if k == "line":
+                if subj_r in rigged_subjects(st) and d.get("render"):
+                    return True         # drawn by the render from the 3D figure
                 return part_has_lines(p, r)
             if k == "gaps":
                 others = [t for t in st.get("todo", []) if t["stage"] == "line" and t.get("key") == "line"
@@ -621,8 +672,8 @@ def check_gate(p, stage: str, comparison=None) -> Tuple[bool, List[dict]]:
     for t in st.get("todo", []):
         if t["stage"] != stage or t["kind"] != "task" or t["status"] != "open":
             continue
-        if t.get("key") in ("closeup",):
-            continue
+        if t.get("key") in ("closeup", "dress", "hair3d"):
+            continue                # clothes and hair in 3D are proposed; the 2D path (wear, locks) stays open
         if stage == "line" and t.get("key") == "gaps":
             gaps = _small_gaps(p)
             if gaps:
@@ -717,6 +768,14 @@ def next_action(p, comparison=None) -> Tuple[str, str]:
         if not d.get("subjects"):
             return ("no reference: first say what the picture shows, one box per subject (0-1000, leave room "
                     "around it)", "pixelcanvas plan subject <name> --box x0,y0,x1,y1")
+    if d.get("render") and stage not in ("plan", "sketch"):
+        try:
+            from .draw_render import is_stale
+            if is_stale(p):
+                return ("the 3D scene changed since the last render: draw it again (the face and touch-layer marks "
+                        "stay)", "pixelcanvas render")
+        except Exception:  # noqa: BLE001
+            pass
         if d.get("palette", {}).get("candidates") and not d["palette"].get("swatches"):
             return "four palettes are proposed; pick the one that fits the request", "pixelcanvas palette pick <n>"
     for t in st.get("todo", []):

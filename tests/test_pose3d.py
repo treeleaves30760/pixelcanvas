@@ -232,15 +232,26 @@ def test_commands_are_installed(draw):
         assert c in cli.COMMANDS
 
 
-def test_todo_proposes_camera_pose_blocks_before_the_head(draw):
+def test_todo_proposes_camera_blocks_pose_dress_hair_then_render_and_face(draw):
     _scene(draw)
     st = state()
     sk = [t for t in st["todo"] if t["stage"] == "sketch" and t["kind"] == "task"]
     keys = [t["key"] for t in sk]
-    assert keys.index("camera") < keys.index("construct") < keys.index("blocks") < keys.index("head")
+    assert keys.index("camera") < keys.index("blocks") < keys.index("construct") < keys.index("dress") < \
+        keys.index("hair3d")
+    assert "head" not in keys                       # the 3D figure has its own head
     assert sk[keys.index("construct")]["cmd"].startswith("pixelcanvas pose girl")
     out = ok(draw("next"))
     assert "pixelcanvas camera" in out
+    ok(draw("pose", "girl", "--preset", "run"))
+    ln = [t for t in state()["todo"] if t["stage"] == "line" and t["kind"] == "task"]
+    lk = [t["key"] for t in ln]
+    assert lk[0] == "render" and lk.index("render") < lk.index("face")
+    assert ln[lk.index("face")]["cmd"].startswith("pixelcanvas face girl --expression")
+    # a flat mannequin keeps the 2D path: no dress or hair3d items, the head construction comes back
+    ok(draw("sketch", "figure", "girl", "--pose", "walk"))
+    keys = [t["key"] for t in state()["todo"] if t["stage"] == "sketch"]
+    assert "head" in keys
 
 
 def test_posed_figure_works_with_every_later_tool(draw):
