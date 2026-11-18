@@ -1903,7 +1903,7 @@ def cmd_hair(ctx: Ctx, args: List[str]) -> Report:
                 + "; another part of the hair: one more  easel hair  with a flow curve there"]
     return draw_step(ctx, label=f"hair {r.name}: {count} strands along {len(curves)} flow curve(s)", layer="detail",
                      build=lambda: draw_detail.hair_ops(clip, curves, base, dc.shadow_of(sh, 0.6), li, light, count,
-                                                        w, not a.get("no-shine"), seed=p.state["step"] + 1,
+                                                        w, not a.get("no-shine"), seed=dc.stable_seed(p, ctx.cmdline, "hair"),
                                                         guides_px=guides, near=near),
                      clip=clip, post=post, area_extra=r.box_px,
                      note="strands and shine")
@@ -2115,11 +2115,11 @@ def cmd_scatter(ctx: Ctx, args: List[str]) -> Report:
                         sz = min(sz, 2 * 0.62 * bv)
                 pts_ = np.array(moved, float)
             return draw_detail.stamp_ops(kind, pts_, sz, cols, ang, _num(a, "opacity", 1.0, 0, 1, ctx),
-                                         seed=p.state["step"] + 1)
+                                         seed=dc.stable_seed(p, ctx.cmdline, "scatter"))
         return draw_detail.scatter_ops(kind, mask=mask, path_px=path, count=count, size=size, colors=cols,
                                        angle=ang, jitter=_num(a, "jitter", 0.5, 0, 1, ctx),
                                        spread=_units_to_px(p, _num(a, "spread", 8, 0, 300, ctx)),
-                                       opacity=_num(a, "opacity", 1.0, 0, 1, ctx), seed=p.state["step"] + 1)
+                                       opacity=_num(a, "opacity", 1.0, 0, 1, ctx), seed=dc.stable_seed(p, ctx.cmdline, "scatter"))
     return draw_step(ctx, label=f"scatter {count} {kind}" + (" on the points" if exact else
                                                               f" in {r.name}" if r is not None and mask is not None
                                                               else " along the curve"),
@@ -2184,7 +2184,7 @@ def cmd_paint(ctx: Ctx, args: List[str]) -> Report:
             else:
                 field = draw_detail.angle_field(_num(a, "dir", 0.0, -360, 360, ctx), (p.H, p.W))
             ops += draw_detail.brush_ops(masks[r.name], field, base, sh, li, light, size, brush,
-                                         _num(a, "density", 1.0, 0.2, 4, ctx), seed=p.state["step"] * 31 + k,
+                                         _num(a, "density", 1.0, 0.2, 4, ctx), seed=dc.stable_seed(p, ctx.cmdline, r.name, k),
                                          under=under)
             info.append(f"{r.name} size {size:.0f}px")
         return ops
@@ -2228,7 +2228,7 @@ def cmd_band(ctx: Ctx, args: List[str]) -> Report:
         wb = _units_to_px(p, _num(a, "width", 160, 10, 1000, ctx) if a.get("width") else 160)
         from . import draw_scene
         # each tree its own: proportions, tier spacing, tips and notches from the band's name and the step
-        pts = draw_scene.tier_outline(ax[0], ax[-1], wb, n_t, seed=draw_scene.shape_seed(name, p.state["step"]))
+        pts = draw_scene.tier_outline(ax[0], ax[-1], wb, n_t, seed=draw_scene.shape_seed(name, dc.stable_seed(p, ctx.cmdline)))
         a["closed"] = True
         a["width"] = None
         a["tiers_done"] = True
@@ -2266,11 +2266,11 @@ def cmd_band(ctx: Ctx, args: List[str]) -> Report:
         if len(pts) < 3:
             raise UsageError("a closed shape needs 3+ points", USAGE["band"])
         poly = pts if a.get("width") or a.get("along") or a.get("tiers_done") else             dc.corner_spline(pts, closed=True, spacing=2.0)     # smooth, sharp where it turns hard
-        poly = draw_detail.rough_polygon(poly, rough, max(p.W, p.H), seed=p.state["step"] + 1)
+        poly = draw_detail.rough_polygon(poly, rough, max(p.W, p.H), seed=dc.stable_seed(p, ctx.cmdline, "rough"))
         how = "closed shape"
     else:
         to = dc.u2px(p, coords.parse_points(a["to"], ctx.notes, 2)) if a.get("to") else None
-        poly = draw_detail.band_polygon(pts, p.W, p.H, side, rough, p.state["step"] + 1, to)
+        poly = draw_detail.band_polygon(pts, p.W, p.H, side, rough, dc.stable_seed(p, ctx.cmdline, "rough"), to)
         how = f"band {'between two curves' if to is not None else side + ' the curve'}"
     m = dc.poly_mask(p.H, p.W, poly)
     band_clip = None
@@ -2675,7 +2675,7 @@ def _wrap_do(orig):
 
 
 EXTENSIONS = ("draw_face", "draw_hair", "draw_wear", "draw_scene", "draw_ref", "draw_text", "draw_canvas",
-              "draw_surface")
+              "draw_surface", "draw_finish")
 
 
 def _extensions() -> list:

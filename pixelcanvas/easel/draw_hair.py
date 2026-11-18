@@ -1573,7 +1573,7 @@ def cmd_shine(ctx, args: List[str]):
     info: Dict[str, int] = {}
 
     def build():
-        ops, cnt = shine_ops(p, rec, clip, base, sh, li, light, strands, seed=p.state["step"] + 1, lost=lost)
+        ops, cnt = shine_ops(p, rec, clip, base, sh, li, light, strands, seed=dc.stable_seed(p, ctx.cmdline, "shine"), lost=lost)
         info.update(cnt)
         return ops
 

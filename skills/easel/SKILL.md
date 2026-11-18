@@ -227,7 +227,10 @@ easel new pic --size 1000x1200 --request "a chibi fox mage holding a staff"
    cloth-rough`. If the gate says detail is short, run the command it prints: it asks for detail where the
    viewer looks and holds a picture that turned busy; plain skies, water and flat styles stay plain. For anime
    and cel pictures the surface keeps the flats clean: a few cel-shadow shapes, grouped hair light, no texture.
-7. **finish** - `easel look`, fix, `easel export final.png --stages stages`, `easel stage done`.
+7. **finish** - `easel look`, fix, `easel polish` (one light over the picture, far things lighter and cooler,
+   line art coloured from its fills, soft edges in painterly styles, strays out; leave a part out with
+   `--no-grade`, `--no-depth`, `--no-lines`, `--no-soften`, `--no-strays`, `--no-clean`), look, then
+   `easel export final.png --stages stages`, `easel stage done`.
 
 Painterly (`paint` style): block-in with bands, `easel band sky "0,560 1000,560" --above --color sky`,
 `easel band pines "x,y x,y ..." --closed --color pines --rough 0.15`. A plain band is a placeholder: draw the

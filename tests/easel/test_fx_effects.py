@@ -226,6 +226,9 @@ def test_finish_stage_hints_mention_the_finishing_commands(tmp_path):
     assert "finish" in out
     ok("look", "--show", "diff")
     out = ok("next")
+    assert out.splitlines()[-1].startswith("NEXT: easel polish")     # the finishing pass comes before the export
+    ok("polish")
+    out = ok("next")
     assert out.splitlines()[-1].startswith("NEXT: easel export final.png")
     out = ok("help", "fx")
     assert "fx <glow|grain" in out and "example: easel fx grain --amount 0.4" in out and len(out.splitlines()) <= 25

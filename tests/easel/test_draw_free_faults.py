@@ -266,6 +266,38 @@ def test_a_night_sea_band_is_not_background_showing_through(draw):
     assert not draw_checks.background_holes(project())
 
 
+def test_todo_is_the_same_after_a_mid_stage_plan_change(draw):
+    import copy
+    from pixelcanvas.easel import workflow_draw
+    cat_plan(draw)
+    ok(draw("stage", "done"))
+    ok(draw("sketch", "ellipse", "320,500,660,710"))
+    ok(draw("sketch", "head", "cat", "--box", "555,460,705,612"))
+    ok(draw("sketch", "box", "0,630,1000,770"))
+    ok(draw("sketch", "horizon", "630"))
+    ok(draw("stage", "done"))
+    ok(draw("do", 'band sill "0,630 1000,630 1000,780 0,780" --closed --color sill; '
+                  "band cat --ellipse 320,520,660,712 --color #e39a52 --front; "
+                  'band ear-l "575,500 590,435 625,485" --closed --color #e39a52 --front; '
+                  "band cat-shadow --ellipse 330,690,690,730 --color #5e3d28; "
+                  'band glow-spot --ellipse 40,40,120,100 --color #ffe2a8'))
+    ok(draw("stage", "done", "--because", "test"))
+    st = state()
+    assert st["stage"] == "forms"
+
+    def items(s):
+        return sorted((t["stage"], str(t.get("region")), str(t["key"]), t["status"]) for t in s["todo"] if t["kind"] == "task")
+    before = items(st)
+    fresh = copy.deepcopy(st)
+    workflow_draw.build_todo(fresh)
+    assert items(fresh) == before                       # the list is what a fresh build gives
+    ok(draw("plan", "light", "150"))                   # a plan change rebuilds the list mid-stage
+    assert items(state()) == before
+    forms = {t["region"] for t in state()["todo"] if t["stage"] == "forms" and t["kind"] == "task"}
+    # subjects get brushwork; the ears, the cat's shadow and a small loose accent need none of their own
+    assert {"cat", "sill"} <= forms and not forms & {"ear-l", "cat-shadow", "glow-spot"}
+
+
 # ============================================================================================ a small figure
 
 def small_hero(run):
@@ -361,3 +393,64 @@ def test_focus_head_with_its_face_is_not_asked_for_more_detail(draw):
         assert not draw_checks.detail_holes(p)
     finally:
         draw_checks.focus_density = orig
+
+
+# ============================================================================================ stable seeds
+
+def _paint_wall(run, name, extra):
+    ok(run("new", name, "--size", "300x240", "--request", "a cat asleep on a windowsill, painterly"))
+    ok(run("do", "plan subject wall --box 0,0,1000,1000; plan light 150; palette make; palette pick 1"))
+    ok(run("band", "wall", "0,0 1000,0 1000,1000 0,1000", "--closed", "--color", "#b98563"))
+    for cmd in extra:
+        ok(run(*cmd))
+    ok(run("paint", "wall", "--dir", "90"))
+    ok(run("paint", "wall", "--dir", "90"))
+    return project(name).layer("paint").copy()
+
+
+def test_brush_marks_follow_the_command_not_the_step_count(draw):
+    a = _paint_wall(draw, "a", [])
+    b = _paint_wall(draw, "b", [("plan", "light", "150"), ("palette", "set", "sky", "#a0c0e0")])
+    assert np.array_equal(a, b)                          # two unrelated commands earlier change nothing
+    # the same command run twice lays different marks the second time
+    from pixelcanvas.easel import draw_core as dc
+    p = project("a")
+    assert dc.stable_seed(p, "easel paint wall --dir 90", "x") != dc.stable_seed(p, "easel paint wall --dir 80", "x")
+
+
+def test_a_mark_part_is_detail_itself_and_gets_no_detail_item(draw):
+    import copy
+    from pixelcanvas.easel import workflow_draw
+    cat_plan(draw)
+    ok(draw("plan", "part", "head-muzzle", "--of", "cat", "--box", "640,540,700,600", "--focus", "3"))
+    st = copy.deepcopy(state())
+    st["stage"] = "detail"
+
+    def detail_regions(s):
+        workflow_draw.build_todo(s)
+        return {t.get("region") for t in s["todo"] if t["stage"] == "detail" and t["kind"] == "task"}
+    assert "head-muzzle" in detail_regions(copy.deepcopy(st))
+    st["draw"].setdefault("marks", {})["head-muzzle"] = {"parent": "head", "kind": "muzzle", "color": "cat"}
+    regions = detail_regions(st)
+    assert "head-muzzle" not in regions and "head" in regions
+
+
+def test_a_thin_blend_line_of_the_far_colour_is_not_a_spill(draw):
+    from pixelcanvas.easel import draw_checks
+    ok(draw("new", "lake", "--size", "400x300", "--request", "a mountain lake at sunset, painterly"))
+    ok(draw("do", "plan subject sky --box 0,0,1000,500; plan part sun --of sky --box 560,200,720,420; "
+                  "plan subject mountains --box 0,250,1000,560; plan light left; palette make --base orange; "
+                  "palette pick 1"))
+    ok(draw("stage", "done"))
+    ok(draw("stage", "done", "--because", "test"))
+    ok(draw("band", "mountains", "0,450 300,300 520,380 700,280 1000,450 1000,560 0,560", "--closed",
+            "--color", "mountains"))
+    ok(draw("band", "sun", "--ellipse", "560,200,720,420", "--color", "sun"))
+    # a line a few pixels wide in the sun's colour across the mountains: where two of their colours blend
+    ok(draw("shape", "poly", "50,494 950,494 950,507 50,507", "--color", "sun"))
+    p = project("lake")
+    assert not draw_checks.depth_holes(p)
+    # a patch of the same colour is a spill
+    ok(draw("shape", "ellipse", "580,250,700,400", "--color", "sun"))
+    hs = draw_checks.depth_holes(project("lake"))
+    assert hs and "drawn over mountains" in hs[0]["text"]

@@ -566,7 +566,7 @@ def cmd_cloud(ctx: Ctx, args: List[str]) -> Report:
     def build():
         def colours(centre, low):
             return _cloud_colours(p, img, centre, size, low, L["at"], a.get("color"), a.get("light-color"), u)
-        ops, info = cloud_ops(pts, size, kind, L, colours, opacity, p.state["step"] * 7 + 3)
+        ops, info = cloud_ops(pts, size, kind, L, colours, opacity, dc.stable_seed(p, ctx.cmdline, "cloud"))
         for k, (c, n, low) in enumerate(info[:4]):
             lines.append(f"cloud {k + 1}: {n} soft puffs around {_fmt_u(p, c)}, "
                          + ("underside lit (the light is low or behind)" if low else "top lit (the light is above)"))
@@ -752,7 +752,7 @@ def cmd_reflect(ctx: Ctx, args: List[str]) -> Report:
                 gcol = np.asarray(_source_colour(img, at, 0.12 * max(p.W, p.H), above=h), float)
         else:
             gcol = None
-        ops, n1, n2 = reflect_ops(m, src, h, water, near_w, strength, gx, gcol, p.state["step"] * 13 + 1)
+        ops, n1, n2 = reflect_ops(m, src, h, water, near_w, strength, gx, gcol, dc.stable_seed(p, ctx.cmdline, "reflect"))
         lines.append(f"{n1} strokes mirror the scene above the horizon y {_u(p, h, 1):.0f}: small and faint far "
                      f"away, bigger and more broken toward the viewer")
         if gx is not None:
@@ -1036,7 +1036,7 @@ def cmd_foliage(ctx: Ctx, args: List[str]) -> Report:
                                                                                      0.03 * max(p.W, p.H)))
                 sizes_px.append(S)
                 o, ne = foliage_ops(comp, kind, L["vec"], colours, S, density,
-                                    p.state["step"] * 101 + ri * 17 + j, 1.4 if L["z"] < 0 else 1.0)
+                                    dc.stable_seed(p, ctx.cmdline, "foliage", ri, j), 1.4 if L["z"] < 0 else 1.0)
                 ops += o
                 n_edge += ne
             side = dc.light_words(L["deg"])
@@ -1155,7 +1155,7 @@ def cmd_tufts(ctx: Ctx, args: List[str]) -> Report:
         base, sh, li, _ = cd.colour_set(p, r)
         cols = (dc.shadow_of(sh, 0.5), base, li)
     spread = _num(a, "spread", 32, 5, 80, ctx, u)
-    ops, n, yt = tuft_ops(m, count, height, cols, spread, (p.state["step"] + 1) * 29 + 11)
+    ops, n, yt = tuft_ops(m, count, height, cols, spread, dc.stable_seed(p, ctx.cmdline, "tufts"))
     ops = _keep_marks(ops)
     if not ops:
         raise UsageError(f"no room for tufts in the near part of {r.name}", u)
@@ -1387,7 +1387,7 @@ def cmd_wet(ctx: Ctx, args: List[str]) -> Report:
     lines: List[str] = []
 
     def build():
-        ops, done = wet_ops(r.mask, pts, width, cols, strength, length, p.state["step"] * 37 + 5)
+        ops, done = wet_ops(r.mask, pts, width, cols, strength, length, dc.stable_seed(p, ctx.cmdline, "wet"))
         lines.append(f"{len(done)} streak(s) of broken light under " +
                      ", ".join(_fmt_u(p, pts[i]) for i in done) if done else
                      f"no light stands over {r.name} (each streak starts where its light's column meets the ground)")
@@ -1491,7 +1491,7 @@ def cmd_ground(ctx: Ctx, args: List[str]) -> Report:
             ops.append(Fill(polygons=[_rect(-1, y, p.W + 1, y + 0.03 * p.H)], color=line_c, opacity=0.25,
                             feather=max(2.0, 0.03 * p.H)))
             m = _mark(np.array([[-2.0, y], [p.W + 2.0, y]]), max(1.5, 0.004 * max(p.W, p.H)), line_c, 0.75,
-                      p.state["step"], "round", 0.8, 0.8)
+                      dc.stable_seed(p, ctx.cmdline, "ground"), "round", 0.8, 0.8)
             if m is not None:
                 ops.append(m)
         else:

@@ -1266,7 +1266,7 @@ def cmd_surface(ctx, args: List[str]):
             built, info = build(p, n, m, mat, focus=_focus(p, n), light=light, base_img=under,
                                 others=regions_all & ~m, curves_u=cv, angle=angle, amount=amount, scale=scale,
                                 have_fine=0.0 if _is_background(p, n) else have.get(n, 0.0), group=group, background=_is_background(p, n),
-                                seed=p.state["step"] * 977 + i * 31 + 7, flags=flags, line_alpha=line_a)
+                                seed=dc.stable_seed(p, ctx.cmdline, "surface", n), flags=flags, line_alpha=line_a)
             ops += built
             groups.append((ops, m))
             infos.append((n, mat, info))

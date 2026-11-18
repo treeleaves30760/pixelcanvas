@@ -81,6 +81,30 @@ def is_scenery(state: dict, part: str) -> bool:
                                 for n, v in _parts(state).items())
 
 
+LOOSE_BAND_AREA = 0.02         # share of the canvas from which a band with no subject gets brushwork of its own
+
+
+def band_owner(state: dict, name: str) -> Optional[str]:
+    """The subject a band belongs to: a part's subject, the subject its name starts with (pines-2, cat-shadow),
+    else the smallest subject box that holds its middle."""
+    subs = _subjects(state)
+    if name in subs:
+        return name
+    prt = _parts(state).get(name)
+    if prt is not None:
+        return prt.get("of")
+    pre = [s for s in subs if name.startswith(s + "-") or name.startswith(s + "_")]
+    if pre:
+        return max(pre, key=len)
+    b = state.get("regions", {}).get(name, {}).get("box")
+    if not b:
+        return None
+    c = ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
+    hits = sorted(((v["box"][2] - v["box"][0]) * (v["box"][3] - v["box"][1]), s) for s, v in subs.items()
+                  if v["box"][0] <= c[0] <= v["box"][2] and v["box"][1] <= c[1] <= v["box"][3])
+    return hits[0][1] if hits else None
+
+
 def is_draw(obj) -> bool:
     """True for a project (or its state) without a reference picture, or in hand mode (draw with a reference)."""
     st = obj if isinstance(obj, dict) else getattr(obj, "state", {})
@@ -322,7 +346,13 @@ def build_todo(state: dict) -> None:
                     cmd = f'easel band {s} "x,y x,y x,y ..." --closed --color {s}   (its silhouette)'
                 add("block-in", f"big shape of {s}", cmd, region=s, key="mass")
         elif stage == "forms":
-            for s in list(subjects) + [b for b in state.get("draw", {}).get("bands", {}) if b not in subjects]:
+            # every subject, and every big band that belongs to no subject; a band of a subject (its ears, its
+            # shadow, the hills in its window) is part of that subject's brushwork, and a small loose band (an
+            # accent) needs none of its own
+            loose = [b for b in state.get("draw", {}).get("bands", {}) if b not in subjects
+                     and band_owner(state, b) is None
+                     and float(state.get("regions", {}).get(b, {}).get("area", 0.0)) >= LOOSE_BAND_AREA]
+            for s in list(subjects) + loose:
                 if is_text(s):
                     continue        # lettering is set with easel text, not painted
                 add("forms", f"brushwork on {s}", f"easel paint {s} --dir 0", region=s, key="forms")
@@ -331,8 +361,8 @@ def build_todo(state: dict) -> None:
                 "easel surface auto   (then look; change one area:  easel surface <area> --material <kind>)",
                 key="surface")
             for n in _ordered_parts(state):
-                if is_text(n):
-                    continue
+                if is_text(n) or n in state.get("draw", {}).get("marks", {}):
+                    continue        # lettering is set with easel text; a mark (a muzzle patch) is detail itself
                 if n in ("face", "head") and painterly and not ref:
                     add("detail", *face_item(state, n), region=n, key="face")
                 f = parts[n].get("focus", 2)
@@ -354,6 +384,10 @@ def build_todo(state: dict) -> None:
                     'easel scatter <region> --kind leaf --count 60', key="accents")
         elif stage == "finish":
             add("finish", "look at the whole picture; fix what is off", "easel look", key="look")
+            if not ref:
+                add("finish", "finishing pass: one light over the picture, far things set back, coloured lines, "
+                    "strays out", "easel polish   (each part can be left out: --no-grade --no-depth ...)",
+                    key="polish")
             add("finish", "export (PNG; --stages stages for the stage sheet)",
                 "easel export final.png --stages stages", key="export")
         add(stage, f"gate {stage}: {GATE_WORDS.get(stage, '')}", "easel stage done", key="gate", kind="gate")
@@ -408,6 +442,10 @@ def refresh(p) -> List[int]:
     stage = st["stage"]
     d = st.get("draw", {})
     done: List[int] = []
+    if is_draw(st) and st.get("todo") is not None:
+        # the list is a function of the picture: the same items as a fresh build (bands drawn since the last plan
+        # change join, statuses carry over)
+        build_todo(st)
 
     def ok(item) -> bool:
         k = item.get("key")
@@ -472,6 +510,8 @@ def refresh(p) -> List[int]:
             return r in d.get("painted", [])
         if k == "text":
             return bool(st.get("texts"))
+        if stage == "finish" and k == "polish":
+            return bool(d.get("polished"))
         if stage == "detail" and k == "surface":
             from .draw_surface import surface_targets
             done_s = d.get("surface", {})

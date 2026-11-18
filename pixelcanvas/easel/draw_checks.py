@@ -1040,11 +1040,12 @@ def depth_holes(p) -> List[dict]:
                 backdrop = (bx0[2] - bx0[0]) * (bx0[3] - bx0[1]) >= 0.8e6
                 # a backdrop shares hues with what stands on it (an orange cat on a warm wall): only a real
                 # spill counts there
-                # with a surface laid, shadow strands of the near thing can match the far colour: a real spill is
-                # a patch, not scattered pixels
-                if d.get("surface"):
-                    hit = cv2.morphologyEx(hit.astype(np.uint8), cv2.MORPH_OPEN,
-                                           np.ones((5, 5), np.uint8)).astype(bool)
+                # a real spill is a patch, not scattered pixels or a thin line: shadow strands of a surface, or the
+                # soft edge where two colours of the near thing blend through the far colour (a blue pot shading
+                # into orange passes through the sill's brown), match the far colour without being it
+                k = max(5, int(0.004 * max(p.W, p.H))) | 1
+                hit = cv2.morphologyEx(hit.astype(np.uint8), cv2.MORPH_OPEN,
+                                       np.ones((k, k), np.uint8)).astype(bool)
                 if hit.sum() < (0.01 if backdrop else 0.0008) * p.W * p.H:
                     continue
                 ys, xs = np.nonzero(hit)

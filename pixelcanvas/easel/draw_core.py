@@ -79,6 +79,36 @@ def side(p) -> int:
     return max(p.W, p.H)
 
 
+def _norm_cmd(cmd) -> str:
+    s = " ".join(str(cmd or "").split())
+    return s[6:] if s.startswith("easel ") else s
+
+
+def stable_seed(p, cmdline, *salt) -> int:
+    """A brush seed from the command itself: its words, how many times the same command is already in the picture
+    (undone steps do not count) and ``salt`` (the target area, a mark index). Adding or removing an unrelated command
+    leaves every other command's marks as they were; the same command run again lays different marks."""
+    import json
+    cmd = _norm_cmd(cmdline)
+    n = 0
+    try:
+        applied = set(int(s) for s in p._stack().get("applied", []))
+        jf = p.root / "journal.jsonl"
+        for ln in jf.read_text(encoding="utf-8").splitlines() if jf.exists() else []:
+            if f'"cmd"' not in ln:
+                continue
+            try:
+                e = json.loads(ln)
+            except ValueError:
+                continue
+            if e.get("step") in applied and _norm_cmd(e.get("cmd")) == cmd:
+                n += 1
+    except Exception:  # noqa: BLE001 - a seed never breaks a command
+        n = 0
+    h = hashlib.sha256(json.dumps([cmd, n] + [str(s) for s in salt]).encode("utf-8")).digest()
+    return 1 + int.from_bytes(h[:4], "little") % 1_000_003     # as small as the step numbers it replaces
+
+
 def work_scale(p) -> int:
     """How many working pixels make one delivered pixel (3 on a free-mode project: marks are laid on a canvas 3x the
     exported picture, so the finest octave survives the downsample; 1 elsewhere)."""
@@ -111,10 +141,11 @@ def composite_u8(p, mode: str = "export") -> np.ndarray:
     if hit is not None:
         return hit[0]
     if mode == "fills":
-        # the picture without the surface layer: colour checks (holes, slivers) look at the fills, not the texture
+        # the picture without the surface and the finishing effects: colour checks (holes, slivers) look at the
+        # fills, not the texture or the grade over them
         from . import compose
         img = compose.to_uint8(compose.composite(p.state["layers"], lays, p.H, p.W, background=(1, 1, 1),
-                                                 skip=["sketch", "surface"]))
+                                                 skip=["sketch", "surface", "fx"]))
     else:
         img = p.composite_u8(mode)
     if len(_COMP) > 6:
