@@ -1,8 +1,8 @@
 {
   "name": "pixelcanvas",
-  "displayName": "pixelcanvas",
-  "version": "0.5.0",
-  "description": "Draw with code: posters, illustrations, landscapes, diagrams, charts, UI mock-ups, technical drawings and 3D objects rendered with numpy + Pillow, as layers your agent edits one command at a time (draft, look, fix, deliver), with exact text in any language and PSD / ORA layers.",
+  "displayName": "pixelcanvas (easel)",
+  "version": "0.6.0",
+  "description": "easel: a command-line paint program your agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish) on a project folder with layers, undo and a view after every command. Redraws a reference picture or paints from a text request. Needs the easel command: pip install pixelcanvas.",
   "author": {
     "name": "treeleaves30760",
     "url": "https://github.com/treeleaves30760"
@@ -10,5 +10,5 @@
   "homepage": "https://github.com/treeleaves30760/pixelcanvas",
   "repository": "https://github.com/treeleaves30760/pixelcanvas",
   "license": "MIT",
-  "keywords": ["drawing", "image-generation", "poster", "diagram", "chart", "illustration", "numpy", "pillow", "skill"]
+  "keywords": ["paint", "drawing", "illustration", "redraw", "reference", "anime", "layers", "skill"]
 }

@@ -4,15 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pixelcanvas"
-version = "0.5.0"
-description = "An agent skill and library that draws finished pictures with code: numpy + Pillow, no image model"
+version = "0.6.0"
+description = "easel: a command-line paint program an AI agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish), with layers, undo and a view after every command"
 readme = "docs/PYPI.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "treeleaves30760"}]
-keywords = ["agent-skill", "claude-code", "codex", "opencode", "mcp", "ai-agents", "procedural-generation",
-            "image-generation", "text-to-image", "generative-art", "numpy", "pillow", "poster", "diagram", "chart",
-            "svg", "dxf", "typography", "psd", "layers"]
+keywords = ["agent-skill", "claude-code", "opencode", "ai-agents", "paint", "drawing", "illustration", "redraw",
+            "reference", "anime", "layers", "psd", "cli", "numpy", "opencv"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -28,15 +27,13 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Artistic Software",
     "Topic :: Multimedia :: Graphics",
-    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+    "Topic :: Multimedia :: Graphics :: Editors :: Raster-Based",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: Scientific/Engineering :: Visualization",
 ]
 requires-python = ">=3.9"
-dependencies = ["numpy>=1.22", "Pillow>=9.1"]
+dependencies = ["numpy>=1.22", "Pillow>=9.1", "opencv-python-headless", "scikit-image", "scipy"]
 
 [project.optional-dependencies]
-fast = ["scipy>=1.8"]
 test = ["pytest"]
 
 [project.urls]
@@ -47,27 +44,22 @@ Changelog = "https://github.com/treeleaves30760/pixelcanvas/blob/main/CHANGELOG.
 Documentation = "https://github.com/treeleaves30760/pixelcanvas#readme"
 
 [project.scripts]
-pixelcanvas = "pixelcanvas.cli:main"
+easel = "pixelcanvas.easel.cli:main"
+pixelcanvas = "pixelcanvas.easel.cli:main"
+easel-install-skill = "pixelcanvas.easel.skill_install:main"
 
-# Packages: setup.py finds pixelcanvas and every sub-package under pixelcanvas/ (clay, pictograms, ...) on its own
-# and adds the three runtime packages below. The wheel carries the tools, the templates / example scenes / specs and
-# both skills as pixelcanvas/_runtime/{tools,scenes,skills}: `pixelcanvas render ...`, `pixelcanvas install-skill`
-# and the MCP server find them there, while a checkout keeps using ./tools, ./scenes and ./skills unchanged.
+# Packages: setup.py finds pixelcanvas and pixelcanvas.easel and adds pixelcanvas.easel.skill, which is the folder
+# skills/easel of the checkout (the skill an agent reads). The wheel carries it as pixelcanvas/easel/skill/, where
+# `easel-install-skill` copies it from; a checkout keeps using skills/easel unchanged.
 [tool.setuptools.package-dir]
-"pixelcanvas._runtime.tools" = "tools"
-"pixelcanvas._runtime.scenes" = "scenes"
-"pixelcanvas._runtime.skills" = "skills"
+"pixelcanvas.easel.skill" = "skills/easel"
 
 [tool.setuptools.package-data]
-"pixelcanvas" = ["**/*.json", "**/*.txt"]
-"pixelcanvas._runtime.tools" = ["**/*.py"]
-"pixelcanvas._runtime.scenes" = ["**/*.py", "**/*.json"]
-"pixelcanvas._runtime.skills" = ["**/*.md", "**/*.py", "**/*.json"]
+"pixelcanvas.easel" = ["*.json"]
+"pixelcanvas.easel.skill" = ["*.md", "**/*.md", "**/*.json"]
 
 [tool.setuptools.exclude-package-data]
-"*" = ["__pycache__/*", "*.pyc", "**/__pycache__/*", "ROOT.txt", "**/ROOT.txt"]
+"*" = ["__pycache__/*", "*.pyc", "**/__pycache__/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["release: builds and installs the wheel in clean venvs (tools/release_check.py); run with -m release"]
-addopts = "-m 'not release'"

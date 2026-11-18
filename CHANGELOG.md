@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+pixelcanvas is now **easel**, a command-line paint program an agent drives stage by stage. The old tool, where the
+model wrote Python that drew vector art with kits of subject generators, is gone: the studio, the kits (flora,
+clay, pictograms, figure, creature, solid, diagram, chart, ui, drafting and the rest), the art media, the JSON spec
+mode, the scenes and templates, the `tools/` scripts, the MCP server, the `pixelcanvas` and `pixelcanvas-lite`
+skills and the gallery. The `pixelcanvas` command now runs easel.
+
+### easel
+
+- **A picture is a project folder** (`pic.easel/`): the reference, one PNG per layer, regions, an undo history and a
+  journal of every command. `easel undo` / `redo` restore it byte for byte.
+- **Stages like a painter**: plan, sketch, line, flat, shade, detail, finish for cel, ink and poster pictures; plan,
+  sketch, block-in, forms, detail, finish for paintings and photographs. Each stage paints on its own layer and has
+  a gate easel measures per region; `easel stage done` moves on when it passes or when the agent gives a reason.
+- **A report after every command**: scores `before -> after`, warnings, the worst spots, a `VIEW:` picture of the
+  canvas, a `VIEW-REF:` picture of the reference and one `NEXT:` line. `easel todo --all` prints the work list.
+- **Three modes**: `trace` (stage commands follow the reference; the agent plans regions, orders the work, checks and
+  refines), `hand` (the agent places every mark, the reference beside it) and `free` (a text request, no reference).
+- **Detail levels**: `easel detail all`, then `easel detail <region> --level 1` region by region in the ranked order,
+  `easel dot all`, `easel sharpen`. The strokes follow the reference and take their colours from it along the stroke; every
+  report prints the share retouched.
+- **Hand tools** for what a stage misses: `stroke` (with `--color pick --snap`), `fill`, `shape`, `gradient`,
+  `erase`, `smooth`, `adjust`.
+- **Export**: `easel export final.png --psd --ora --timelapse film.gif --stages dir`.
+- **Results**: on a private set of 93 reference pictures the redraw path reaches a judge mean of 9.42 of 10, with
+  88 of 93 rated the same quality as the reference. In the redraw path the strokes follow the reference and take
+  their colours from it along the stroke, and no picture is retouched pixel by pixel. A Qwen 3.8 Flash class model driving the
+  skill in Claude Code or opencode finishes a redraw in about 22-45 minutes and 46-75 commands; on 14 anime pictures its
+  redraws have a judge mean of 9.57, with 13 of 14 rated the same quality as the reference (the scripted path on the
+  same pictures: 9.50, 13 of 14).
+
+### Install and packaging
+
+- Console scripts: `easel`, `pixelcanvas` (the same program) and `easel-install-skill` (copies the skill into
+  `~/.claude/skills/easel`, `--opencode` for `~/.config/opencode/skills/easel`, `--to DIR` for any skills folder;
+  `--force` replaces an existing one).
+- Dependencies: numpy, Pillow, opencv-python-headless, scikit-image, scipy.
+- The wheel carries the skill as `pixelcanvas/easel/skill/SKILL.md`.
+- Removed: `pixelcanvas install-skill`, `pixelcanvas doctor`, `pixelcanvas render` and every other subcommand of the
+  old command, the `fast` and `easel` extras, `tools/install_skill.py` and the `Makefile`.
+
 ## 0.5.0 (2026-11-14)
 
 A picture is now a living state your agent edits with tools. Until 0.4 the agent wrote a whole scene in one go and
