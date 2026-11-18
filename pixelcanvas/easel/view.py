@@ -3,7 +3,7 @@
 A view is one picture made of panels (CANVAS / REFERENCE / SKETCH / DIFF ...) over the same canvas area. After a
 command the tool writes the canvas and the reference as two separate one-panel pictures (``VIEW:`` and
 ``VIEW-REF:``): the test model compares two separate images better than one side-by-side composite and reads
-coordinates off each picture's own rulers (work/research/03-qwen38-probe.md, items 2 and 4). Every panel has a title
+coordinates off each picture's own rulers (measured in model trials). Every panel has a title
 band and rulers labelled in 0-1000 canvas units on its top and left edges, outside the image. Sizes per view type:
 ``VIEW_SIDE`` (768) for canvas / reference views, ``MAP_SIDE`` (1024) for the marks and regions maps whose numbers
 and names must stay readable; never above ``MAX_SIDE``; both sides multiples of 32; small areas are enlarged (up to

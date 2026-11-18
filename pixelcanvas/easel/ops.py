@@ -2,7 +2,7 @@
 
 An op is a :class:`Stroke` (a brush dragged along a path) or a :class:`Fill` (an area filled with a colour or a
 linear gradient).  ``apply_ops`` paints a list of ops onto an RGBA float layer; the rendering lives in
-``brush.py``.  See work/design/DESIGN.md section 3 for the contract.
+``brush.py``.
 
 JSON form: arrays are stored as base64 of their raw little-endian bytes (float32 for coordinates and widths, uint8
 for per-point colours), so ``ops_from_jsonable(ops_to_jsonable(ops))`` reproduces every array bit for bit.  Plain

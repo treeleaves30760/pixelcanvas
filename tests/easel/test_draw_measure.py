@@ -13,7 +13,7 @@ import pytest
 from pixelcanvas.easel import detail_measure as dm
 
 N = 256
-# the reference implementation (work/judge/spectrum.py in the dev checkout) is not shipped; point EASEL_SPECTRUM
+# the reference implementation (spectrum.py, not shipped) is optional; point EASEL_SPECTRUM
 # at it to run the equivalence test, which is skipped otherwise
 SPECTRUM = pathlib.Path(os.environ["EASEL_SPECTRUM"]) if os.environ.get("EASEL_SPECTRUM") else None
 

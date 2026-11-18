@@ -1,7 +1,7 @@
 """The working canvas of a free-mode project: marks are laid on a canvas 3x the delivered picture.
 
 A 2 px mark (the finest a brush makes cleanly) keeps 8 % of the finest octave (features 1-2 px) at 1x, 68 % at 2x
-and 99 % at 3x (work/research/05-first-principles-detail.md section 5): professional pictures are drawn 2-4x larger
+and 99 % at 3x (measured on professional pictures): professional pictures are drawn 2-4x larger
 than they are delivered. Coordinates are 0-1000 on both axes, so no command changes; every size in the draw tools is
 a fraction of the canvas or a delivered-pixel size times ``draw_core.work_scale``.
 

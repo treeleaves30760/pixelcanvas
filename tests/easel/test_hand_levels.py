@@ -14,8 +14,8 @@ from pixelcanvas.easel.stage_levels import hairline_ops, pixel_ops, residual_de
 from .test_hand_local import mixed_ref
 from .test_hand_stages import cel_ref
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-REAL = os.path.join(ROOT, "dataset", "refs_v1", "anime", "dan_003.jpg")
+# a real picture for the completeness test: any image file, named by the environment (the test skips without one)
+REAL = os.environ.get("EASEL_REAL_REF", "")
 
 
 def _paint(canvas, ops):
@@ -69,10 +69,14 @@ def test_default_level_is_the_plan(tmp_path):
     assert rep["max_level"] == 2 and rep["levels"] == [] and "0" not in rep["level_marks"]
 
 
-@pytest.mark.skipif(not os.path.exists(REAL), reason="reference set not on this machine")
+@pytest.mark.skipif(not REAL or not os.path.isfile(REAL),
+                    reason="set EASEL_REAL_REF to the path of a real picture to run this test")
 def test_real_crop_is_complete_at_level_zero(tmp_path):
     from pixelcanvas.easel.pipeline import load_ref
-    ref = np.ascontiguousarray(load_ref(REAL)[200:360, 300:460])
+    full = load_ref(REAL)
+    H, W = full.shape[:2]
+    y0, x0 = (200, 300) if H >= 360 and W >= 460 else (max(0, H // 2 - 80), max(0, W // 2 - 80))
+    ref = np.ascontiguousarray(full[y0:y0 + 160, x0:x0 + 160])        # a 160 px crop
     run_reference_pipeline(ref, str(tmp_path), "cel", log=lambda *a: None, max_level=0)
     out = np.asarray(Image.open(tmp_path / "final.png").convert("RGB"))
     _complete(ref, out)

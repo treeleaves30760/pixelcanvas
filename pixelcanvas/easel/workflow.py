@@ -66,7 +66,7 @@ GATES = {
     "detail": {"overall": 70, "overall_focus3": 75},
 }
 # A photograph's grain is finer than any brush: the scripted pipeline itself ends the forms stage near structure
-# 12-17 and the detail stage near overall 70 on landscape_007, so these gates are set where the engine's best
+# 12-17 and the detail stage near overall 70 on a grainy landscape photograph, so these gates are set where the engine's best
 # result passes (a gate the engine cannot meet only makes the model chase it).
 GATES_BY_STYLE = {
     "photo": {"forms": {"colour": 75, "structure": 10}, "detail": {"overall": 60, "overall_focus3": 65}},
