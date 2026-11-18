@@ -2,49 +2,50 @@
 
 ## 0.6.0 (2026-11-18)
 
-pixelcanvas is now **easel**, a command-line paint program an agent drives stage by stage. The old tool, where the
+pixelcanvas is now a command-line paint program an agent drives stage by stage. The old tool, where the
 model wrote Python that drew vector art with kits of subject generators, is gone: the studio, the kits (flora,
 clay, pictograms, figure, creature, solid, diagram, chart, ui, drafting and the rest), the art media, the JSON spec
 mode, the scenes and templates, the `tools/` scripts, the MCP server, the `pixelcanvas` and `pixelcanvas-lite`
-skills and the gallery. The `pixelcanvas` command now runs easel.
+skills and the gallery. One name everywhere: the package, the command, the skill and the project folder
+(`<name>.pixelcanvas/`) are all `pixelcanvas`, and every command is `pixelcanvas <command>`.
 
-### easel
+### The paint program
 
-- **A picture is a project folder** (`pic.easel/`): the reference, one PNG per layer, regions, an undo history and a
-  journal of every command. `easel undo` / `redo` restore it byte for byte.
+- **A picture is a project folder** (`pic.pixelcanvas/`): the reference, one PNG per layer, regions, an undo history and a
+  journal of every command. `pixelcanvas undo` / `redo` restore it byte for byte.
 - **Stages like a painter**: plan, sketch, line, flat, shade, detail, finish for cel, ink and poster pictures; plan,
   sketch, block-in, forms, detail, finish for paintings and photographs. Each stage paints on its own layer and has
-  a gate easel measures per region; `easel stage done` moves on when it passes or when the agent gives a reason.
+  a gate pixelcanvas measures per region; `pixelcanvas stage done` moves on when it passes or when the agent gives a reason.
 - **A report after every command**: scores `before -> after`, warnings, the worst spots, a `VIEW:` picture of the
-  canvas, a `VIEW-REF:` picture of the reference and one `NEXT:` line. `easel todo --all` prints the work list.
+  canvas, a `VIEW-REF:` picture of the reference and one `NEXT:` line. `pixelcanvas todo --all` prints the work list.
 - **Three modes**: `trace` (stage commands follow the reference; the agent plans regions, orders the work, checks and
   refines), `hand` (the agent places every mark, the reference beside it) and `free` (a text request, no reference).
-- **Redraw it, but ...**: `easel new pic --ref reference.jpg --request "..."` asks, after the plan, for each change the
-  request names (`easel change add ...`, or `easel change none` for a plain copy) and adds a change stage that makes
+- **Redraw it, but ...**: `pixelcanvas new pic --ref reference.jpg --request "..."` asks, after the plan, for each change the
+  request names (`pixelcanvas change add ...`, or `pixelcanvas change none` for a plain copy) and adds a change stage that makes
   them. A change edits the target, the picture the stages trace and score against; the original stays as
-  `orig.png`. `easel look --show changes` shows original and target side by side, `easel change list` and `drop`
+  `orig.png`. `pixelcanvas look --show changes` shows original and target side by side, `pixelcanvas change list` and `drop`
   manage the list, and a change made after tracing has begun marks only the affected regions and stages stale;
-  `easel undo` restores target and layers exactly. A project without a request, or with `change none`, runs the plain
+  `pixelcanvas undo` restores target and layers exactly. A project without a request, or with `change none`, runs the plain
   redraw unchanged.
-  - Recolour: `easel recolor hair --to "#8fdcb4"` moves a region to a new colour and keeps its shading, lines and
+  - Recolour: `pixelcanvas recolor hair --to "#8fdcb4"` moves a region to a new colour and keeps its shading, lines and
     highlights; the report gives hue before -> after, shading kept and stray patches of the old hue, and
-    `easel region refine hair --by hue|lines` snaps the region to a hue band or to the areas its lines enclose.
-  - Poster: `easel canvas --size 900x1200 --place x0,y0,x1,y1` places the reference in a new canvas (the regions move
-    with it), `easel palette map --to "dark,...,light" --accent "jacket=#e8644a"` maps the target to a few colours by
-    value, `easel graphic disc|rect|ring|frame <box> --color` lays a shape on the ground behind the figure, and
-    `easel change add text ...` letters the title in the finish stage. When the target no longer reads as the project's
-    style, the change gate asks for `easel style poster`.
-  - New setting: `easel cutout figure --regions a,b,c` cuts the figure out (it reports ground left inside, figure
-    lost and edge width, and boxes the three weakest edge spots), `easel background --from lake.easel | picture.png |
-    --gradient "#a,#b" | --color "#hex"` puts it in front of a new background, `easel light` tints the figure toward
-    the background's light and adds a rim light, and `easel shadow figure` lays a contact shadow on the ground.
+    `pixelcanvas region refine hair --by hue|lines` snaps the region to a hue band or to the areas its lines enclose.
+  - Poster: `pixelcanvas canvas --size 900x1200 --place x0,y0,x1,y1` places the reference in a new canvas (the regions move
+    with it), `pixelcanvas palette map --to "dark,...,light" --accent "jacket=#e8644a"` maps the target to a few colours by
+    value, `pixelcanvas graphic disc|rect|ring|frame <box> --color` lays a shape on the ground behind the figure, and
+    `pixelcanvas change add text ...` letters the title in the finish stage. When the target no longer reads as the project's
+    style, the change gate asks for `pixelcanvas style poster`.
+  - New setting: `pixelcanvas cutout figure --regions a,b,c` cuts the figure out (it reports ground left inside, figure
+    lost and edge width, and boxes the three weakest edge spots), `pixelcanvas background --from lake.pixelcanvas | picture.png |
+    --gradient "#a,#b" | --color "#hex"` puts it in front of a new background, `pixelcanvas light` tints the figure toward
+    the background's light and adds a rim light, and `pixelcanvas shadow figure` lays a contact shadow on the ground.
   - List options (`--minus`, `--plus`, `--regions`) accept repeats and comma lists.
-- **Detail levels**: `easel detail all`, then `easel detail <region> --level 1` region by region in the ranked order,
-  `easel dot all`, `easel sharpen`. The strokes follow the reference and take their colours from it along the stroke; every
+- **Detail levels**: `pixelcanvas detail all`, then `pixelcanvas detail <region> --level 1` region by region in the ranked order,
+  `pixelcanvas dot all`, `pixelcanvas sharpen`. The strokes follow the reference and take their colours from it along the stroke; every
   report prints the share retouched.
-- **Drawing from a text request** (`easel new pic --mode free --request "..."`): plan subjects and parts with boxes,
+- **Drawing from a text request** (`pixelcanvas new pic --mode free --request "..."`): plan subjects and parts with boxes,
   then the same stages with construction tools (`sketch figure`, `face`, `line`, `flat auto`, `shade`, `eye`,
-  `hair --flow`, `fold`, `text`, `band`, `surface`). `easel polish` is the finish stage's default pass on the fx layer:
+  `hair --flow`, `fold`, `text`, `band`, `surface`). `pixelcanvas polish` is the finish stage's default pass on the fx layer:
   strays painted out, streaks smoothed inside each colour area, line art coloured from the fills it borders, far things
   lighter and cooler under a sky, lights graded toward the light's colour, soft edges for painterly styles; each part
   has a `--no-<part>` switch, and the report gives numbers per part, a `VIEW:` and one `NEXT:`. The todo list is the
@@ -54,7 +55,7 @@ skills and the gallery. The `pixelcanvas` command now runs easel.
   the other.
 - **Hand tools** for what a stage misses: `stroke` (with `--color pick --snap`), `fill`, `shape`, `gradient`,
   `erase`, `smooth`, `adjust`.
-- **Export**: `easel export final.png --psd --ora --timelapse film.gif --stages dir`.
+- **Export**: `pixelcanvas export final.png --psd --ora --timelapse film.gif --stages dir`.
 - **Results**: on a private set of 93 reference pictures the redraw path reaches a judge mean of 9.42 of 10, with
   88 of 93 rated the same quality as the reference. In the redraw path the strokes follow the reference and take
   their colours from it along the stroke, and no picture is retouched pixel by pixel. A Qwen 3.8 Flash class model
@@ -64,13 +65,12 @@ skills and the gallery. The `pixelcanvas` command now runs easel.
 
 ### Install and packaging
 
-- Console scripts: `easel`, `pixelcanvas` (the same program) and `easel-install-skill` (copies the skill into
-  `~/.claude/skills/easel`, `--opencode` for `~/.config/opencode/skills/easel`, `--to DIR` for any skills folder;
+- One console script, `pixelcanvas`; `python -m pixelcanvas` runs the same. `pixelcanvas install-skill` copies the skill into
+  `~/.claude/skills/pixelcanvas`, `--opencode` for `~/.config/opencode/skills/pixelcanvas`, `--to DIR` for any skills folder;
   `--force` replaces an existing one).
 - Dependencies: numpy, Pillow, opencv-python-headless, scikit-image, scipy.
-- The wheel carries the skill as `pixelcanvas/easel/skill/SKILL.md`.
-- Removed: `pixelcanvas install-skill`, `pixelcanvas doctor`, `pixelcanvas render` and every other subcommand of the
-  old command, the `fast` and `easel` extras, `tools/install_skill.py` and the `Makefile`.
+- The wheel carries the skill as `pixelcanvas/skill/SKILL.md`.
+- Removed: `pixelcanvas doctor`, `pixelcanvas render` and every other subcommand of the old command, the `fast` and `pixelcanvas` extras, `tools/install_skill.py` and the `Makefile`.
 
 ## 0.5.0 (2026-11-14)
 

@@ -1,21 +1,21 @@
-# Installing easel
+# Installing pixelcanvas
 
-easel runs anywhere Python 3.9+ runs. Two pieces: the `easel` command (the Python package `pixelcanvas`) and the
-skill `easel` (one `SKILL.md` your agent reads). The agent needs both: the skill tells it how to paint, the command
+pixelcanvas runs anywhere Python 3.9+ runs. Two pieces: the `pixelcanvas` command (the Python package) and the
+skill `pixelcanvas` (one `SKILL.md` your agent reads). The agent needs both: the skill tells it how to paint, the command
 does the painting.
 
 ## With pip (quickest)
 
 ```bash
 pip install pixelcanvas
-easel --version
-easel-install-skill                 # -> ~/.claude/skills/easel             (Claude Code)
-easel-install-skill --opencode      # -> ~/.config/opencode/skills/easel    (opencode)
-easel-install-skill --to .claude/skills   # -> .claude/skills/easel        (this project only, or any skills folder)
+pixelcanvas --version
+pixelcanvas install-skill                 # -> ~/.claude/skills/pixelcanvas             (Claude Code)
+pixelcanvas install-skill --opencode      # -> ~/.config/opencode/skills/pixelcanvas    (opencode)
+pixelcanvas install-skill --to .claude/skills   # -> .claude/skills/pixelcanvas        (this project only, or any skills folder)
 ```
 
-`easel-install-skill` prints every file it writes and leaves an existing skill alone; `--force` replaces it.
-The package also installs `pixelcanvas`, which runs the same program as `easel`.
+`pixelcanvas install-skill` prints every file it writes and leaves an existing skill alone; `--force` replaces it.
+Every command is `pixelcanvas <command>` (`pixelcanvas help` lists them); `python -m pixelcanvas` runs the same.
 
 With [pipx](https://pipx.pypa.io) or [uv](https://docs.astral.sh/uv/) the command gets its own environment:
 
@@ -46,24 +46,24 @@ npx skills add treeleaves30760/pixelcanvas
 git clone https://github.com/treeleaves30760/pixelcanvas
 cd pixelcanvas
 pip install -e .
-easel-install-skill
+pixelcanvas install-skill
 ```
 
-An editable install keeps `easel` in step with the clone; `easel-install-skill --force` copies a changed
-`skills/easel/SKILL.md` again.
+An editable install keeps `pixelcanvas` in step with the clone; `pixelcanvas install-skill --force` copies a changed
+`skills/pixelcanvas/SKILL.md` again.
 
 ## Local models
 
-A small open-weight model drives easel through Claude Code or opencode like any other model: point the framework at
+A small open-weight model drives pixelcanvas through Claude Code or opencode like any other model: point the framework at
 your model server, install the skill, and ask for a picture. The model needs vision (it opens the `VIEW:` pictures).
 A redraw takes about 44-86 commands, and a session ends at about 55k tokens of context.
 
 ## Check the install
 
 ```bash
-easel --version
-easel help
-easel fonts            # the fonts easel finds, Latin and CJK
+pixelcanvas --version
+pixelcanvas help
+pixelcanvas fonts            # the fonts pixelcanvas finds, Latin and CJK
 ```
 
 ## Uninstall
@@ -72,4 +72,4 @@ easel fonts            # the fonts easel finds, Latin and CJK
 pip uninstall pixelcanvas
 ```
 
-Then delete the skill folder (`~/.claude/skills/easel` or `~/.config/opencode/skills/easel`).
+Then delete the skill folder (`~/.claude/skills/pixelcanvas` or `~/.config/opencode/skills/pixelcanvas`).

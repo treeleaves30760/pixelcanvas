@@ -1,6 +1,6 @@
 include LICENSE CHANGELOG.md README.md requirements.txt docs/PYPI.md
-recursive-include skills/easel *.md *.json
-recursive-include pixelcanvas/easel *.json
+recursive-include skills/pixelcanvas *.md *.json
+recursive-include pixelcanvas *.json
 prune outputs
 prune tests
 global-exclude __pycache__ *.py[cod]

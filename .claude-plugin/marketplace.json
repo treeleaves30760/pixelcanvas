@@ -1,6 +1,6 @@
 {
   "name": "pixelcanvas",
-  "description": "easel: a paint program your agent drives one command at a time",
+  "description": "a paint program your agent drives one command at a time",
   "owner": {
     "name": "treeleaves30760",
     "url": "https://github.com/treeleaves30760"
@@ -9,7 +9,7 @@
     {
       "name": "pixelcanvas",
       "source": "./",
-      "description": "easel: a command-line paint program your agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish), with layers, undo and a view after every command. Redraws a reference picture or paints from a text request.",
+      "description": "pixelcanvas: a command-line paint program your agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish), with layers, undo and a view after every command. Redraws a reference picture or paints from a text request.",
       "category": "design",
       "homepage": "https://github.com/treeleaves30760/pixelcanvas"
     }

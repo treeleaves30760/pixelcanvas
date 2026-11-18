@@ -4,5 +4,6 @@ Pillow>=9.1
 opencv-python-headless
 scikit-image
 scipy
-# tests: python -m pytest tests/easel -q
+# tests: python -m pytest tests -q -n auto
 pytest
+pytest-xdist

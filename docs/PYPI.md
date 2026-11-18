@@ -1,8 +1,8 @@
-# pixelcanvas: easel
+# pixelcanvas
 
-easel is a command-line paint program an AI agent drives. Give it a reference picture and the agent redraws it like a
+pixelcanvas is a command-line paint program an AI agent drives. Give it a reference picture and the agent redraws it like a
 painter: it plans the regions, then works stage by stage (sketch, line, flat colour, shade, detail, finish). After
-every command easel reports what changed in numbers and writes a picture of the result; the agent opens it, judges
+every command pixelcanvas reports what changed in numbers and writes a picture of the result; the agent opens it, judges
 it, and goes on or undoes. Ask for a redraw with changes (mint-green hair, a poster, a lake behind the figure), or
 describe a picture in words.
 
@@ -17,42 +17,41 @@ rated the same quality as the reference (the scripted path on the same pictures:
 
 ```bash
 pip install pixelcanvas
-easel-install-skill                # the skill -> ~/.claude/skills/easel
-easel-install-skill --opencode     # or -> ~/.config/opencode/skills/easel
+pixelcanvas install-skill                # the skill -> ~/.claude/skills/pixelcanvas
+pixelcanvas install-skill --opencode     # or -> ~/.config/opencode/skills/pixelcanvas
 ```
 
-Then ask your agent: *"Redraw reference.jpg with easel"*. The `pixelcanvas` command runs the same program as
-`easel`.
+Then ask your agent: *"Redraw reference.jpg with pixelcanvas"*. Every command is `pixelcanvas <command>`.
 
 ## A redraw
 
 ```bash
-easel new pic --ref reference.jpg --mode trace
-easel region add hair --marks 4,5,9,13
-easel region add face --wand 500,550 --focus 3
-easel region rest background
-easel stage done
-easel todo --all
-easel do "sketch face; sketch hair; sketch background"
-easel stage done
-easel ink all
-easel stage done
-easel flat all
-easel stage done
-easel shade all
-easel stage done
-easel detail all
-easel detail face --level 1
-easel dot all
-easel stage done
-easel sharpen
-easel export final.png
-easel stage done
+pixelcanvas new pic --ref reference.jpg --mode trace
+pixelcanvas region add hair --marks 4,5,9,13
+pixelcanvas region add face --wand 500,550 --focus 3
+pixelcanvas region rest background
+pixelcanvas stage done
+pixelcanvas todo --all
+pixelcanvas do "sketch face; sketch hair; sketch background"
+pixelcanvas stage done
+pixelcanvas ink all
+pixelcanvas stage done
+pixelcanvas flat all
+pixelcanvas stage done
+pixelcanvas shade all
+pixelcanvas stage done
+pixelcanvas detail all
+pixelcanvas detail face --level 1
+pixelcanvas dot all
+pixelcanvas stage done
+pixelcanvas sharpen
+pixelcanvas export final.png
+pixelcanvas stage done
 ```
 
 Every command prints the scores `before -> after`, a `VIEW:` picture of the canvas, a `VIEW-REF:` picture of the
-reference and a `NEXT:` line. The project folder `pic.easel/` keeps one PNG per layer, the regions, an undo history
-and a journal; `easel export final.png --psd --ora --timelapse film.gif` writes the layers and a time-lapse.
+reference and a `NEXT:` line. The project folder `pic.pixelcanvas/` keeps one PNG per layer, the regions, an undo history
+and a journal; `pixelcanvas export final.png --psd --ora --timelapse film.gif` writes the layers and a time-lapse.
 
 ## Redraw it, but ...
 
@@ -60,21 +59,21 @@ State the changes a request asks for after the regions; a change edits the targe
 original stays as `orig.png`:
 
 ```bash
-easel new pic --ref reference.jpg --mode trace --request "redraw it with mint-green hair"
-easel region add hair --marks 4,5,9,13
-easel region add face --wand 500,550 --focus 3
-easel region rest background
-easel change add recolor hair --to "#8fdcb4"
-easel stage done
-easel recolor hair --to "#8fdcb4"
+pixelcanvas new pic --ref reference.jpg --mode trace --request "redraw it with mint-green hair"
+pixelcanvas region add hair --marks 4,5,9,13
+pixelcanvas region add face --wand 500,550 --focus 3
+pixelcanvas region rest background
+pixelcanvas change add recolor hair --to "#8fdcb4"
+pixelcanvas stage done
+pixelcanvas recolor hair --to "#8fdcb4"
 ```
 
 A poster takes `change add canvas`, `palette map`, `graphic` and `text`; a new setting takes `cutout`, `background`,
-`light` and `shadow`. `easel next` names each command.
+`light` and `shadow`. `pixelcanvas next` names each command.
 
 ## Without a reference
 
-`easel new pic --size 1000x1200 --request "a chibi fox mage holding a staff"`: the agent plans the subjects of the
+`pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff"`: the agent plans the subjects of the
 request and their parts with boxes, then paints them through the same stages with construction tools; follow
 `NEXT:`.
 

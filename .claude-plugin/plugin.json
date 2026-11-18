@@ -1,8 +1,8 @@
 {
   "name": "pixelcanvas",
-  "displayName": "pixelcanvas (easel)",
+  "displayName": "pixelcanvas",
   "version": "0.6.0",
-  "description": "easel: a command-line paint program your agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish) on a project folder with layers, undo and a view after every command. Redraws a reference picture or paints from a text request. Needs the easel command: pip install pixelcanvas.",
+  "description": "pixelcanvas: a command-line paint program your agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish) on a project folder with layers, undo and a view after every command. Redraws a reference picture or paints from a text request. Needs the pixelcanvas command: pip install pixelcanvas.",
   "author": {
     "name": "treeleaves30760",
     "url": "https://github.com/treeleaves30760"

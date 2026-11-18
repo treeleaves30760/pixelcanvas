@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pixelcanvas"
 version = "0.6.0"
-description = "easel: a command-line paint program an AI agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish), with layers, undo and a view after every command"
+description = "pixelcanvas: a command-line paint program an AI agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish), with layers, undo and a view after every command"
 readme = "docs/PYPI.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -34,7 +34,7 @@ requires-python = ">=3.9"
 dependencies = ["numpy>=1.22", "Pillow>=9.1", "opencv-python-headless", "scikit-image", "scipy"]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "pytest-xdist"]
 
 [project.urls]
 Homepage = "https://github.com/treeleaves30760/pixelcanvas"
@@ -44,19 +44,17 @@ Changelog = "https://github.com/treeleaves30760/pixelcanvas/blob/main/CHANGELOG.
 Documentation = "https://github.com/treeleaves30760/pixelcanvas#readme"
 
 [project.scripts]
-easel = "pixelcanvas.easel.cli:main"
-pixelcanvas = "pixelcanvas.easel.cli:main"
-easel-install-skill = "pixelcanvas.easel.skill_install:main"
+pixelcanvas = "pixelcanvas.cli:main"
 
-# Packages: setup.py finds pixelcanvas and pixelcanvas.easel and adds pixelcanvas.easel.skill, which is the folder
-# skills/easel of the checkout (the skill an agent reads). The wheel carries it as pixelcanvas/easel/skill/, where
-# `easel-install-skill` copies it from; a checkout keeps using skills/easel unchanged.
+# Packages: setup.py finds pixelcanvas and adds pixelcanvas.skill, which is the folder
+# skills/pixelcanvas of the checkout (the skill an agent reads). The wheel carries it as pixelcanvas/skill/, where
+# `pixelcanvas install-skill` copies it from; a checkout keeps using skills/pixelcanvas unchanged.
 [tool.setuptools.package-dir]
-"pixelcanvas.easel.skill" = "skills/easel"
+"pixelcanvas.skill" = "skills/pixelcanvas"
 
 [tool.setuptools.package-data]
-"pixelcanvas.easel" = ["*.json"]
-"pixelcanvas.easel.skill" = ["*.md", "**/*.md", "**/*.json"]
+"pixelcanvas" = ["*.json"]
+"pixelcanvas.skill" = ["*.md", "**/*.md", "**/*.json"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["__pycache__/*", "*.pyc", "**/__pycache__/*"]

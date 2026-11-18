@@ -13,11 +13,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.9", "3.13"]
-        # ubuntu-latest no longer ships Python 3.9; the 3.9 run on Linux uses the previous LTS image.
-        exclude:
-          - os: ubuntu-latest
-            python: "3.9"
+        python: ["3.13"]
+        # the oldest supported Python once, on Linux (ubuntu-latest no longer ships 3.9)
         include:
           - os: ubuntu-24.04
             python: "3.9"
@@ -31,7 +28,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
 
-      # Windows and macOS ship Latin and CJK fonts; Ubuntu runners get Noto CJK and DejaVu here (easel text tests).
+      # Windows and macOS ship Latin and CJK fonts; Ubuntu runners get Noto CJK and DejaVu here (pixelcanvas text tests).
       - name: Fonts (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk fonts-dejavu-core
@@ -43,12 +40,12 @@ jobs:
 
       - name: Command
         run: |
-          easel --version
-          easel help
-          easel fonts
+          pixelcanvas --version
+          pixelcanvas help
+          pixelcanvas fonts
 
       - name: Tests
-        run: python -m pytest tests/easel -q
+        run: python -m pytest tests -q -n auto
 
   build:
     name: build (sdist + wheel, clean venv, installed commands)
@@ -72,11 +69,11 @@ jobs:
         run: |
           python -m venv /tmp/v
           /tmp/v/bin/python -m pip install dist/*.whl
-          /tmp/v/bin/easel --version
           /tmp/v/bin/pixelcanvas --version
-          /tmp/v/bin/easel help
-          /tmp/v/bin/easel-install-skill --to /tmp/skills
-          test -f /tmp/skills/easel/SKILL.md
+          /tmp/v/bin/pixelcanvas help
+          /tmp/v/bin/python -m pixelcanvas --version
+          /tmp/v/bin/pixelcanvas install-skill --to /tmp/skills
+          test -f /tmp/skills/pixelcanvas/SKILL.md
 
       - uses: actions/upload-artifact@v4
         with:
