@@ -19,13 +19,147 @@ from .pose3d import Camera
 EPS = 1e-4
 _CUBE = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], float)
 
+# face codes of ellipsoids and shells: bit 0 = the inside (a back face seen through an opening), bit 1 = a trim band
+# along a cut edge, bit 2 = the odd half of a pleat
+INSIDE, TRIM, PLEAT = 1, 2, 4
+
+
+def _obb(a, b, r: float) -> Tuple[np.ndarray, np.ndarray]:
+    """Centre and half-axes (columns) of a box round the segment a-b thickened by r."""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    u = b - a
+    L = float(np.linalg.norm(u))
+    u = u / L if L > 1e-9 else np.array([0, 1.0, 0])
+    x = np.cross(u, [0, 0, 1.0]) if abs(u[2]) < 0.9 else np.cross(u, [1.0, 0, 0])
+    x /= np.linalg.norm(x)
+    z = np.cross(x, u)
+    return (a + b) / 2, np.stack([x * r, u * (L / 2 + r), z * r], 1)
+
+
+def rcone(a, b, ra: float, rb: float, **kw) -> dict:
+    """A round cone: spheres of radius ra at a and rb at b joined by their tangent cone (a limb, a sleeve, a lock)."""
+    c, A = _obb(a, b, max(ra, rb))
+    return {"t": "rcone", "a": np.asarray(a, float), "b": np.asarray(b, float), "ra": float(ra), "rb": float(rb),
+            "c": c, "A": A, **kw}
+
+
+def ell_prim(c, R, semi, clip: Optional[dict] = None, **kw) -> dict:
+    out = {"t": "ell", "c": np.asarray(c, float), "A": np.asarray(R, float) @ np.diag(semi), **kw}
+    if clip:
+        out["clip"] = clip
+    return out
+
+
+def shell(c, A, flare: float = 0.5, clip: Optional[dict] = None, pleats: int = 0, hem_amp: float = 0.0,
+          hem_tilt=(0.0, 0.0), **kw) -> dict:
+    """An open cloth shell (a skirt, a coat's tails): in its frame x = A q (q local), the cloth is x^2 + z^2 =
+    (1 - flare y)^2 for hem <= y <= 0: the waist ring (radius 1) at y = 0 and the hem flared to 1 + flare at
+    y = -1 (raised by hem_tilt . (x, z), waved by hem_amp). ``pleats`` > 0 folds it into that many pleats."""
+    out = {"t": "shell", "c": np.asarray(c, float), "A": np.asarray(A, float), "flare": float(flare),
+           "pleats": int(pleats), "hem_amp": float(hem_amp), "hem_tilt": [float(v) for v in hem_tilt], **kw}
+    if clip:
+        out["clip"] = clip
+    return out
+
+
+def corners(pr: dict) -> np.ndarray:
+    """World points whose hull holds the primitive."""
+    A = np.asarray(pr["A"], float)
+    if pr["t"] == "shell":
+        r = 1.0 + abs(pr["flare"]) * 1.25
+        q = np.array([[x, y, z] for x in (-r, r) for y in (-1.3, 0.05) for z in (-r, r)], float)
+        return pr["c"] + q @ A.T
+    return pr["c"] + _CUBE @ A.T
+
+
+def _phi(q: np.ndarray) -> np.ndarray:
+    return np.arctan2(q[:, 0], q[:, 2])
+
+
+def _clipped(pr: dict, q: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """(cut away, on a trim band) for local points q of an ellipsoid or shell with a ``clip``."""
+    cl = pr.get("clip") or {}
+    n = len(q)
+    cut = np.zeros(n, bool)
+    trim = np.zeros(n, bool)
+    if not cl:
+        return cut, trim
+    y = q[:, 1]
+    tw = float(cl.get("trim", 0.0))
+    if "wedge" in cl:
+        # a front opening: |angle from the front| < half(y) between y_bot and y_top (a V when half grows upward)
+        h_top, h_bot, y_top, y_bot = cl["wedge"]
+        ph = np.abs(_phi(q))
+        s = np.clip((y - y_bot) / max(y_top - y_bot, 1e-6), 0, 1)
+        half = h_bot + (h_top - h_bot) * s
+        inside_y = (y >= y_bot) & (y <= y_top)
+        cut |= inside_y & (ph < half)
+        if tw > 0:
+            trim |= inside_y & (ph >= half) & (ph < half + tw)
+    if "below" in cl:
+        cut |= y < cl["below"]
+        if tw > 0 and cl.get("trim_below"):
+            trim |= (y >= cl["below"]) & (y < cl["below"] + tw)
+    if "above" in cl:
+        cut |= y > cl["above"]
+    if "back" in cl:                      # the face of a hair cap: cut away in front below the hairline
+        y0, half = cl["back"]
+        cut |= (q[:, 2] > 0) & (np.abs(_phi(q)) < half) & (y < y0)
+    return cut, trim & ~cut
+
+
+def _rcone_hit(pr: dict, O, D: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Entry t (along unit D) and normal of rays with a round cone (Inigo Quilez's intersector)."""
+    pa, pb, ra, rb = pr["a"], pr["b"], pr["ra"], pr["rb"]
+    n = len(D)
+    O = np.broadcast_to(np.asarray(O, float), (n, 3))
+    ba = pb - pa
+    oa = O - pa
+    ob = O - pb
+    rr = ra - rb
+    m0 = float(ba @ ba)
+    m1 = oa @ ba
+    m2 = D @ ba
+    m3 = (D * oa).sum(1)
+    m5 = (oa * oa).sum(1)
+    m6 = (ob * D).sum(1)
+    m7 = (ob * ob).sum(1)
+    d2 = m0 - rr * rr
+    k2 = d2 - m2 * m2
+    k1 = d2 * m3 - m1 * m2 + m2 * rr * ra
+    k0 = d2 * m5 - m1 * m1 + m1 * rr * ra * 2.0 - m0 * ra * ra
+    h = k1 * k1 - k0 * k2
+    t = np.full(n, np.inf)
+    nrm = np.zeros((n, 3))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tb = (-np.sqrt(np.maximum(h, 0)) - k1) / k2
+        y = m1 - ra * rr + tb * m2
+        body = (h >= 0) & (y > 0) & (y < d2) & (tb > EPS) & np.isfinite(tb)
+        t = np.where(body, tb, t)
+        nb = d2 * (oa + tb[:, None] * D) - ba[None, :] * y[:, None]
+        nrm[body] = nb[body]
+        for r, oc, mm, mo in ((ra, oa, m3, m5), (rb, ob, m6, m7)):
+            hh = mm * mm - mo + r * r
+            tc = -mm - np.sqrt(np.maximum(hh, 0))
+            ok = (hh > 0) & (tc > EPS) & (tc < t) & ~body
+            t = np.where(ok, tc, t)
+            nrm[ok] = oc[ok] + tc[ok, None] * D[ok]
+    nn = np.linalg.norm(nrm, axis=1, keepdims=True)
+    nrm = np.where(nn > 1e-12, nrm / np.maximum(nn, 1e-12), 0)
+    return t, nrm
+
 
 def intersect(pr: dict, O, D: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """First hit t (> EPS, inf = miss), world normal (unit) and face index of rays O + t D with a primitive."""
+    D = np.asarray(D, float)
+    if pr["t"] == "rcone":
+        L = np.linalg.norm(D, axis=1)
+        t, nw = _rcone_hit(pr, O, D / L[:, None])
+        return t / L, nw, np.zeros(len(D), np.int8)
     A = np.asarray(pr["A"], float)
     Ai = np.linalg.inv(A)
     o = (np.asarray(O, float) - pr["c"]) @ Ai.T
-    d = np.asarray(D, float) @ Ai.T
+    d = D @ Ai.T
     if o.ndim == 1:
         o = np.broadcast_to(o, d.shape)
     n = len(d)
@@ -33,19 +167,62 @@ def intersect(pr: dict, O, D: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.nd
     nl = np.zeros((n, 3))
     face = np.zeros(n, np.int8)
     kind = pr["t"]
-    if kind == "ell":
-        a = (d * d).sum(1)
-        b = 2 * (o * d).sum(1)
-        c = (o * o).sum(1) - 1
+    if kind in ("ell", "shell"):
+        if kind == "ell":
+            a = (d * d).sum(1)
+            b = 2 * (o * d).sum(1)
+            c = (o * o).sum(1) - 1
+        else:
+            f = pr["flare"]
+            a = d[:, 0] ** 2 + d[:, 2] ** 2 - f * f * d[:, 1] ** 2
+            b = 2 * (o[:, 0] * d[:, 0] + o[:, 2] * d[:, 2]) + 2 * f * d[:, 1] * (1 - f * o[:, 1])
+            c = o[:, 0] ** 2 + o[:, 2] ** 2 - (1 - f * o[:, 1]) ** 2
         disc = b * b - 4 * a * c
-        ok = disc >= 0
+        ok = (disc >= 0) & (np.abs(a) > 1e-12)
         sq = np.sqrt(np.where(ok, disc, 0))
-        t0 = (-b - sq) / (2 * a)
-        t1 = (-b + sq) / (2 * a)
-        tt = np.where(t0 > EPS, t0, np.where(t1 > EPS, t1, np.inf))
-        t = np.where(ok, tt, np.inf)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            r1 = (-b - sq) / (2 * a)
+            r2 = (-b + sq) / (2 * a)
+        lo, hi = np.minimum(r1, r2), np.maximum(r1, r2)
+        sub = np.zeros(n, np.int8)
+        for root in (lo, hi):
+            cand = ok & (root > EPS) & ~np.isfinite(t)
+            if not cand.any():
+                continue
+            q = o + np.where(cand, root, 0)[:, None] * d
+            good = cand.copy()
+            if kind == "shell":
+                # a tilt only raises the hem (on the side it points to): the cloth lifted by a knee or the wind
+                hem = -1.0 + np.maximum(0.0, pr["hem_tilt"][0] * q[:, 0] + pr["hem_tilt"][1] * q[:, 2])
+                if pr["pleats"] > 0 or pr["hem_amp"]:
+                    s = _phi(q) * max(pr["pleats"], 8) / (2 * math.pi)
+                    hem = hem + pr["hem_amp"] * (2 * np.abs(s - np.floor(s) - 0.5))
+                good &= (q[:, 1] <= 0) & (q[:, 1] >= hem) & (1 - pr["flare"] * q[:, 1] > 0)
+            cut, trim = _clipped(pr, q)
+            good &= ~cut
+            t = np.where(good, root, t)
+            sub = np.where(good & trim, TRIM, sub).astype(np.int8)
         hit = np.isfinite(t)
-        nl[hit] = o[hit] + t[hit, None] * d[hit]
+        q = o + np.where(hit, t, 0)[:, None] * d
+        if kind == "ell":
+            g = q.copy()
+        else:
+            f = pr["flare"]
+            g = np.stack([q[:, 0], f * (1 - f * q[:, 1]), q[:, 2]], 1)
+            if pr["pleats"] > 0:
+                # knife pleats: the cloth turns one way on the first half of each pleat and back on the second
+                s = _phi(q) * pr["pleats"] / (2 * math.pi)
+                odd = (s - np.floor(s)) >= 0.5
+                rho = np.maximum(np.hypot(q[:, 0], q[:, 2]), 1e-9)
+                tang = np.stack([q[:, 2], np.zeros(n), -q[:, 0]], 1) / rho[:, None]
+                gn = np.linalg.norm(g, axis=1, keepdims=True)
+                g = g / np.maximum(gn, 1e-12) + np.where(odd, -0.55, 0.55)[:, None] * tang
+                sub = np.where(odd & hit, sub | PLEAT, sub).astype(np.int8)
+        # a hit from behind the surface (through an opening) sees the inside: flip the normal
+        back = (g * d).sum(1) > 0
+        g = np.where(back[:, None], -g, g)
+        face = np.where(hit, np.where(back, sub | INSIDE, sub), 0).astype(np.int8)
+        nl = np.where(hit[:, None], g, 0)
     elif kind == "box":
         with np.errstate(divide="ignore", invalid="ignore"):
             inv = 1.0 / np.where(np.abs(d) < 1e-12, 1e-12, d)
@@ -103,11 +280,15 @@ def intersect(pr: dict, O, D: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.nd
 def bound_radius(pr: dict) -> float:
     A = np.asarray(pr["A"], float)
     cols = np.linalg.norm(A, axis=0)
-    return float(cols.max() if pr["t"] == "ell" else math.sqrt((cols ** 2).sum()))
+    if pr["t"] == "ell":
+        return float(cols.max())
+    if pr["t"] == "shell":
+        return float(np.linalg.norm(corners(pr) - pr["c"], axis=1).max())
+    return float(math.sqrt((cols ** 2).sum()))
 
 
 def _bbox(cam: Camera, pr: dict) -> Optional[Tuple[int, int, int, int]]:
-    P = pr["c"] + _CUBE @ np.asarray(pr["A"], float).T
+    P = corners(pr)
     q = cam.to_cam(P)
     front = q[:, 2] > 0.05
     if not front.any():
@@ -141,25 +322,57 @@ def render(cam: Camera, prims: List[dict]) -> dict:
             own.append(None)
             continue
         x0, y0, x1, y1 = bb
-        ys, xs = np.mgrid[y0:y1, x0:x1]
-        D = cam.rays(xs.ravel() + 0.5, ys.ravel() + 0.5)
-        t, n, f = intersect(pr, cam.C, D)
-        hit = np.isfinite(t) & (t > 0.05)
         h, w = y1 - y0, x1 - x0
+        ys, xs = np.mgrid[y0:y1, x0:x1]
+        xs, ys = xs.ravel() + 0.5, ys.ravel() + 0.5
+        cand = seg_cull(cam, pr, xs, ys)
+        hit = np.zeros(h * w, bool)
+        tt = np.full(h * w, np.inf)
+        ff = np.zeros(h * w, np.int8)
+        nn = np.zeros((h * w, 3))
+        if cand.any():
+            D = cam.rays(xs[cand], ys[cand])
+            t, n, f = intersect(pr, cam.C, D)
+            tt[cand], ff[cand], nn[cand] = t, f, n
+            hit = np.isfinite(tt) & (tt > 0.05)
         hm = hit.reshape(h, w)
         own.append((bb, hm))
         if not hm.any():
             continue
-        tt = t.reshape(h, w).astype(np.float32)
+        tt = tt.reshape(h, w).astype(np.float32)
         sub = depth[y0:y1, x0:x1]
         better = hm & (tt < sub)
         sub[better] = tt[better]
         ids[y0:y1, x0:x1][better] = k
-        face[y0:y1, x0:x1][better] = f.reshape(h, w)[better]
-        nr = n.reshape(h, w, 3)
+        face[y0:y1, x0:x1][better] = ff.reshape(h, w)[better]
+        nr = nn.reshape(h, w, 3)[better]
         scr = np.stack([nr @ cam.right, -(nr @ cam.up), -(nr @ cam.fwd)], -1).astype(np.float32)
-        normal[y0:y1, x0:x1][better] = scr[better]
+        normal[y0:y1, x0:x1][better] = scr
     return {"id": ids, "face": face, "depth": depth, "normal": normal, "own": own, "W": W, "H": H}
+
+
+def seg_cull(cam: Camera, pr: dict, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+    """Pixels whose ray can hit a round cone: near its projected axis (the rest of its box is skipped)."""
+    if pr["t"] != "rcone":
+        return np.ones(len(xs), bool)
+    P, z = cam.project(np.array([pr["a"], pr["b"]]))
+    r = max(pr["ra"], pr["rb"])
+    zmin = float(z.min()) - r
+    if zmin <= 0.05:
+        return np.ones(len(xs), bool)
+    rp = cam.f * r / zmin + 1.5
+    return _near_segment(xs, ys, P[0], P[1], rp)
+
+
+def _near_segment(xs, ys, a, b, r) -> np.ndarray:
+    ab = b - a
+    L2 = float(ab @ ab)
+    if L2 < 1e-12:
+        return (xs - a[0]) ** 2 + (ys - a[1]) ** 2 <= r * r
+    t = np.clip(((xs - a[0]) * ab[0] + (ys - a[1]) * ab[1]) / L2, 0, 1)
+    dx = xs - (a[0] + t * ab[0])
+    dy = ys - (a[1] + t * ab[1])
+    return dx * dx + dy * dy <= r * r
 
 
 # ============================================================================================ lines
