@@ -357,9 +357,9 @@ PRESETS: Dict[str, dict] = {
         "foot-l": {"point": 18}, "arm-r": {"forward": -22, "raise": 6}, "arm-l": {"forward": 24, "raise": 6},
         "elbow-r": {"bend": 15}, "elbow-l": {"bend": 30}}),
     "run": _P("running: leaning forward, right knee up, left leg pushing off on its toes, arms pumping", {
-        "body": {"lean": 16}, "pelvis": {"twist": 10}, "chest": {"twist": -12}, "head": {"nod": -14},
-        "leg-r": {"forward": 95, "raise": 4}, "knee-r": {"bend": 115}, "foot-r": {"point": 25},
-        "leg-l": {"forward": 2, "raise": 3}, "knee-l": {"bend": 15}, "foot-l": {"point": 42},
+        "body": {"lean": 21}, "pelvis": {"twist": 10}, "chest": {"twist": -12}, "head": {"nod": -18},
+        "leg-r": {"forward": 100, "raise": 4}, "knee-r": {"bend": 115}, "foot-r": {"point": 25},
+        "leg-l": {"forward": 6, "raise": 3}, "knee-l": {"bend": 16}, "foot-l": {"point": 42},
         "arm-l": {"forward": 65, "raise": 8}, "elbow-l": {"bend": 95},
         "arm-r": {"forward": -50, "raise": 12}, "elbow-r": {"bend": 95}}),
     "sprint": _P("flat-out sprint: deep forward lean, high knee, long push-off", {

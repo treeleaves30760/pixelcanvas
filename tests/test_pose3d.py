@@ -299,6 +299,23 @@ def test_a_second_figure_sits_on_a_wall_and_follows_it(draw):
     assert code != 0 and "below the horizon" in out
 
 
+def test_the_head_construction_follows_the_pose(draw):
+    _scene(draw)
+    ok(draw("pose", "girl", "--preset", "stand", "--yaw", "40"))
+    ok(draw("sketch", "head", "girl"))
+    h0 = next(el for el in state()["draw"]["sketch"] if el["kind"] == "head")
+    assert h0["yaw"] > 20                                   # sketch head takes its turn from the pose
+    out = ok(draw("pose", "girl", "--at", "300,950", "--yaw", "-40"))
+    h1 = next(el for el in state()["draw"]["sketch"] if el["kind"] == "head")
+    assert h1["id"] == h0["id"] and h1["box"][0] < h0["box"][0] - 50 and h1["yaw"] < -20
+    assert "moved with the pose" in out
+    # moving a posed figure's 2D joints by hand makes it a flat mannequin again
+    ok(draw("sketch", "joint", "girl", "rwr", "700,500"))
+    out = ok(draw("block", "crate", "box", "--at", "800,950"))
+    fig = next(el for el in state()["draw"]["sketch"] if el["kind"] == "figure")
+    assert "rig" not in fig and fig["joints"]["rwrist"] == [700.0, 500.0]
+
+
 def test_flat_mannequin_still_works(draw):
     _scene(draw)
     ok(draw("sketch", "figure", "girl", "--pose", "walk"))

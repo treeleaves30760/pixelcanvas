@@ -127,7 +127,28 @@ def solve_scene(p) -> Tuple[Dict[str, dict], List[str]]:
         res = P3.solve_figure(el["rig"], cam, blocks, solved)
         write_figure(el, res, cam)
         solved[el["subject"]] = res
+        notes.extend(_follow_head(p, el))
     return solved, notes
+
+
+def _follow_head(p, fig: dict) -> List[str]:
+    """Head constructions of a posed subject move and turn with its pose (lines already traced from them stay)."""
+    hd, ch = np.array(fig["joints"]["head"], float), np.array(fig["joints"]["chin"], float)
+    hpx, cpx = dc.u2px(p, [hd])[0], dc.u2px(p, [ch])[0]
+    r = float(np.hypot(*(cpx - hpx)))
+    box = [round((hpx[0] - 0.8 * r) * 1000 / p.W, 1), round((hpx[1] - r) * 1000 / p.H, 1),
+           round((hpx[0] + 0.8 * r) * 1000 / p.W, 1), round(cpx[1] * 1000 / p.H, 1)]
+    yaw = float(np.clip(fig["head_view"][0], -80, 80))
+    pitch = float(np.clip(fig["head_view"][1], -60, 60))
+    out = []
+    for el in dc.dstate(p)["sketch"]:
+        if el["kind"] != "head" or el.get("subject") != fig["subject"]:
+            continue
+        if max(abs(a - b) for a, b in zip(el["box"], box)) > 0.5 or abs(el.get("yaw", 0) - yaw) > 0.5:
+            el["box"], el["yaw"], el["pitch"] = box, round(yaw, 1), round(pitch, 1)
+            out.append(f"head construction {el['id']} moved with the pose (yaw {yaw:.0f}); lines traced from it "
+                       f"before stay where they were: redo them with pixelcanvas line trace {el['id']}")
+    return out
 
 
 def write_figure(el: dict, res: dict, cam: P3.Camera) -> None:
@@ -250,18 +271,32 @@ def camera_shapes(p, el) -> List[Tuple[np.ndarray, bool, float]]:
     if y >= p.H - 2:
         return out
     zs = [1, 2, 3, 4, 5, 6, 8, 10, 13, 17, 22, 30]
+    sc = get_scene(p) if (figures(p) or blocks_rec(p)) else None
 
     def clip(P):
         P, z = cam.project(P)
         ok = (z > 0.2) & (P[:, 0] > -0.05 * p.W) & (P[:, 0] < 1.05 * p.W) & (P[:, 1] > y) & (P[:, 1] < 1.02 * p.H)
-        return P[ok]
+        if sc is not None:              # the grid lies on the ground: blocks and figures stand in front of it
+            s = sc["scale"]
+            D = sc["R"]["depth"]
+            qx = np.clip((P[:, 0] * s).astype(int), 0, D.shape[1] - 1)
+            qy = np.clip((P[:, 1] * s).astype(int), 0, D.shape[0] - 1)
+            ok &= z <= D[qy, qx] + 0.05
+        runs, cur = [], []
+        for q, k in zip(P, ok):
+            if k:
+                cur.append(q)
+            elif cur:
+                runs.append(np.array(cur))
+                cur = []
+        if cur:
+            runs.append(np.array(cur))
+        return [r for r in runs if len(r) >= 2]
     for z in zs:
-        Q = clip(np.array([[x, 0.0, z] for x in np.linspace(-30, 30, 121)]))
-        if len(Q) >= 2:
+        for Q in clip(np.array([[x, 0.0, z] for x in np.linspace(-30, 30, 241)])):
             out.append((Q, False, 0.3))
     for x in range(-12, 13, 2):
-        Q = clip(np.array([[x, 0.0, z] for z in np.geomspace(0.3, 40, 80)]))
-        if len(Q) >= 2:
+        for Q in clip(np.array([[x, 0.0, z] for z in np.geomspace(0.3, 40, 160)])):
             out.append((Q, False, 0.3))
     return out
 
@@ -664,8 +699,8 @@ def cmd_pose(ctx, args):
         lines.extend(res["notes"])
         return _all_ops(p, ("figure", "prop")), _fig_box_px(p, el)
     return _step(ctx, f"pose {subj} {spec['preset']}", mutate, lines, show=subj if show.startswith("joint") else None,
-                 note="the posed figure on the sketch layer (solid: seen; dashed: behind her own parts; "
-                      "-r / -l = her right / left)")
+                 note="the posed figure on the sketch layer (solid: seen; dashed: behind the figure's own parts; "
+                      "-r / -l = the figure's own right / left)")
 
 
 def _fig_box_px(p, el):
@@ -689,7 +724,7 @@ def _pose_report(p, el, res) -> List[str]:
     if vb is not None:
         ub = coords.px_box_to_units(tuple(int(v) for v in vb), p.W, p.H)
         hh = abs(el["j2d"]["head-top"][1] - el["j2d"]["chin"][1])
-        out.append(f"box {coords.fmt_box(ub)} (units); head {hh:.0f} units tall; picture-left limbs are her "
+        out.append(f"box {coords.fmt_box(ub)} (units); head {hh:.0f} units tall; picture-left limbs are the figure's "
                    f"{'right' if el.get('picture_left') == 'r' else 'left'} ones (lsh, lwr ... in the 2D joints)")
     cts = res["contacts"]
     out.append("touching: " + (", ".join(f"{n} on the {s}" for n, s, _ in cts) if cts else "nothing") +
@@ -711,7 +746,7 @@ def _pose_report(p, el, res) -> List[str]:
                f"(the face is drawn on it)")
     if el["subject"]:
         out.append(f'change: pixelcanvas pose {el["subject"]} --set "arm-r: raise 90, forward 20; knee-l: 60; '
-                   f'head: turn 20"   (degrees; -r / -l = her own right / left; --show joints names them)')
+                   'head: turn 20"   (degrees; -r / -l = the figure\'s own right / left; --show joints names them)')
     return out
 
 
@@ -851,7 +886,7 @@ def cmd_prop(ctx, args):
     hand = str(a.get("hand") or ("both" if kind in ("ball",) else "r")).lower()
     hand = {"right": "r", "left": "l", "two": "both", "2": "both"}.get(hand, hand)
     if hand not in ("r", "l", "both"):
-        raise UsageError("--hand is r, l or both (her right / left hand)", USAGE["prop"])
+        raise UsageError("--hand is r, l or both (the figure's own right / left hand)", USAGE["prop"])
     figs = figures(p)
     subj = str(a["of"]).lower() if a.get("of") else (figs[0]["subject"] if len(figs) == 1 else None)
     if subj is None or not any(f["subject"] == subj for f in figs):

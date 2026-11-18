@@ -249,8 +249,21 @@ pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff
    · `pixelcanvas plan light top-left` · `pixelcanvas palette make --base "#e8803a"`, look, `pixelcanvas palette pick 2`,
    `pixelcanvas palette set robe "#4a3c86"`. Scenes back to front, sky first; a farther thing drawn later still goes
    behind nearer ones; change the order with `pixelcanvas plan order sky,mountains,lake,pines`.
-2. **sketch** - people: `pixelcanvas sketch figure fox --pose stand|walk|hold|wave|sit|bust` (`--heads 2.5` for
-   chibi), then `pixelcanvas sketch head fox --yaw 15`; `pixelcanvas face <head id>` lays brows, nose and mouth (an animal
+2. **sketch** - people in a scene: set the camera, pose each figure in 3D, add the blocks they touch. The tool does
+   the perspective, foreshortening and overlap; you give intent:
+   `pixelcanvas camera --horizon 760 --eye-height 0.7` (low angle; the report says how tall a person is at each
+   ground y) · `pixelcanvas block wall box --at 780,870 --size 3.5,0.4,1.0` (also `stairs --steps 6`,
+   `cylinder` for a pole or tree, `plane`, `railing`; sizes in metres) ·
+   `pixelcanvas pose girl --preset run --at 330,990 --yaw 65` (`--at` = where she touches the ground; yaw 0 faces
+   you, 90 faces right; `pixelcanvas pose list` shows run, sprint, jump, leap, sit-ledge, sit-stairs, kneel,
+   reach-viewer, look-back, lean-railing, walk-together ...) · `pixelcanvas pose boy --preset sit-ledge --on wall` ·
+   change joints in degrees: `pixelcanvas pose girl --set "arm-r: raise 120, forward 30; elbow-r: 90; head: turn
+   -30"` (-r / -l = the figure's own right / left; `--show joints` names them in the view) · reach with
+   `--hand-r railing` or `--hand-l 620,540` · props: `pixelcanvas prop sword --kind sword --hand both`.
+   Read the report: what touches the ground, balance, hidden limbs, the figure's box. `pixelcanvas form girl` saves
+   light, core and cast shadow of the forms; `pixelcanvas shade` follows them on her areas. A flat mannequin is still
+   there: `pixelcanvas sketch figure fox --pose stand|walk|hold|wave|sit|bust` (`--heads 2.5` for chibi).
+   Then `pixelcanvas sketch head fox` (a posed figure gives it the head's turn); `pixelcanvas face <head id>` lays brows, nose and mouth (an animal
    gets a muzzle with `--kind animal`). Animals: `pixelcanvas sketch ellipse 320,500,660,710` for the body and
    `pixelcanvas sketch head cat`; a dressed animal (a fox mage in a robe) stands on a mannequin. Things:
    `pixelcanvas sketch curve "x,y x,y ..."`. Landscapes: `pixelcanvas sketch horizon 560`.
