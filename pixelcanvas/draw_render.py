@@ -202,6 +202,8 @@ def scene(p, cam: P3.Camera) -> dict:
         heads[own] = rig
         for pe in held:
             for pr in P3.prop_prims(pe["type"], pe["hand"], pe.get("length"), body, J, F, pe["id"]):
+                if pr["part"].endswith("canopy"):
+                    pr = _canopy(pr)
                 part = pr["part"]
                 pr["piece"] = part
                 pr["mat"] = f"{pe['id']}:{part}"
@@ -218,6 +220,7 @@ def scene(p, cam: P3.Camera) -> dict:
             pr["piece"] = pr["part"]
             pr["mat"] = f"{el['id']}:{el['name']}"
             pr["seam"] = "mat"
+            pr["caster"] = False
             prims.append(pr)
         colours[f"{el['id']}:{el['name']}"] = rgb
         regions[f"{el['id']}:{el['name']}"] = el["name"]
@@ -225,7 +228,24 @@ def scene(p, cam: P3.Camera) -> dict:
         colours[k + "/in"] = dc.shadow_of(colours[k], 1.3)
         regions[k + "/in"] = regions[k]
     return {"prims": prims, "colours": colours, "regions": regions, "rings": rings, "heads": heads,
-            "figures": [el["id"] for el in figs]}
+            "figures": [el["id"] for el in figs], "blocks": [el["id"] for el in DP.blocks_rec(p)]}
+
+
+def _canopy(pr: dict) -> dict:
+    """An umbrella's canopy as cloth: eight panels on ribs, a scalloped hem, open underneath."""
+    from .render3d import shell
+    A = np.asarray(pr["A"], float)
+    up = A[:, 1] / max(np.linalg.norm(A[:, 1]), 1e-9)
+    R = np.linalg.norm(A[:, 0])
+    top = pr["c"] + up * 0.16
+    r0 = 0.03
+    x = A[:, 0] / R
+    z = np.cross(x, up)
+    Ash = np.stack([x * r0, up * 0.26, z * r0], 1)
+    out = shell(top, Ash, flare=(R / r0 - 1.0), pleats=8, hem_amp=0.06)
+    for k in ("part", "group", "owner"):
+        out[k] = pr.get(k)
+    return out
 
 
 def toon_scene(p, cap: int = RENDER_MAX, bands: int = 2, light=None, shadows: bool = True):
@@ -273,11 +293,12 @@ def render_layers(p, T: dict, sc: dict, cam, s: float, line_px: float, bands: in
         region_masks[rn] = region_masks.get(rn, np.zeros((H, W), bool)) | sel
         if m.endswith("/in"):
             continue
-        thr = -0.12 if k in skin_keys else 0.08
+        thr = -0.25 if k in skin_keys else 0.08
         sh = sel & ((lam_up <= thr) | cast_up)
         sh = dc.clean_mask(sh, max(6, int(2e-6 * W * H)))
+        block = m.split(":")[0] not in sc["figures"] and m.split(":")[0] in sc.get("blocks", ())
         if sh.sum() >= 6:
-            shade_ops.append(_fill(sh, dc.shadow_of(rgb)))
+            shade_ops.append(_fill(sh, _block_shadow(rgb) if block else dc.shadow_of(rgb)))
         if bands >= 3:
             dp = sel & (lam_up <= thr - 0.45)
             dp = dc.clean_mask(dp, max(6, int(2e-6 * W * H)))
@@ -303,6 +324,12 @@ def render_layers(p, T: dict, sc: dict, cam, s: float, line_px: float, bands: in
     line_ops = [Stroke(pts=st["pts"], width=st["width"], color=st["rgb"], brush="liner") for st in strokes]
     return {"flat": flat_ops, "shade": shade_ops, "line": line_ops, "regions": region_masks, "colours": used,
             "n_strokes": len(strokes), "dref": dref}
+
+
+def _block_shadow(rgb) -> Tuple[int, int, int]:
+    """The shadow side of a wall or a floor: the same hue, a step darker (no violet cast on a lit room)."""
+    L, C, h = dc.rgb_to_lch(rgb)
+    return dc.lch_to_rgb(max(5.0, L - 9.0), C * 1.12 + 1.0, h)
 
 
 def _fill(mask: np.ndarray, rgb, alpha: float = 1.0):
@@ -345,14 +372,14 @@ def _ground_shadows(p, T, sc) -> list:
             continue
         c = np.mean([[f[0], 0.0, f[2]] for f in feet], 0)
         ang = np.linspace(0, 2 * np.pi, 40, endpoint=False)
-        rx = 0.32 + 0.5 * float(np.ptp([f[0] for f in feet]))
-        rz = 0.16 + 0.5 * float(np.ptp([f[2] for f in feet]))
+        rx = 0.2 + 0.5 * float(np.ptp([f[0] for f in feet]))
+        rz = 0.1 + 0.5 * float(np.ptp([f[2] for f in feet]))
         ring = np.stack([c[0] + rx * np.cos(ang), np.zeros_like(ang), c[2] + rz * np.sin(ang)], 1)
         px, z = cam.project(ring)
         if (z <= 0.1).any():
             continue
         out.append(Fill(polygons=[px.astype(np.float32)], color=(60, 56, 80), feather=0.02 * max(p.W, p.H) / 3,
-                        opacity=0.32))
+                        opacity=0.2))
     return out
 
 
@@ -383,7 +410,7 @@ def face_ops(p, T: dict, sc: dict, cam_r, s: float) -> Tuple[list, List[dict]]:
             if sp.get("fill") is None:
                 continue
             P = sp["px"]
-            if sp["vis"].mean() < 0.5:
+            if sp["vis"].mean() < (0.25 if sp["kind"] == "tear" else 0.5):
                 continue
             m = poly_mask(p.H, p.W, P)
             if sp.get("clip"):
@@ -656,6 +683,9 @@ def _register_parts(p, sc: dict, L: dict) -> None:
         if rgb is None:
             continue
         subj = owners.get(own)
+        if subj is None:
+            d["palette"]["swatches"][rn] = dc.to_hex(rgb)
+            continue
         if rn not in d["parts"]:
             m = L["regions"][rn]
             box = list(coords.px_box_to_units(coords.mask_bbox_px(m), p.W, p.H))

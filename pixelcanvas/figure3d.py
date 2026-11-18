@@ -142,8 +142,8 @@ class Rig:
         Ht = body.Ht
         k = body.k
         sl = 0.86                         # anime limbs are slimmer than the mannequin's
-        self.r_up, self.r_el, self.r_wr = 0.027 * Ht * k * sl, 0.021 * Ht * k * sl, 0.017 * Ht * k * sl
-        self.r_th, self.r_kn, self.r_an = 0.05 * Ht * k * sl, 0.031 * Ht * k * sl, 0.019 * Ht * k * sl
+        self.r_up, self.r_el, self.r_wr = 0.025 * Ht * k * sl, 0.019 * Ht * k * sl, 0.016 * Ht * k * sl
+        self.r_th, self.r_kn, self.r_an = 0.046 * Ht * k * sl, 0.027 * Ht * k * sl, 0.017 * Ht * k * sl
         self.r_neck = 0.021 * Ht * k
         Hd = F["head"]
         self.Hd = Hd
@@ -156,13 +156,13 @@ class Rig:
         self.jaw_rb = 0.075 * h
         C = F["chest"]
         self.chest_c = J["spine"] + C @ [0, 0.56 * body.Lc, 0]
-        self.chest_A = C @ np.diag([0.86 * body.shw, 0.58 * body.Lc, 0.56 * body.shw])
+        self.chest_A = C @ np.diag([0.78 * body.shw, 0.58 * body.Lc, 0.5 * body.shw])
         S = F["spine"]
         self.waist_c = J["spine"]
-        self.waist_A = S @ np.diag([0.6 * body.shw, 0.5 * body.Lw + 0.02 * Ht, 0.47 * body.shw])
+        self.waist_A = S @ np.diag([0.55 * body.shw, 0.5 * body.Lw + 0.02 * Ht, 0.43 * body.shw])
         Pv = F["pelvis"]
         self.pel_c = J["pelvis"] + Pv @ [0, -0.01 * Ht, 0]
-        self.pel_A = Pv @ np.diag([1.38 * body.hipw, 0.075 * Ht, 0.88 * body.hipw])
+        self.pel_A = Pv @ np.diag([1.25 * body.hipw, 0.072 * Ht, 0.82 * body.hipw])
 
     def limb(self, s: str, kind: str):
         """(a, b, ra, rb) of upperarm / forearm / thigh / shin."""
@@ -313,6 +313,7 @@ def face_surface(rig: Rig, xy: np.ndarray, lift: float = 0.004) -> np.ndarray:
     for pr in prims:
         t, _, _ = intersect(pr, O, D)
         best = np.minimum(best, t)
+    face_surface.missed = ~np.isfinite(best)
     best = np.where(np.isfinite(best), best, 1.1 * h)
     return O + D * (best[:, None] - lift * h / 0.25)
 
@@ -355,7 +356,11 @@ def _sleeve(rig: Rig, owner: str, s: str, mat: str, length: str, off: float, loo
     out.append(_P(rcone(a2, end, ra2 + off, cuff), owner, pc, mat))
     if trim:
         u = unit(b2 - a2)
-        out.append(_P(rcone(end - u * 0.03, end, cuff * 1.04, cuff * 1.04), owner, pc + "-cuff", trim))
+        x = unit(np.cross(u, [0, 0, 1.0]) if abs(u[2]) < 0.9 else np.cross(u, [1.0, 0, 0]))
+        z = np.cross(x, u)
+        rr = cuff * 1.03
+        out.append(_P({"t": "cyl", "c": end - u * 0.016, "A": np.stack([x * rr, u * 0.011, z * rr], 1)}, owner,
+                      pc + "-cuff", trim))
     return out
 
 
@@ -421,7 +426,8 @@ def _bow(owner: str, centre, R: np.ndarray, size: float, mat: str, pc: str, tail
     return out
 
 
-def _skirt(rig: Rig, owner: str, mat: str, o: dict, motion: np.ndarray, pc: str, dress: bool = False) -> List[dict]:
+def _skirt(rig: Rig, owner: str, mat: str, o: dict, motion: np.ndarray, pc: str, dress: bool = False,
+           waist_off: float = 0.008) -> List[dict]:
     J, F, b = rig.J, rig.F, rig.b
     style = _opts(o, "style", "flared" if dress else "pleated")
     length = _opts(o, "length", "knee" if dress else "short")
@@ -429,11 +435,11 @@ def _skirt(rig: Rig, owner: str, mat: str, o: dict, motion: np.ndarray, pc: str,
     waist = J["spine"] + S[:, 1] * 0.2 * b.Lw
     down = -Pv[:, 1]
     th = [unit(J[f"knee-{s}"] - J[f"hip-{s}"]) for s in "rl"]
-    L = {"short": b.Lw * 1.2 + 0.42 * b.Lt, "knee": b.Lw * 1.2 + 0.98 * b.Lt,
+    L = {"hip": b.Lw * 1.05 + 0.04 * b.Lt, "short": b.Lw * 1.2 + 0.42 * b.Lt, "knee": b.Lw * 1.2 + 0.98 * b.Lt,
          "long": b.Lw * 1.2 + b.Lt + 0.62 * b.Ls}.get(length, b.Lw + 0.42 * b.Lt)
-    off = 0.008
-    rx = 0.6 * b.shw + off + 0.004
-    rz = 0.47 * b.shw + off + 0.004
+    off = waist_off
+    rx = float(np.linalg.norm(rig.waist_A[:, 0])) + off + 0.004
+    rz = float(np.linalg.norm(rig.waist_A[:, 2])) + off + 0.004
     samples = [(rig.pel_c + rig.pel_A @ np.array([math.cos(a) * math.cos(e), math.sin(e), math.sin(a) * math.cos(e)]),
                 0.012) for a in np.linspace(0, 2 * math.pi, 16, endpoint=False) for e in (-0.6, -0.2, 0.2)]
     for s in "rl":
@@ -443,8 +449,8 @@ def _skirt(rig: Rig, owner: str, mat: str, o: dict, motion: np.ndarray, pc: str,
         a_, b_, ra, rb = rig.limb(s, "shin")
         for f in np.linspace(0.0, 0.6, 4):
             samples.append((a_ + (b_ - a_) * f, ra + (rb - ra) * f + 0.012))
-    base = {"pleated": 0.9, "flared": 1.25, "pencil": 0.25}.get(style, 0.9)
-    cap = 1.9
+    base = {"pleated": 0.9, "flared": 1.25, "pencil": 0.2}.get(style, 0.9)
+    cap = 0.45 if style == "pencil" else 1.9          # a jacket's hem is lifted by a knee, it does not flare
 
     def solve(axis):
         R_ = _frame(Pv[:, 0], -axis)
@@ -539,7 +545,7 @@ def garment_prims(rig: Rig, owner: str, piece: str, o: dict, motion: np.ndarray,
         if piece == "dress":
             out += _skirt(rig, owner, mat, o, motion, "dress-skirt", dress=True)
     elif piece in ("blazer", "jacket", "hoodie", "coat"):
-        off = {"blazer": 0.02, "jacket": 0.026, "hoodie": 0.03, "coat": 0.03}[piece]
+        off = {"blazer": 0.016, "jacket": 0.022, "hoodie": 0.026, "coat": 0.026}[piece]
         style = _opts(o, "style", "open" if piece in ("jacket",) else "closed")
         trim = "trim" if piece in ("blazer", "coat") and o.get("trim", True) else None
         if piece == "hoodie":
@@ -549,9 +555,18 @@ def garment_prims(rig: Rig, owner: str, piece: str, o: dict, motion: np.ndarray,
         else:
             wedge = {"chest": [0.62, 0.0, 1.0, -0.15], "waist": [0.0, 0.0, -2, -3], "pelvis": [0.0, 0.0, -2, -3]}
         out += _torso_shell(rig, owner, mat, off, piece, wedge=wedge, trim_mat=trim,
-                            trim_w=0.09 if trim else 0.0, hem=None if piece == "coat" else -0.35, chest_scale=1.03)
+                            trim_w=0.07 if trim else 0.0, hem=None, chest_scale=1.0)
+        if piece != "coat":
+            hem = _skirt(rig, owner, mat, {"length": "hip", "style": "pencil"}, motion * 0.3, piece,
+                         waist_off=off)[0]
+            if wedge is not None:
+                hem["clip"] = {"wedge": [wedge["pelvis"][0], wedge["pelvis"][1], 0.1, -1.5]}
+                if trim:
+                    hem["clip"]["trim"] = 0.045
+                    hem["trim_mat"] = trim
+            out.append(hem)
         for s in "rl":
-            out += _sleeve(rig, owner, s, mat, "long", off * 0.8, loose or piece == "hoodie", trim,
+            out += _sleeve(rig, owner, s, mat, "long", off * 0.55, loose or piece == "hoodie", trim,
                            f"{piece}-sleeve-{s}")
         if piece == "hoodie":
             N = F["chest"]
@@ -702,11 +717,11 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     cap["A"] = rig.cr_A * np.array([1.1, 1.08, 1.1])[None, :]
     out.append(cap)
     wind = hair.get("wind")
-    w = np.array([wind[0], -wind[1], 0.0]) if wind is not None else -motion * 0.9
-    gscale = 0.35 if floating else 1.0
+    w = np.array([wind[0], -wind[1], 0.0]) if wind is not None else -motion * 1.5
+    gscale = 0.6 if floating else 1.0
     gvec = np.array([0, -1.0, 0]) * gscale + w * 0.8
     if floating:
-        gvec = gvec + np.array([0, 0.25, 0]) + Hd[:, 2] * -0.1
+        gvec = gvec + np.array([0, 0.12, 0]) + Hd[:, 2] * -0.15
     # colliders: the head (with the cap), neck, chest, shoulders, back
     col = [(rig.cr_c, rig.cr_A * 1.13), (J["neck"], F["neck"] @ np.diag([rig.r_neck * 1.5] * 3))]
     c2, A2 = _ell_from(rig.chest_c, rig.chest_A, 1.0, 0.03)
@@ -735,7 +750,8 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
                 sweep = 0.5 if ph > 0 else -0.5
             down = -Hd[:, 1]
             d0 = unit(Hd[:, 2] * 0.9 + down * 0.4 + Hd[:, 0] * sweep)
-            length = 0.6 * h * (1.0 if bangs == "blunt" else (0.8 + 0.35 * (i / (n - 1))))
+            # blunt bangs end at the brows; side and parted bangs reach a little lower on one side
+            length = 0.4 * h * (1.0 if bangs == "blunt" else (0.85 + 0.4 * (i / (n - 1))))
             if style == "spiky":
                 length *= 0.85
             out += _lock(rig, owner, k, root, d0, length, r0 * 1.2, gvec * 0.6 + Hd[:, 0] * sweep * 0.5, col,
@@ -750,15 +766,16 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             k += 1
     # the back and the crown
     if style in ("long", "medium", "bob", "short", "spiky"):
-        rows = [(0.6, 11, 0.82), (0.1, 13, 1.0), (-0.35, 9, 0.97)] if style in ("long", "medium", "bob") else             [(0.7, 7, 1.0), (0.2, 8, 1.0)]
+        rows = [(0.6, 11, 0.82), (0.1, 13, 1.0), (-0.35, 9, 0.97)] if style in ("long", "medium", "bob") else \
+            [(0.75, 9, 1.0), (0.3, 11, 1.0), (-0.15, 9, 0.9)]
         for y, n, lf in rows:
             for i in range(n):
                 ph = (1.25 + (2 * math.pi - 2.5) * i / (n - 1))
                 root, nrm = _cap_point(rig, ph, y, 1.06)
                 if style == "spiky":
-                    d0 = unit(nrm * 1.0 + Hd[:, 1] * 0.5 - Hd[:, 2] * 0.3)
-                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.85 + 0.3 * ((i * 7) % 5) / 4), r0 * 1.15,
-                                 gvec * 0.25, col, nseg=3, stiff=0.85, tip=0.05)
+                    d0 = unit(nrm * 1.0 + Hd[:, 1] * 0.15 - Hd[:, 2] * 0.45)
+                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.95 + 0.4 * ((i * 7) % 5) / 4), r0 * 0.95,
+                                 gvec * 0.35, col, nseg=3, stiff=0.85, tip=0.03)
                 else:
                     d0 = unit(nrm * 0.5 - Hd[:, 1] * 0.8)
                     curl = None
@@ -772,9 +789,9 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             for i in range(5):
                 ph = -0.9 + 1.8 * i / 4
                 root, nrm = _cap_point(rig, ph, 0.92, 1.04)
-                d0 = unit(nrm + (Hd[:, 2] * 0.6 if style == "short" else Hd[:, 1] * 0.8))
-                out += _lock(rig, owner, k, root, d0, 0.45 * h, r0, gvec * (0.4 if style == "short" else 0.15), col,
-                             nseg=3, stiff=0.75, tip=0.05)
+                d0 = unit(nrm + (Hd[:, 2] * 0.6 if style == "short" else Hd[:, 1] * 0.2 - Hd[:, 2] * 0.5))
+                out += _lock(rig, owner, k, root, d0, 0.45 * h, r0 * 0.9, gvec * (0.4 if style == "short" else 0.15),
+                             col, nseg=3, stiff=0.75, tip=0.04)
                 k += 1
     else:
         # tied styles: the hair is pulled to the tie, a short layer stays round the nape
@@ -803,14 +820,18 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
                                             0.06 * h)), owner, f"braid{i}", "hair", seam="always", group="hair"))
                     p = q
                 continue
-            # a bundle of locks from the tie
+            # a bundle of locks from the tie, fanned a little so the tail is full
             side = unit(nrm * np.array([1, 0, 1.0]))
-            for j in range(6):
-                a = 2 * math.pi * j / 6
-                off = (math.cos(a) * Hd[:, 0] + math.sin(a) * Hd[:, 2]) * 0.05 * h
-                d0 = unit(nrm * (1.0 if style == "twintails" else 0.7) + side * 0.3 - Hd[:, 1] * 0.2)
-                out += _lock(rig, owner, k, root + off, d0, L * h * (0.9 + 0.1 * ((j * 3) % 4) / 3), r0 * 1.35,
-                             gvec, col, nseg=8, stiff=0.5, tip=0.1)
+            for j in range(7):
+                a = 2 * math.pi * j / 7
+                off = (math.cos(a) * Hd[:, 0] + math.sin(a) * Hd[:, 2]) * 0.06 * h
+                fan = (math.cos(a) * Hd[:, 2] + math.sin(a) * Hd[:, 1]) * 0.18
+                d0 = unit(nrm * (0.75 if style == "twintails" else 0.5) + side * 0.2 - Hd[:, 1] * 0.55 + fan)
+
+                def wave(i_, ph=a, sd=side):
+                    return sd * 0.12 * math.sin(0.9 * i_ + ph) if floating else 0
+                out += _lock(rig, owner, k, root + off, d0, L * h * (0.86 + 0.14 * ((j * 3) % 4) / 3), r0 * 1.3,
+                             gvec, col, nseg=9, stiff=0.42, tip=0.12, curl=wave)
                 k += 1
             out.append(_P(ell_prim(root, _frame(Hd[:, 0], nrm), (0.07 * h, 0.05 * h, 0.07 * h)), owner,
                           f"tie{len(out)}", "hair-tie"))

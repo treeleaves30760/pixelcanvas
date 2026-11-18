@@ -361,8 +361,11 @@ def toon(cam: Camera, prims: List[dict], light_screen, bands: int = 2, figure_ow
     if shadows:
         figs = [o for o in figure_owners if o in oi]
         only_one = len(figs) == 1 and all(pr.get("owner") == figs[0] for pr in prims)
-        glob = shadow_map(prims, Lw, 900 if only_one else 1400)
-        sh = in_shadow(glob, Pw, Nw, 0.008 if only_one else 0.03)
+        # figures and props cast shadows (on themselves, each other and the blocks); blocks do not: a ceiling or a
+        # wall would put a whole room in shadow, which a cel picture does not draw
+        casters = [pr for pr in prims if pr.get("caster", True)]
+        glob = shadow_map(casters, Lw, 900 if only_one else 1400)
+        sh = in_shadow(glob, Pw, Nw, 0.008 if only_one else 0.015)
         own_px = own[ys, xs]
         for o in ([] if only_one else figs):
             fp = [pr for pr in prims if pr.get("owner") == o]
@@ -374,7 +377,22 @@ def toon(cam: Camera, prims: List[dict], light_screen, bands: int = 2, figure_ow
     tone = np.zeros((H, W), np.uint8)
     # skin keeps most of its light (an anime face is shaded sparingly)
     skin_m = np.array([str(pr.get("mat")).split(":")[-1] == "skin" for pr in prims] + [False])[ids]
-    t1 = np.where(skin_m, -0.12, 0.08)
+    t1 = np.where(skin_m, -0.25, 0.08)
+    if rings and cast.any():
+        # on a face, only the hair's own shadow under the hairline (an anime face is not crossed by big shadows)
+        head_m = np.array([pr.get("piece") in ("head", "ear-r", "ear-l") for pr in prims] + [False])[ids]
+        hair_all = np.array([str(pr.get("mat")).split(":")[-1] == "hair" for pr in prims] + [False])[ids]
+        for o, (c, Hd, h) in rings.items():
+            if o not in oi:
+                continue
+            fm = head_m & (own == oi[o])
+            if not fm.any():
+                continue
+            zc = float(np.median(R["depth"][fm]))
+            reach = max(2.0, cam.f * 0.09 * h / max(zc, 1e-3))
+            hm = (hair_all & (own == oi[o])).astype(np.uint8)
+            dist = cv2.distanceTransform(1 - hm, cv2.DIST_L2, 3)
+            cast[fm & (dist > reach)] = False
     lit = lam > t1
     tone[hit] = 1
     tone[hit & (~lit | cast)] = 2

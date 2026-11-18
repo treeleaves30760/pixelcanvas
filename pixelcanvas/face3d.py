@@ -75,13 +75,17 @@ def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34)) ->
             out.append({"name": f"eye-{s}", "pts": _curve(vee[:2], 6).tolist() + _curve(vee[1:], 6)[1:].tolist(),
                         "closed": False, "weight": 2.4, "taper": "both", "kind": "lash", "rgb": lash_rgb})
             # tears: a stream from the eye down the cheek, and drops thrown off sideways
-            tear = np.vstack([_curve([P(-0.05, -0.35), P(0.08, -0.9), P(0.0, -1.7), P(0.12, -2.4)]),
-                              _curve([P(0.42, -2.4), P(0.36, -1.7), P(0.42, -0.9), P(0.3, -0.35)])])
+            tear = np.vstack([_curve([P(0.0, -0.3), P(0.1, -0.75), P(0.04, -1.25), P(0.14, -1.7)]),
+                              _curve([P(0.36, -1.7), P(0.3, -1.25), P(0.36, -0.75), P(0.26, -0.3)])])
             out.append({"name": f"tear-{s}", "pts": tear, "closed": True, "weight": 0.7, "taper": "none",
-                        "kind": "tear", "fill": (190, 228, 255)})
-            for k, (u, v, r) in enumerate(((1.05, 0.2, 0.09), (1.4, -0.25, 0.07))):
-                out.append({"name": f"drop-{s}{k}", "pts": _ell(*P(u, v), r * W, r * W * 1.3, 16), "closed": True,
-                            "weight": 0.6, "taper": "none", "kind": "tear", "fill": (190, 228, 255)})
+                        "kind": "tear", "fill": (190, 228, 255), "rgb": (84, 140, 196)})
+            # drops thrown off beside the head (in the air, not on the face)
+            for k, (x, y, r) in enumerate(((0.55, -0.02, 0.028), (0.68, -0.14, 0.02))):
+                cx_, cy_ = sg * x, y
+                drop = np.vstack([_ell(cx_, cy_ - 0.2 * r, r, r, 14, math.pi, 2 * math.pi),
+                                  [[cx_ + sg * 0.0, cy_ + 1.6 * r]]])
+                out.append({"name": f"drop-{s}{k}", "pts": drop, "closed": True, "weight": 0.6, "taper": "none",
+                            "kind": "tear", "fill": (190, 228, 255), "float": True, "rgb": (84, 140, 196)})
             continue
         if e == "sleepy" or opn < 0.5:
             out.append({"name": f"eye-{s}", "pts": _curve([P(-0.5, -0.05), P(0.0, -0.2), P(0.5, -0.02)]),
@@ -157,9 +161,10 @@ def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34)) ->
             out.append({"name": f"blush-{s}", "pts": _ell(sg * 0.2, -0.22, 0.075, 0.035, 24), "closed": True,
                         "weight": 0.0, "taper": "none", "kind": "blush", "fill": (240, 140, 150), "alpha": 0.4})
     if e == "panicked":
-        out.append({"name": "sweat", "pts": np.vstack([_curve([[0.36, 0.25], [0.33, 0.1], [0.36, 0.05], [0.39, 0.1],
-                                                               [0.36, 0.25]])]),
-                    "closed": True, "weight": 0.7, "taper": "none", "kind": "tear", "fill": (190, 228, 255)})
+        out.append({"name": "sweat", "pts": np.vstack([_curve([[0.5, 0.3], [0.47, 0.15], [0.5, 0.1], [0.53, 0.15],
+                                                               [0.5, 0.3]])]),
+                    "closed": True, "weight": 0.7, "taper": "none", "kind": "tear", "fill": (190, 228, 255),
+                    "float": True})
     return out
 
 
@@ -171,9 +176,19 @@ def project(rig, cam, specs: List[dict], depth: Optional[np.ndarray] = None, dep
     out = []
     for sp in specs:
         P = np.asarray(sp["pts"], float)
+        if sp.get("float"):
+            # in the air beside the head, in its front plane
+            Wp = rig.J["head"] + (P[:, 0:1] * rig.h) * rig.Hd[:, 0] + (P[:, 1:2] * rig.h) * rig.Hd[:, 1] + \
+                0.3 * rig.h * rig.Hd[:, 2]
+            px, z = cam.project(Wp)
+            q = dict(sp)
+            q["px"], q["vis"] = px, np.ones(len(P), bool)
+            out.append(q)
+            continue
         Wp = face_surface(rig, P)
+        missed = face_surface.missed.copy()
         px, z = cam.project(Wp)
-        vis = np.ones(len(P), bool)
+        vis = ~missed
         if depth is not None and sp["kind"] not in ("brow",):
             H, W = depth.shape
             xi = np.clip((px[:, 0] * depth_scale).astype(int), 0, W - 1)
