@@ -236,3 +236,49 @@ def test_a_band_behind_survives_a_re_render(draw):
     px = flat[was]
     assert was.sum() > 50
     assert (px[:, 3] > 200).mean() > 0.95 and (np.abs(px[:, 2].astype(int) - 0xf0) < 30).mean() > 0.9
+
+
+def test_surface_and_polish_leave_a_cel_render_clean(draw):
+    _scene(draw)
+    ok(draw("dress", "boy", "blazer,shorts", "--color", "navy"))
+    ok(draw("render"))
+    ok(draw("face", "boy", "--expression", "crying"))
+    from pixelcanvas.project import Project
+    p = Project("w.pixelcanvas")
+    rm = np.zeros((p.H, p.W), bool)
+    for n, info in p.state["regions"].items():
+        if str(info.get("how", "")).startswith("3D render"):
+            rm |= p.region_mask(n)
+    before = p.composite_u8("export").astype(int)
+    # the render shaded the figures and cast the hair's shadow; the 3D face brought the blush
+    from pixelcanvas import workflow_draw
+    q = Project("w.pixelcanvas")
+    for stg in ("shade", "detail"):
+        q.state["stage"] = stg
+        workflow_draw.refresh(q)                    # in memory only: the project on disk is unchanged
+    for t in q.state["todo"]:
+        if (t["stage"] == "shade" and str(t.get("region", "")).startswith("boy-")) or t.get("key") == "cast" or \
+                (t["stage"] == "detail" and t.get("key") == "detail" and t.get("region") == "face"):
+            assert t["status"] == "done", t
+    ok(draw("surface", "auto"))
+    st = state()
+    from pixelcanvas.draw_surface import surface_targets
+    assert all(n in st["draw"]["surface"] for n in surface_targets(Project("w.pixelcanvas")))
+    surf = _alpha("surface")[..., 3] if __import__("os").path.exists("w.pixelcanvas/layers/surface.png") else None
+    assert surf is None or (surf[rm] > 8).mean() < 0.002            # no texture on the rendered areas
+    tears = [r for r in st["draw"]["lines"] if r.get("face3d") and "tear" in r["src"] and r.get("rgb_fixed")]
+    assert tears and all(r["auto_rgb"] == [84, 140, 196] for r in tears)   # tears stay blue
+    ok(draw("polish"))
+    after = Project("w.pixelcanvas").composite_u8("export").astype(int)
+    line = _alpha("line")[..., 3] > 128
+    # the render keeps its colours: a light grade, no muddied lines
+    assert np.abs(after - before)[rm].mean() < 12
+    assert np.abs(after - before)[rm & line].mean() < 12
+
+
+def test_export_at_blockout_shows_the_3d_blockout(draw):
+    _scene(draw)
+    ok(draw("export", "blockout.png"))
+    from PIL import Image
+    img = np.asarray(Image.open("blockout.png").convert("RGB")).astype(int)
+    assert img.std() > 8 and (img.sum(-1) < 600).mean() > 0.01        # the figures and the floor show

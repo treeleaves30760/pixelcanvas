@@ -451,7 +451,7 @@ def recolour(p, under: np.ndarray) -> int:
     n_changed = 0
     masks: Dict[str, np.ndarray] = {}
     for rec in d["lines"]:
-        if rec.get("color") not in (None, "line"):
+        if rec.get("color") not in (None, "line") or rec.get("rgb_fixed"):
             continue
         path = record_path(p, rec)
         if len(path) < 3:

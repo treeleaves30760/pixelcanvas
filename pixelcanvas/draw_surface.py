@@ -1254,6 +1254,9 @@ def cmd_surface(ctx, args: List[str]):
         if not _is_background(p, n):
             regions_all |= p.region_mask(n)
 
+    from . import draw_render
+    clean_render = auto and not a.get("material") and draw_render.keeps_clean(p)
+
     def build_all():
         from .ops import Fill, mask_to_rle
         out = []
@@ -1263,6 +1266,12 @@ def cmd_surface(ctx, args: List[str]):
             old = p.layer(layer, create=False)
             if old is not None and (old[..., 3][m] > 0.02).any():
                 ops.append(Fill(mask_rle=mask_to_rle(m), color=(0, 0, 0), erase=True, feather=1.0))
+            if clean_render and draw_render.is_render_region(p, n):
+                # a cel render is finished as it comes: its flats, shade and lines take no texture
+                groups.append((ops, m))
+                infos.append((n, mat, {"marks": 0, "render": True}))
+                out += ops
+                continue
             built, info = build(p, n, m, mat, focus=_focus(p, n), light=light, base_img=under,
                                 others=regions_all & ~m, curves_u=cv, angle=angle, amount=amount, scale=scale,
                                 have_fine=0.0 if _is_background(p, n) else have.get(n, 0.0), group=group, background=_is_background(p, n),
@@ -1279,7 +1288,12 @@ def cmd_surface(ctx, args: List[str]):
             prev_o = dict((sd.get(n, {}) or {}).get("over") or {}) if not a.get("material") else {}
             prev_o.update(over)
             sd[n] = {"material": mat["name"], "amount": amount, "over": prev_o or None}
-        lines = ["; ".join(f"{n} {mat['name']} ({info.get('marks', 0)} marks)" for n, mat, info in infos)[:400]]
+        kept = [n for n, _, info in infos if info.get("render")]
+        infos_t = [x for x in infos if not x[2].get("render")]
+        lines = ["; ".join(f"{n} {mat['name']} ({info.get('marks', 0)} marks)" for n, mat, info in infos_t)[:400]]
+        if kept:
+            lines.append(f"{len(kept)} rendered areas kept clean (cel render: flats, shade and lines as rendered; "
+                         "texture one on purpose with  pixelcanvas surface <area> --material <kind>)")
         if auto:
             lines.append("materials chosen from the names: change one with  pixelcanvas surface <area> --material <kind>  "
                          f"({', '.join(MATERIALS)})")

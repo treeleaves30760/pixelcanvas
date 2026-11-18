@@ -57,6 +57,25 @@ def _load_layer_file(path: Path) -> Optional[np.ndarray]:
     return a if (a[..., 3] > 0).any() else None
 
 
+def blockout_only(p) -> bool:
+    """Only the sketch layer holds paint (a 3D blockout, a construction): the export shows it instead of a blank."""
+    has_sketch = False
+    for e in p.state["layers"]:
+        arr = p.layer(e["name"], create=False)
+        if e["name"] == "paper" or arr is None or not (arr[..., 3] > 0.004).any():
+            continue
+        if e["name"] != "sketch":
+            return False
+        has_sketch = True
+    return has_sketch
+
+
+def blockout_picture(p) -> np.ndarray:
+    """The sketch layer at full strength over the paper (uint8 RGB)."""
+    lays = [dict(e, visible=True, opacity=1.0) if e["name"] == "sketch" else e for e in p.state["layers"]]
+    return compose.to_uint8(compose.composite(lays, p.layers_dict(), p.H, p.W, background=p.background()))
+
+
 def _sketch_shown(state: dict) -> bool:
     e = next((x for x in state["layers"] if x["name"] == "sketch"), None)
     if e is None or not e.get("visible", True):
@@ -809,7 +828,8 @@ def cmd_export(ctx, args: List[str]):
         if not stages_dir.is_absolute():
             stages_dir = Path(os.getcwd()) / stages_dir
     f.parent.mkdir(parents=True, exist_ok=True)
-    img = p.composite_u8("export")
+    blockout = blockout_only(p)
+    img = blockout_picture(p) if blockout else p.composite_u8("export")
     rep = Report(mutated=True)
     notes: List[str] = []
     from .project import save_png
@@ -820,7 +840,8 @@ def cmd_export(ctx, args: List[str]):
             (", then the finishing sharpen" if p.state.get("deliver_filter") == "sharpen" else "") + ")"
     else:
         size_words = f"{p.W}x{p.H}"
-    rep_lines = [f"exported {p.rel(f)}  {size_words}  (sketch layer left out)"]
+    rep_lines = [f"exported {p.rel(f)}  {size_words}  " + ("(the blockout: only the sketch layer is drawn so far)"
+                                                           if blockout else "(sketch layer left out)")]
     if want_psd:
         pf = f.with_suffix(".psd")
         n = write_psd(p, pf)

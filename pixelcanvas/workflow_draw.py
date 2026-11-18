@@ -545,6 +545,16 @@ def refresh(p) -> List[int]:
         if r and str(r).startswith("eye") and subj_r in rigged_subjects(st) and k in ("line", "detail", "shade"):
             fig = next(el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == subj_r)
             return bool((fig.get("look") or {}).get("face")) and bool(d.get("render"))
+        if d.get("render") and subj_r in rigged_subjects(st) and r in st.get("regions", {}) and \
+                str(st["regions"][r].get("how", "")).startswith("3D render"):
+            if stage == "shade" and k == "shade":
+                return True             # shaded by the render (a part turned to the light has no shadow shape)
+            if stage == "detail" and k == "detail" and r in ("face", "head"):
+                fig = next(el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == subj_r)
+                return bool((fig.get("look") or {}).get("face"))    # blush and shine come with the 3D face
+        if stage == "shade" and k == "cast" and d.get("render") and any(
+                "hair" in n and v.get("of") in rigged_subjects(st) for n, v in d.get("parts", {}).items()):
+            return True                 # the render casts the hair's shadow on the face from the light
         if k == "face":
             from .draw_checks import face_missing, head_elements
             els = [el for el in head_elements(p) if el.get("subject") == d.get("parts", {}).get(r, {}).get("of")]

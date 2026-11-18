@@ -87,6 +87,31 @@ def _scene_key(p, line: float, bands: int, light) -> str:
                                    sort_keys=True, default=str).encode()).hexdigest()
 
 
+def render_mask(p) -> np.ndarray:
+    """The areas the 3D render painted (figures, garments, hair, faces and blocks); empty when nothing is rendered."""
+    m = np.zeros((p.H, p.W), bool)
+    if not dc.dstate(p).get("render"):
+        return m
+    for n, info in p.state.get("regions", {}).items():
+        if str(info.get("how", "")).startswith("3D render"):
+            try:
+                m |= p.region_mask(n)
+            except Exception:  # noqa: BLE001
+                continue
+    return m
+
+
+def is_render_region(p, name: str) -> bool:
+    return bool(dc.dstate(p).get("render")) and         str(p.state.get("regions", {}).get(name, {}).get("how", "")).startswith("3D render")
+
+
+def keeps_clean(p) -> bool:
+    """A rendered cel or soft picture keeps its rendered areas as the render made them: no surface texture,
+    no smoothing or softening by polish."""
+    from .draw_surface import style_mode
+    return bool(dc.dstate(p).get("render")) and style_mode(p) != "paint"
+
+
 def is_stale(p) -> bool:
     rs = render_state(p)
     if not rs:
@@ -627,6 +652,7 @@ def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, li
             rec["even"] = True
             if fl.get("rgb"):
                 rec["auto_rgb"] = [int(v) for v in fl["rgb"]]
+                rec["rgb_fixed"] = True         # a tear keeps its blue: line recolouring leaves it
             d["lines"].append(rec)
         dc.owned_write(p, "line", d["lines"], draw_line.render_ops)
         # flat and shade

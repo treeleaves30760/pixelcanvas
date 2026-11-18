@@ -322,8 +322,13 @@ def cmd_polish(ctx, args: List[str]):
     on = {k: not a.get(f"no-{k}") for k in PARTS}
     if not any(on.values()):
         raise UsageError("every part is off: leave at least one of " + ", ".join(PARTS), u)
-    amt_grade = cli._num(a, "grade", 0.6, 0.0, 1.0, ctx.notes, u)
-    amt_depth = cli._num(a, "depth", 0.6, 0.0, 1.0, ctx.notes, u)
+    from . import draw_render
+    # a rendered cel picture: its areas stay as rendered (no smoothing, no softening, its line colours kept),
+    # the grade and the air are light
+    rm = draw_render.render_mask(p) if draw_render.keeps_clean(p) else None
+    light_amt = 0.3 if rm is not None and rm.any() else 0.6
+    amt_grade = cli._num(a, "grade", light_amt, 0.0, 1.0, ctx.notes, u)
+    amt_depth = cli._num(a, "depth", light_amt, 0.0, 1.0, ctx.notes, u)
     amt_lines = cli._num(a, "lines", 0.6, 0.0, 1.0, ctx.notes, u)
     amt_clean = cli._num(a, "clean", 0.5, 0.0, 1.0, ctx.notes, u)
     soft_default = 0.6 if soft_style(p) else 0.0
@@ -341,11 +346,17 @@ def cmd_polish(ctx, args: List[str]):
         protect |= line_a > 0.15
     if text_arr is not None:
         protect |= text_arr[..., 3] > 0.1
+    if rm is not None and rm.any():
+        protect |= rm
+        lines_out.append(f"render: {rm.mean() * 100:.0f}% of the canvas is the 3D render: kept clean (no smoothing, "
+                         "softening or line recolouring there; light grade and air)")
 
     if on["strays"] and line_a is not None:
         sm, n = strays_mask(p, line_a)
         sp, n2 = spur_mask(p, line_a)
         sm = sm | sp
+        if rm is not None:
+            sm &= ~rm                      # the render's own lines (tears, lashes) are not strays
         if n or n2:
             filled = _fill_colour_under(img, sm)
             img = np.where(sm[..., None], filled, img)
@@ -359,7 +370,7 @@ def cmd_polish(ctx, args: List[str]):
         lines_out.append(f"clean: streaks and patches smoothed inside {nr} colour areas (amount {amt_clean:g}; "
                          "edges, lines and lettering kept)")
     if on["lines"] and line_a is not None and amt_lines > 0:
-        img, share = coloured_lines(img, line_a, amt_lines)
+        img, share = coloured_lines(img, line_a if rm is None else np.where(rm, 0.0, line_a), amt_lines)
         lines_out.append(f"lines: line art coloured from the fills it borders ({share * 100:.1f}% of the canvas), "
                          f"strength {amt_lines:g}")
     elif on["lines"]:
