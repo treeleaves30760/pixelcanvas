@@ -86,6 +86,9 @@ class Spec:
     min_pos: int = 0
 
 
+LIST_OPTS = ("plus", "minus", "accent", "regions")   # options that take a list: repeats join with ';'
+
+
 def parse(tokens: List[str], spec: Spec) -> Dict[str, object]:
     import difflib
     out: Dict[str, object] = {}
@@ -125,7 +128,10 @@ def parse(tokens: List[str], spec: Spec) -> Dict[str, object]:
                             re.search(r"[,(\[]\s*$", val):
                         i += 1
                         val += " " + tokens[i]
-                out[key] = val
+                if key in LIST_OPTS and out.get(key) is not None:
+                    out[key] = f"{out[key]};{val}"      # a repeated list option adds to it (--minus face --minus pin)
+                else:
+                    out[key] = val
         else:
             posvals.append(t)
         i += 1
@@ -1335,8 +1341,10 @@ def _region_add(ctx: Ctx, args: List[str]) -> Report:
             mask = filled
     for key, op in (("plus", "|"), ("minus", "-")):
         if a.get(key):
-            val = str(a[key]).strip()
-            items = [val] if coords.looks_like_box(val) else re.split(r"[,\s]+", val)
+            items = []
+            for val in str(a[key]).split(";"):                # repeats of the option
+                val = val.strip()
+                items += [val] if coords.looks_like_box(val) else re.split(r"[,\s]+", val)
             for other in items:
                 if not other:
                     continue

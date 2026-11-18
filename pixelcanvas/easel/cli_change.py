@@ -20,6 +20,10 @@ USAGE = {
     "canvas": 'easel canvas --size 900x1200 --place 60,190,940,930 --color "#f3e9d8"',
     "graphic": 'easel graphic disc 300,280,820,700 --color "#e8644a"',
     "palette map": 'easel palette map --to "#1d2a44,#f3e9d8" --accent "jacket=#e8644a"',
+    "cutout": "easel cutout figure --regions hair,face,coat",
+    "background": "easel background --from lake.easel",
+    "light": 'easel light --tint "#ffb070" --amount 0.2 --rim left',
+    "shadow (setting)": "easel shadow figure --dir left",
 }
 KIND_EXAMPLES = {
     "recolor": 'easel change add recolor hair --to "#5fbf6a"',
@@ -28,6 +32,10 @@ KIND_EXAMPLES = {
     "graphic": 'easel change add graphic disc 300,280,820,700 --color "#e8644a"',
     "text": 'easel change add text "SLOW SUMMER" --box 70,40,930,175 --font display --weight black',
     "shape": 'easel change add shape rect 22,18,978,982 --outline 4 --color "#1d2a44" --layer text',
+    "cutout": "easel change add cutout figure --regions hair,face,coat",
+    "background": "easel change add background",
+    "light": "easel change add light",
+    "shadow": "easel change add shadow figure",
 }
 
 
@@ -144,17 +152,39 @@ def _change_view(ctx, rep, its: List[dict], step: int, tag: str) -> None:
             x0, y0, x1, y1 = (int(v * s) for v in b)
             spots.append(((max(0, x0 - 3), max(0, y0 - 3), min(p.W, x1 + 3), min(p.H, y1 + 3)),
                           f"{it['id']}.{k}"))
+    edge = []
+    for it in its:
+        for k, b in enumerate((it.get("check") or {}).get("edge_boxes") or [], 1):
+            x0, y0, x1, y1 = (int(v * s) for v in b)
+            edge.append(((x0, y0, min(p.W, x1), min(p.H, y1)), f"edge {k}"))
+        if edge:
+            break
     box = coords.mask_bbox_px(union) or (0, 0, p.W, p.H)
-    area = cli._panel_box(p, box)
+    area = cli._panel_box(p, box) if not edge else (0, 0, p.W, p.H)
     a = view.Panel(orig, "ORIGINAL")
     b = view.Panel(tgt, "TARGET (what the stages trace)")
     for pan in (a, b):
         pan.outlines = list(outlines)
         pan.spots = list(spots[:9])
+    b.spots += edge
     img = view.render([a, b], area)
+    if edge:
+        import cv2
+        tiles = []
+        for (x0, y0, x1, y1), lab in edge:
+            crop = tgt[y0:y1, x0:x1]
+            if crop.size:
+                tiles.append(view.Panel(cv2.resize(crop, (300, 300), interpolation=cv2.INTER_CUBIC),
+                                        f"{lab} (about 3x)"))
+        if tiles:
+            close = view.render(tiles, (0, 0, 300, 300))
+            w = max(img.shape[1], close.shape[1])
+            pad = lambda m: np.pad(m, ((0, 0), (0, w - m.shape[1]), (0, 0)), constant_values=255)  # noqa: E731
+            img = np.concatenate([pad(img), pad(close)], axis=0)
     rep.view = cli._save_view(ctx, img, f"{tag}-{step:04d}")
     rep.view_note = ("the original and the target side by side, changed regions outlined"
-                     + (", stray patches boxed (they keep the old colour)" if spots else ""))
+                     + (", stray patches boxed (they keep the old colour)" if spots else "")
+                     + ("; below: the three weakest places of the cut-out's edge, close up" if edge else ""))
 
 
 # ----------------------------------------------------------------------------------------------- change
@@ -503,6 +533,21 @@ def parse_kind(ctx, kind: str, toks: List[str]):
         _graphic_params(p, cli.parse(toks, _graphic_spec()), ctx.notes)
         cmd = _join(["graphic", *toks])
         return cmd, None, None, cmd
+    if kind == "cutout":
+        par = _cutout_params(p, cli.parse(toks, _cutout_spec()))
+        return par["subject"], None, None, _cutout_cmd(par)
+    if kind == "background":
+        if not toks:
+            return "background", None, None, chg.BG_FORMS
+        a = cli.parse(toks, _background_spec())
+        _background_params(p, a, ctx.notes)
+        return "background", None, None, _join(["background", *toks])
+    if kind == "light":
+        _light_params(p, cli.parse(toks, _light_spec()), ctx.notes)
+        return "light", None, None, _join(["light", *toks]) if toks else "easel light --rim auto"
+    if kind == "shadow":
+        _shadow_params(p, cli.parse(toks, _shadow_spec()), ctx.notes)
+        return "shadow", None, None, _join(["shadow", *toks]) if toks else "easel shadow figure"
     if kind == "text":
         a = cli.parse(toks, cli.Spec(KIND_EXAMPLES[kind], ["string*"], TEXT_OPTS, alias={"colour": "color"}))
         if not a.get("string"):
@@ -528,7 +573,7 @@ def _item_for(st: dict, kind: str, key, cmd: str, region=None) -> tuple:
     return it, added
 
 
-def _target_change(ctx, kind: str, key, cmd: str, par: dict, head: str, region=None, extra_files=()):
+def _target_change(ctx, kind: str, key, cmd: str, par: dict, head: str, region=None, extra_files=(), pre=None):
     """Make (or remake) one target change: rebuild the target, report its check, show it."""
     cli = _cli()
     p = ctx.project
@@ -537,6 +582,8 @@ def _target_change(ctx, kind: str, key, cmd: str, par: dict, head: str, region=N
     try:
         it, added = _item_for(p.state, kind, key, cmd, region)
         it["params"] = par
+        if pre is not None:
+            pre()
         _apply_target(ctx, rep)
         p.end_step(step, {"cmd": ctx.cmdline, "change": it["id"]})
     except Exception:
@@ -666,6 +713,213 @@ def cmd_canvas(ctx, args: List[str]):
     return rep
 
 
+# ----------------------------------------------------------------------------------------------- the figure in a new setting
+
+def _names(p, val, example: str) -> List[str]:
+    out: List[str] = []
+    for part in re.split(r"[,;\s]+", str(val or "").strip()):
+        if part:
+            out.append(_region_name(p, part, example))
+    return list(dict.fromkeys(out))
+
+
+def _cutout_spec():
+    cli = _cli()
+    return cli.Spec(USAGE["cutout"], ["subject"], {"regions": "value", "plus": "value", "minus": "value",
+                                                   "ground": "value", "open-corners": "flag"},
+                    alias={"region": "regions", "parts": "regions", "add": "plus", "subtract": "minus"})
+
+
+def _cutout_params(p, a: dict) -> dict:
+    u = USAGE["cutout"]
+    if not a.get("regions"):
+        raise UsageError("cutout needs the figure's regions: --regions hair,face,coat (the plan's regions that make "
+                         "the figure; the rest of the canvas is its ground)", u)
+    ground = str(a.get("ground") or "auto").lower()
+    if ground not in ("auto", "white", "painted"):
+        raise UsageError(f"--ground is auto, white or painted, not {ground!r}", u)
+    return {"subject": regions_clean(a.get("subject") or "figure"), "regions": _names(p, a["regions"], u),
+            "plus": _names(p, a.get("plus"), u), "minus": _names(p, a.get("minus"), u), "ground": ground,
+            "corners": not a.get("open-corners")}
+
+
+def regions_clean(name: str) -> str:
+    from .regions import clean_name
+    return clean_name(str(name))
+
+
+def _cutout_cmd(par: dict) -> str:
+    cmd = f"easel cutout {par['subject']} --regions {','.join(par['regions'])}"
+    for k in ("plus", "minus"):
+        if par.get(k):
+            cmd += f" --{k} {','.join(par[k])}"
+    if par.get("ground", "auto") != "auto":
+        cmd += f" --ground {par['ground']}"
+    if not par.get("corners", True):
+        cmd += " --open-corners"
+    return cmd
+
+
+def cmd_cutout(ctx, args: List[str]):
+    cli = _cli()
+    p = ctx.project
+    if p.ref is None:
+        raise UsageError("cutout cuts a figure out of a reference picture; this project has none", USAGE["cutout"])
+    par = _cutout_params(p, cli.parse(args, _cutout_spec()))
+    st = p.state
+    old = next((x for x in (st.get("changes") or {}).get("items") or [] if x["kind"] == "cutout"), None)
+    key = old.get("key") if old else par["subject"]
+    rep = _target_change(ctx, "cutout", key, _cutout_cmd(par), par,
+                         f"cutout {par['subject']} from {', '.join(par['regions'])}")
+    return rep
+
+
+def _background_spec():
+    cli = _cli()
+    return cli.Spec(USAGE["background"], [], {"from": "value", "gradient": "value", "angle": "value",
+                                              "color": "value"},
+                    alias={"colour": "color", "file": "from", "project": "from", "picture": "from"})
+
+
+def load_background(path: str):
+    """The picture behind the figure: a project folder's finished picture (its export, else its layers at the
+    delivered size) or a picture file."""
+    from pathlib import Path
+    from .project import Project, load_image_rgb
+    u = USAGE["background"]
+    f = Path(path)
+    if not f.exists() and Path(path + ".easel").exists():
+        f = Path(path + ".easel")
+    if not f.exists():
+        raise UsageError(f"no project or picture at {path}", u)
+    if f.is_dir():
+        if not (f / "state.json").exists():
+            raise UsageError(f"{path} is a folder but not an easel project (no state.json)", u)
+        q = Project(f)
+        ex = q.state.get("exported")
+        if ex and Path(ex).exists() and Path(ex).suffix.lower() == ".png":
+            return load_image_rgb(Path(ex)), "project"
+        return np.asarray(_cli().delivered(q, q.composite_u8("export"))), "project"
+    return load_image_rgb(f), "file"
+
+
+def _background_params(p, a: dict, notes: list):
+    cli = _cli()
+    u = USAGE["background"]
+    forms = [k for k in ("from", "gradient", "color") if a.get(k)]
+    if len(forms) != 1:
+        raise UsageError("background takes one of --from <project folder or picture file>, --gradient \"#a,#b\", "
+                         "--color \"#hex\"", u)
+    if a.get("from"):
+        img, kind = load_background(str(a["from"]))
+        return {"source": kind, "from": str(a["from"])}, img
+    if a.get("gradient"):
+        parts = [x for x in re.split(r"[,;\s]+", str(a["gradient"]).strip()) if x]
+        if len(parts) != 2:
+            raise UsageError("--gradient takes two colours: \"#top,#bottom\"", u)
+        return {"source": "gradient", "rgbs": [list(coords.parse_colour(x, u)) for x in parts],
+                "angle": cli._num(a, "angle", 90.0, -360.0, 360.0, notes, u)}, None
+    return {"source": "color", "rgbs": [list(coords.parse_colour(a["color"], u))]}, None
+
+
+def cmd_background(ctx, args: List[str]):
+    from .project import save_png
+    cli = _cli()
+    p = ctx.project
+    if p.ref is None:
+        raise UsageError("background goes behind a figure cut out of a reference picture; this project has none",
+                         USAGE["background"])
+    par, img = _background_params(p, cli.parse(args, _background_spec()), ctx.notes)
+    if img is not None:
+        dw, dh = p.deliver_size()
+        k = min(1.0, 2.0 * max(dw, dh) / max(img.shape[:2]))
+        if k < 1.0:
+            import cv2
+            img = cv2.resize(img, (int(img.shape[1] * k), int(img.shape[0] * k)), interpolation=cv2.INTER_AREA)
+    cmd = _join(["background", *args])
+    # the picture is kept in the project, so the target can be rebuilt without the source
+    return _target_change(ctx, "background", "background", cmd, par,
+                          f"background ({par['source']})",
+                          pre=(lambda: save_png(p.root / "background_src.png", img)) if img is not None else None)
+
+
+def _light_spec():
+    cli = _cli()
+    return cli.Spec(USAGE["light"], ["amount_pos"], {"tint": "value", "amount": "value", "rim": "value",
+                                                  "rim-color": "value", "rim-strength": "value"},
+                    alias={"color": "tint", "colour": "tint", "rim-colour": "rim-color", "key": "tint"})
+
+
+def _light_params(p, a: dict, notes: list) -> dict:
+    cli = _cli()
+    u = USAGE["light"]
+    if a.get("amount_pos") is not None and a.get("amount") is None:
+        a["amount"] = a["amount_pos"]
+    tint = str(a.get("tint") or "auto")
+    rgb = None if tint.lower() == "auto" else list(coords.parse_colour(tint, u))
+    rim = str(a.get("rim") or "auto").lower()
+    if rim not in ("auto", "left", "right", "top", "none", "off"):
+        raise UsageError(f"--rim is left, right, top, none or auto (the background's lighter side), not {rim!r}", u)
+    return {"tint": coords.hex_colour(rgb) if rgb else "auto", "rgb": rgb,
+            "amount": cli._num(a, "amount", 0.2, 0.0, 0.8, notes, u), "rim": rim,
+            "rim_rgb": list(coords.parse_colour(a["rim-color"], u)) if a.get("rim-color") else None,
+            "rim_strength": cli._num(a, "rim-strength", 0.45, 0.0, 1.0, notes, u)}
+
+
+def cmd_light(ctx, args: List[str]):
+    cli = _cli()
+    p = ctx.project
+    if p.ref is None:
+        raise UsageError("light lights a figure cut out of a reference picture; this project has none (in a free "
+                         "picture:  easel plan light 160)", USAGE["light"])
+    par = _light_params(p, cli.parse(args, _light_spec()), ctx.notes)
+    return _target_change(ctx, "light", "light", _join(["light", *args]), par,
+                          f"light: tint {par['tint']} {par['amount']:.2f}, rim {par['rim']}")
+
+
+def _shadow_spec():
+    cli = _cli()
+    return cli.Spec(USAGE["shadow (setting)"], ["subject"], {"ground": "value", "dir": "value",
+                                                              "strength": "value"},
+                    alias={"direction": "dir", "y": "ground"})
+
+
+def _shadow_params(p, a: dict, notes: list) -> dict:
+    cli = _cli()
+    u = USAGE["shadow (setting)"]
+    d = str(a.get("dir") or "auto").lower()
+    if d not in ("auto", "left", "right", "back", "front"):
+        raise UsageError(f"--dir is left, right, back, front or auto (away from the light), not {d!r}", u)
+    g = a.get("ground")
+    return {"subject": regions_clean(a.get("subject") or "figure"), "dir": d,
+            "ground": None if g is None else cli._num(a, "ground", None, 0.0, 1000.0, notes, u),
+            "strength": cli._num(a, "strength", 0.55, 0.05, 0.9, notes, u)}
+
+
+def cmd_scene_shadow(ctx, args: List[str]):
+    cli = _cli()
+    p = ctx.project
+    par = _shadow_params(p, cli.parse(args, _shadow_spec()), ctx.notes)
+    return _target_change(ctx, "shadow", "shadow", _join(["shadow", *args]), par,
+                          f"shadow under {par['subject']}, falling {par['dir']}")
+
+
+def _scene_shadow_here(ctx, args: List[str]) -> bool:
+    """easel shadow is the free-mode shading tool; on a reference project with a cut-out (or with --ground / --dir
+    and no --from) it is the contact shadow."""
+    try:
+        p = ctx.project
+    except Exception:  # noqa: BLE001
+        return False
+    if p.ref is None:
+        return False
+    toks = [str(t).lower() for t in args]
+    if "--from" in toks or "--onto" in toks:
+        return False
+    its = (p.state.get("changes") or {}).get("items") or []
+    return any(x["kind"] in ("cutout", "shadow") for x in its) or "--ground" in toks or "--dir" in toks
+
+
 # ----------------------------------------------------------------------------------------------- finishing changes
 
 def _tick_finish(ctx) -> None:
@@ -681,7 +935,25 @@ def _tick_finish(ctx) -> None:
 
 # ----------------------------------------------------------------------------------------------- install
 
+def _install_shadow(commands: Dict) -> None:
+    """easel shadow: the free-mode tool, and the contact shadow on a reference project with a cut-out."""
+    cur = commands.get("shadow")
+    if getattr(cur, "_scene", False):
+        return
+
+    def shadow_cmd(ctx, args, _orig=cur):
+        if _orig is None or _scene_shadow_here(ctx, args):
+            return cmd_scene_shadow(ctx, args)
+        return _orig(ctx, args)
+    for attr in ("_draw", "_wrapped", "_wrapped_by"):
+        if hasattr(cur, attr):
+            setattr(shadow_cmd, attr, getattr(cur, attr))
+    shadow_cmd._scene = True  # type: ignore[attr-defined]
+    commands["shadow"] = shadow_cmd
+
+
 def install(commands: Dict) -> None:
+    _install_shadow(commands)
     if commands.get("change") is cmd_change:
         return
     commands["change"] = cmd_change
@@ -707,6 +979,9 @@ def install(commands: Dict) -> None:
     commands["view"] = look_cmd
     commands["canvas"] = cmd_canvas
     commands["graphic"] = cmd_graphic
+    commands["cutout"] = cmd_cutout
+    commands["background"] = cmd_background
+    commands["light"] = cmd_light
     palette = commands.get("palette")
     text = commands.get("text")
     shape = commands.get("shape")

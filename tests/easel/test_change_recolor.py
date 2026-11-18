@@ -268,6 +268,39 @@ def test_a_small_region_keeps_its_pixels_under_a_larger_regions_recolor(changed)
     assert np.abs(p.ref_deliver[inner].astype(int) - orig[inner]).max() <= 2       # the feather's edge only
 
 
+def test_a_hair_sliver_inside_a_small_regions_outline_goes_with_the_hair():
+    """A small part's rough outline (a heart beside the hair) also holds a sliver of the hair: the sliver turns with
+    the hair; the heart keeps its colour."""
+    from pixelcanvas.easel import change as chg
+    H, W = 200, 200
+    img = np.full((H, W, 3), 250, np.uint8)
+    img[:, :120] = (230, 150, 190)                                         # pink hair
+    cv2.circle(img, (165, 40), 14, (225, 60, 120), -1)                     # a pink heart beside it
+    hair = np.zeros((H, W), bool)
+    hair[:, :112] = True                                                   # the hair outline misses its edge
+    heart = np.zeros((H, W), bool)
+    heart[18:62, 104:184] = True                                           # the heart's box reaches into the hair
+
+    class P:
+        state = {"regions": {"hair": {"area": 0.6, "how": "box"}, "heart": {"area": 0.01, "how": "box"},
+                             "background": {"area": 0.3, "how": "rest of the canvas"}}}
+
+        def deliver_size(self):
+            return W, H
+    p = P()
+    masks = {"hair": hair | (np.arange(W)[None, :] >= 112) & (np.arange(W)[None, :] < 120) & ~heart,
+             "heart": heart, "background": ~hair}
+    orig_region_d = chg.region_d
+    chg.region_d = lambda _p, r: masks[r]
+    try:
+        held = chg.held_islands(p, "hair", img, masks["hair"] & ~heart)
+    finally:
+        chg.region_d = orig_region_d
+    sliver = heart & (np.arange(W)[None, :] < 120)
+    assert held[sliver].mean() > 0.9                                       # the hair sliver joins the recolour
+    assert not held[30:50, 155:175].any()                                  # the heart stays
+
+
 def ink_girl(w=300, h=360) -> np.ndarray:
     """A monochrome ink drawing: white paper, a grey-hatched hair mass with a dark outline, a white face inside."""
     img = np.full((h, w, 3), 252, np.uint8)

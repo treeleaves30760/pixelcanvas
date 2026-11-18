@@ -28,6 +28,14 @@ KINDS: Dict[str, Dict] = {
                 "words": "map the picture to a few colours by value, with accent regions"},
     "graphic": {"stage": "change", "target": True, "phase": 3,
                 "words": "a flat shape (disc, rectangle, band) on the ground, behind the figure"},
+    "cutout": {"stage": "change", "target": True, "phase": 4,
+               "words": "cut the figure out of its ground (it goes over a new background)"},
+    "background": {"stage": "change", "target": True, "phase": 5,
+                   "words": "a new background behind the cut-out figure"},
+    "light": {"stage": "change", "target": True, "phase": 6,
+              "words": "light the figure by its new setting (key colour, rim light)"},
+    "shadow": {"stage": "change", "target": True, "phase": 7,
+               "words": "a contact shadow on the ground under the figure"},
     "text": {"stage": "finish", "target": False, "phase": 9,
              "words": "lettering over the finished picture"},
     "shape": {"stage": "finish", "target": False, "phase": 9,
@@ -35,7 +43,11 @@ KINDS: Dict[str, Dict] = {
 }
 VALUE_ORDER_MIN = 0.90  # correlation of luminance before / after a palette map (outside accents)
 ACCENT_EDGE_MIN = 0.85  # share of an accent region's edge that lies on line art
-TARGET_FILES = ["ref.png", "ref_deliver.png", "orig.png"]
+TARGET_FILES = ["ref.png", "ref_deliver.png", "orig.png", "background_src.png", "cutout.png"]
+LOST_MAX = 0.10         # share of the figure's named regions the cut-out may leave out
+HALO_MAX = 0.08         # share of the ring inside the silhouette still of the old ground's colour
+BG_FORMS = ('easel background --from <free project folder or picture file>   |   '
+            'easel background --gradient "#a,#b" --angle 90   |   easel background --color "#hex"')
 STAGE_LAYERS = ("line", "flat", "shade", "paint", "detail")
 HUE_TOL = 15.0          # degrees between the asked hue and the hue reached
 SMALL_REGION = 0.02     # regions under this share of the canvas never give pixels to another region's refine
@@ -146,6 +158,33 @@ def protected(p, name: str, img_d: np.ndarray, band: Optional[float] = None) -> 
     return out
 
 
+def held_islands(p, name: str, img_d: np.ndarray, mask: np.ndarray, band: Optional[float] = None) -> np.ndarray:
+    """Islands of this region's colour that a small region's rough outline holds while this region surrounds them (a
+    sliver of hair inside the outline of a heart beside it): they go with the recolour. A small part bordered by its
+    own pixels (a pupil inside its iris) stays the small part's."""
+    from scipy import ndimage as ndi
+    out = np.zeros(mask.shape, bool)
+    small = small_others(p, name)
+    if not small.any() or not mask.any():
+        return out
+    info = co.colour_info(img_d, mask, band)
+    if info["grey"]:
+        return out
+    mine = co.band_mask(img_d, info["from_h"], info["band"], 6.0, info["L_lo"], info["L_hi"])
+    parts = [region_d(p, r) for r, e in p.state["regions"].items()
+             if r != name and not is_rest(e) and float(e.get("area", 1.0)) < SMALL_REGION]
+    lab, n = ndi.label(small & mine & ~mask)
+    for i in range(1, n + 1):
+        c = lab == i
+        ring = ndi.binary_dilation(c, iterations=2) & ~c
+        if not ring.any() or (ring & mask).sum() < 0.6 * ring.sum():
+            continue
+        # a stray piece of the small part's outline, not the part itself (a badge laid on the hair keeps its pixels)
+        if all(c.sum() < 0.5 * m.sum() for m in parts if (m & c).any()):
+            out |= c
+    return out
+
+
 def sizes(p) -> Tuple[int, int]:
     dw, dh = p.deliver_size()
     reach = max(3, int(round(0.02 * max(dw, dh))))
@@ -154,7 +193,8 @@ def sizes(p) -> Tuple[int, int]:
 
 
 def apply_item(p, img_d: np.ndarray, it: dict, orig: Optional[np.ndarray] = None,
-               taken: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Optional[dict], np.ndarray]:
+               taken: Optional[np.ndarray] = None, scene: Optional[dict] = None
+               ) -> Tuple[np.ndarray, Optional[dict], np.ndarray]:
     """One change on the delivered-size picture: (new picture, its measured check, the pixels it edited). A pixel
     belongs to one change: ``taken`` (edited by an earlier change) is left alone. Stray patches are measured on the
     original (``orig``), as  easel region refine  takes them."""
@@ -164,6 +204,7 @@ def apply_item(p, img_d: np.ndarray, it: dict, orig: Optional[np.ndarray] = None
         # a pixel the region shares with another one stays that region's when it is of its colour (a face under a
         # rough hair outline); small parts keep all theirs
         mask = region_d(p, it["region"]) & ~protected(p, it["region"], base0, par.get("band"))
+        mask |= held_islands(p, it["region"], base0, mask, par.get("band"))
         if taken is not None:
             mask = mask & ~taken
         rgb = tuple(par["rgb"])
@@ -214,6 +255,149 @@ def apply_item(p, img_d: np.ndarray, it: dict, orig: Optional[np.ndarray] = None
         check = {"drawn_px": info["drawn"], "box_share": round(info["box_share"], 3),
                  "behind_px": info["held_back"]}
         return out, check, np.zeros(img_d.shape[:2], bool)
+    if it["kind"] in ("cutout", "background", "light", "shadow"):
+        return apply_scene(p, img_d, it, scene if scene is not None else {})
+    raise UsageError(f"unknown change kind {it['kind']!r}", "easel change list")
+
+
+def _named(p, names) -> np.ndarray:
+    dw, dh = p.deliver_size()
+    out = np.zeros((dh, dw), bool)
+    for r in names or []:
+        if r in p.state["regions"]:
+            out |= region_d(p, r)
+    return out
+
+
+def _rest_d(p) -> np.ndarray:
+    dw, dh = p.deliver_size()
+    out = np.zeros((dh, dw), bool)
+    for r, e in p.state["regions"].items():
+        if is_rest(e):
+            out |= region_d(p, r)
+    return out
+
+
+def background_picture(p, par: dict, W: int, H: int) -> Tuple[np.ndarray, float]:
+    from . import change_scene as cs
+    from .project import load_image_rgb
+    if par["source"] in ("project", "file"):
+        f = p.root / "background_src.png"
+        if not f.exists():
+            raise UsageError("the background picture is missing from the project; set it again",
+                             "easel background --from lake.easel")
+        return cs.cover(load_image_rgb(f), W, H)
+    if par["source"] == "gradient":
+        return cs.gradient(W, H, par["rgbs"][0], par["rgbs"][1], par.get("angle", 90.0)), 0.0
+    out = np.empty((H, W, 3), np.uint8)
+    out[:] = np.asarray(par["rgbs"][0], np.uint8)
+    return out, 0.0
+
+
+def apply_scene(p, img_d: np.ndarray, it: dict, scene: dict) -> Tuple[np.ndarray, Optional[dict], np.ndarray]:
+    """The setting changes, in order: the cut-out (the figure's alpha; the picture unchanged), the background behind
+    it, the light on the figure, the contact shadow on the ground. ``scene`` carries fig / alpha / bg between them."""
+    from . import change_scene as cs
+    from .project import save_png
+    par = it.get("params") or {}
+    H, W = img_d.shape[:2]
+    none = np.zeros((H, W), bool)
+    if it["kind"] == "cutout":
+        hint = _named(p, par.get("regions"))
+        plus, minus = _named(p, par.get("plus")), _named(p, par.get("minus"))
+        rest = _rest_d(p) & ~hint
+        white = None
+        gl = cs.ground_colour(img_d, rest)
+        mode = par.get("ground", "auto")
+        if mode == "white" or (mode == "auto" and gl[0] > 88 and float(np.hypot(gl[1], gl[2])) < 8):
+            white = ground_mask(p, img_d) & ~plus
+        alpha, info = cs.cutout(img_d, hint, plus, minus, white, corners=par.get("corners", True))
+        fig, fi = cs.figure_colours(img_d, alpha, gl, hint)
+        spots = cs.edge_spots(img_d, alpha, info["raw"], 3)
+        per = {r: round(float((region_d(p, r) & ~info["solid"]).sum() / max(1, region_d(p, r).sum())), 3)
+               for r in par.get("regions") or [] if r in p.state["regions"]}
+        scene.update({"alpha": alpha, "fig": fig, "orig": img_d, "ground_lab": gl, "subject": par.get("subject"),
+                      "edge_boxes": [list(map(int, s["box"])) for s in spots]})
+        save_png(p.root / "cutout.png", np.clip(alpha * 255 + 0.5, 0, 255).astype(np.uint8))
+        check = {"mode": info["mode"], "share": round(info["share"], 4), "lost": round(info["lost"], 4),
+                 "lost_by": per, "pockets": info["pockets"], "smooth_px": info["smooth_px"],
+                 "ring_ground": fi["ring_ground"],
+                 "spots": [{"box": list(map(int, s["box"])), "contrast": s["contrast"], "moved": s["moved"],
+                            "at": _units(s["box"], W, H)} for s in spots],
+                 "edge_boxes": [list(map(int, s["box"])) for s in spots]}
+        return img_d, check, none
+    if "alpha" not in scene:
+        return img_d, {"no_cutout": True}, none
+    alpha, fig = scene["alpha"], scene["fig"]
+    if it["kind"] == "background":
+        bg, crop = background_picture(p, par, W, H)
+        scene["bg"] = bg
+        out = cs.composite(bg, fig, alpha)
+        h = cs.halo(out, bg, alpha, scene["ground_lab"])
+        side, by = cs.bright_side(bg, alpha)
+        check = {"source": par["source"], "from": par.get("from"), "crop": round(crop, 3),
+                 "shows": round(float(1 - alpha.mean()), 3), "halo": h["halo"], "bright_side": side,
+                 "bright_by": round(by, 1), "edge_boxes": [list(s) for s in (scene.get("edge_boxes") or [])],
+                 "edge_at": [_units(s, W, H) for s in (scene.get("edge_boxes") or [])]}
+        return out, check, alpha > 0.002
+    bg = scene.get("bg")
+    if it["kind"] == "light":
+        if par.get("rgb"):
+            key = np.asarray(par["rgb"], np.float32)
+        elif bg is not None:
+            key = cs.key_colour(bg)
+        else:
+            return img_d, {"no_key": True}, none
+        rim = par.get("rim", "auto")
+        side, by = cs.bright_side(bg, alpha) if bg is not None else (None, 0.0)
+        if rim == "auto":
+            rim = side
+        rim = None if rim in (None, "none", "off") else rim
+        rim_rgb = par.get("rim_rgb") or list(np.clip(np.asarray(key) * 1.05 + 25, 0, 255))
+        cool = None
+        if bg is not None:
+            L = co.to_lab(bg)[..., 0]
+            cool = bg[L <= np.quantile(L, 0.33)].reshape(-1, 3).mean(axis=0)
+        lit = cs.light(fig, alpha, key, float(par.get("amount", 0.2)), rim, rim_rgb,
+                       float(par.get("rim_strength", 0.45)), cool)
+        m = alpha > 0.5
+        lab_k = co.to_lab(np.asarray([[np.clip(key, 0, 255)]], np.uint8))[0, 0]
+
+        def dist(img):
+            mean = co.to_lab(img)[m].mean(axis=0)
+            return float(np.hypot(mean[1] - lab_k[1], mean[2] - lab_k[2]))
+        before, after = dist(fig), dist(lit)
+        scene["fig"] = lit
+        scene["rim"] = rim
+        out = cs.composite(bg, lit, alpha) if bg is not None else cs.composite(img_d, lit, alpha)
+        check = {"key": co_hex(np.clip(key, 0, 255)), "amount": float(par.get("amount", 0.2)),
+                 "dist_before": round(before, 1), "dist_after": round(after, 1), "rim": rim,
+                 "bright_side": side, "bright_by": round(by, 1)}
+        return out, check, alpha > 0.002
+    if it["kind"] == "shadow":
+        c = cs.contact(alpha)
+        if c is None:
+            return img_d, {"contact": False}, none
+        gy = int(round(par["ground"] * H / 1000.0)) if par.get("ground") is not None else c["y"]
+        light_side = scene.get("rim") or cs.shading_side(fig, alpha)[0]
+        d = par.get("dir", "auto")
+        if d == "auto":
+            d = {"left": "right", "right": "left"}.get(light_side, "back")
+        sh, info = cs.contact_shadow(alpha, gy, d, float(par.get("strength", 0.55)))
+        base = bg if bg is not None else img_d
+        dark = np.clip(base.astype(np.float32) * (1 - sh[..., None]), 0, 255).astype(np.uint8)
+        if bg is not None:
+            scene["bg"] = dark
+        out = cs.composite(dark, fig, alpha)
+        L0, L1 = co.to_lab(base)[..., 0], co.to_lab(out)[..., 0]
+        strip = np.zeros((H, W), bool)
+        strip[min(H - 1, gy):min(H, gy + max(2, int(0.01 * H))), c["x0"]:c["x1"] + 1] = True
+        strip &= alpha < 0.5
+        drop = float((L0[strip] - L1[strip]).mean()) if strip.any() else 0.0
+        away = {"left": "right", "right": "left"}.get(light_side)
+        check = {"contact": True, "ground": round(gy * 1000.0 / H), "dir": d, "light_side": light_side,
+                 "drop_L": round(drop, 1), "conflict": bool(away and d in ("left", "right") and d != away)}
+        return out, check, (sh > 0.02) & (alpha < 0.5)
     raise UsageError(f"unknown change kind {it['kind']!r}", "easel change list")
 
 
@@ -252,13 +436,16 @@ def rebuild(p) -> Tuple[np.ndarray, np.ndarray]:
     base = orig_d(p)
     img = base
     taken = np.zeros(base.shape[:2], bool)
+    scene: dict = {}
     order = sorted(cstate(p.state).get("items") or [], key=lambda x: KINDS.get(x["kind"], {}).get("phase", 5))
     for it in order:
         if not it.get("params") or not KINDS.get(it["kind"], {}).get("target"):
             continue
-        img, check, edited = apply_item(p, img, it, base, taken)
+        img, check, edited = apply_item(p, img, it, base, taken, scene)
         taken |= edited
         it["check"] = check
+    if "alpha" not in scene and (p.root / "cutout.png").exists():
+        (p.root / "cutout.png").unlink()
     if p.scale > 1:
         save_png(p.root / "ref_deliver.png", img)
         save_png(p.root / "ref.png", working(p, img))
@@ -316,6 +503,8 @@ def item_unmet(it: dict, state: Optional[dict] = None) -> List[dict]:
                                     f"art (need {100 * ACCENT_EDGE_MIN:.0f}%): the accent spills past its outlines",
                             "fix": f"easel region refine {r} --by lines"})
         return out
+    if it["kind"] in ("cutout", "background", "light", "shadow"):
+        return scene_unmet(it, c, state)
     if it["kind"] == "graphic":
         if c["drawn_px"] == 0:
             out.append({"region": None, "metric": "drawn", "value": 0, "need": 1,
@@ -339,6 +528,71 @@ def item_unmet(it: dict, state: Optional[dict] = None) -> List[dict]:
                         "text": f"change {n}: {r}'s light and shadow drifted {c['shading']:.1f} L (need <= "
                                 f"{SHADING_MAX}): the asked colour is out of reach for some pixels",
                         "fix": cmd_for(it, chroma=round(0.8 * float((it.get("params") or {}).get("chroma", 1.0)), 2))})
+    return out
+
+
+def _units(b, W: int, H: int) -> str:
+    """A delivered-pixel box in 0-1000 units."""
+    return ",".join(str(int(round(v))) for v in (b[0] * 1000.0 / W, b[1] * 1000.0 / H, b[2] * 1000.0 / W,
+                                                  b[3] * 1000.0 / H))
+
+
+def scene_unmet(it: dict, c: dict, state: Optional[dict]) -> List[dict]:
+    n = it["id"]
+    out: List[dict] = []
+    par = it.get("params") or {}
+    its = items(state) if state is not None else []
+    made = lambda k: any(x["kind"] == k and x.get("params") for x in its)  # noqa: E731
+    if c.get("no_cutout"):
+        return [{"region": None, "metric": "cut-out", "value": "none", "need": "made",
+                 "text": f"change {n} ({describe(it)}) needs the figure cut out first",
+                 "fix": "easel cutout figure --regions <the figure's regions, comma separated>"}]
+    if it["kind"] == "cutout":
+        if c["lost"] > LOST_MAX and c.get("lost_by"):
+            worst = max(c["lost_by"], key=lambda r: c["lost_by"][r])
+            out.append({"region": worst, "metric": "figure lost", "value": c["lost"], "need": LOST_MAX,
+                        "text": f"change {n}: the cut left out {100 * c['lost']:.0f}% of the figure's regions (most of "
+                                f"{worst}: {100 * c['lost_by'][worst]:.0f}%)",
+                        "fix": f"{it['cmd']} --plus {worst}"})
+        if state is not None and not any(x["kind"] == "background" for x in its):
+            out.append({"region": None, "metric": "background", "value": "none", "need": "made",
+                        "text": f"change {n}: the figure is cut out; it needs its new background",
+                        "fix": BG_FORMS})
+        return out
+    if it["kind"] == "background":
+        if c.get("halo", 0) > HALO_MAX:
+            at = (c.get("edge_at") or ["0,0,1000,1000"])[0]
+            out.append({"region": None, "metric": "old ground at the edge", "value": c["halo"], "need": HALO_MAX,
+                        "text": f"change {n}: {100 * c['halo']:.0f}% of the figure's edge still shows the old ground; "
+                                f"the worst place is boxed in VIEW (spot 1): take it out of the figure",
+                        "fix": f"easel region add notfigure --box {at}   then  "
+                               f"easel cutout ... --minus notfigure"})
+        return out
+    if it["kind"] == "light":
+        if c.get("no_key"):
+            return [{"region": None, "metric": "key colour", "value": "none", "need": "set",
+                     "text": f"change {n}: the light takes its colour from the background; there is none yet, so "
+                             "give it:  --tint \"#hex\"", "fix": 'easel light --tint "#ffb070"'}]
+        if c.get("rim") and c.get("bright_side") in ("left", "right") and c.get("bright_by", 0) > 0.1 and \
+                c["rim"] in ("left", "right") and c["rim"] != c["bright_side"]:
+            out.append({"region": None, "metric": "rim side", "value": c["rim"], "need": c["bright_side"],
+                        "text": f"change {n}: the rim light is on the {c['rim']} but the background's light sits on "
+                                f"the {c['bright_side']}: the light comes from there",
+                        "fix": f"easel light --rim {c['bright_side']}" +
+                               (f" --tint \"{par['tint']}\"" if par.get("rgb") else "")})
+        return out
+    if it["kind"] == "shadow":
+        if not c.get("contact"):
+            return [{"region": None, "metric": "contact", "value": "none", "need": "ground",
+                     "text": f"change {n}: the figure runs off the bottom of the picture, so it stands on no ground "
+                             "inside it: a contact shadow has no place",
+                     "fix": f"easel change drop {n}"}]
+        if c.get("conflict"):
+            away = {"left": "right", "right": "left"}[c["light_side"]]
+            out.append({"region": None, "metric": "shadow direction", "value": c["dir"], "need": away,
+                        "text": f"change {n}: the shadow falls {c['dir']} toward the light ({c['light_side']}); "
+                                f"shadows fall away from it", "fix": f"easel shadow {par.get('subject') or 'figure'} --dir {away}"})
+        return out
     return out
 
 
@@ -388,6 +642,41 @@ def check_lines(it: dict) -> List[str]:
                 f"{c['behind_px']} px held back behind the figure"]
     if it["kind"] == "canvas":
         return [f"canvas {c.get('size')}: the reference placed at {c.get('box')} (scale {c.get('scale')})"]
+    if c.get("no_cutout"):
+        return [f"change {it['id']}: {describe(it)}: waits for the cut-out"]
+    if it["kind"] == "cutout":
+        pk = "; ".join(f"the {q['corner']} corner closed off by the figure taken as figure ({100 * q['share']:.1f}% of "
+                       "the picture)" for q in c.get("pockets") or [])
+        lines = [f"cut-out ({'white' if c['mode'] == 'white' else 'painted'} ground): the figure is "
+                 f"{100 * c['share']:.1f}% of the picture; {100 * c['lost']:.1f}% of its regions left out (need <= "
+                 f"{100 * LOST_MAX:.0f}%)" + (f"; {pk}" if pk else ""),
+                 f"edge smoothed over {c['smooth_px']:.0f} px, feathered 1 px; old ground in the edge ring "
+                 f"{100 * c['ring_ground']:.1f}% (repainted from the figure next to it)"]
+        for k, s in enumerate(c.get("spots") or [], 1):
+            lines.append(f"edge spot {k} at {s.get('at')}: contrast {s['contrast']:.0f} dE"
+                         f"{' (the cut guesses here)' if s['contrast'] < 12 else ''}, smoothing moved "
+                         f"{100 * s['moved']:.0f}%")
+        return lines
+    if it["kind"] == "background":
+        src = {"project": f"the project {c.get('from')}", "file": f"the picture {c.get('from')}",
+               "gradient": "a gradient", "color": "one colour"}.get(c["source"], c["source"])
+        return [f"background from {src}" + (f" (cropped {100 * c['crop']:.0f}% to fit)" if c.get("crop") else "")
+                + f"; it shows on {100 * c['shows']:.0f}% of the picture; its light sits on the {c['bright_side']}",
+                f"old ground left at the figure's edge: {100 * c['halo']:.1f}% of the edge ring (need <= "
+                f"{100 * HALO_MAX:.0f}%)"]
+    if it["kind"] == "light":
+        if c.get("no_key"):
+            return [f"change {it['id']}: light: no key colour (no background, no --tint)"]
+        return [f"light: figure tinted toward {c['key']} by {c['amount']:.2f}: colour distance to the key "
+                f"{c['dist_before']:.0f} -> {c['dist_after']:.0f}; rim light "
+                + (f"on the {c['rim']}" if c.get("rim") else "off")
+                + (f" (the background's light sits on the {c['bright_side']})" if c.get("bright_side") else "")]
+    if it["kind"] == "shadow":
+        if not c.get("contact"):
+            return [f"shadow: no contact with the ground (the figure runs off the bottom)"]
+        return [f"shadow on the ground at y {c['ground']}, falling {c['dir']}; the ground under the contact is "
+                f"{c['drop_L']:.0f} L darker; light from the {c['light_side']}"
+                + (" (the shadow falls toward it)" if c.get("conflict") else "")]
     if it["kind"] == "recolor":
         r = it["region"]
         light = (f"lightness kept (median {c['from_L']:.0f} -> {c['L_after']:.0f}; asked colour {c['to_L']:.0f}: "
@@ -535,7 +824,7 @@ def next_step(project, phase: str) -> Optional[Tuple[str, str]]:
             if st["stage"] == "finish" and not finish_done(st, it):
                 return f"change {it['id']} ({describe(it)}) goes over the traced picture", it["cmd"]
             continue
-        um = item_unmet(it)
+        um = item_unmet(it, st)
         if um:
             return um[0]["text"], um[0]["fix"]
     stale = st.get("stale") or []
