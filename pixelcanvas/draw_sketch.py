@@ -322,7 +322,17 @@ def head_shapes(p, el) -> List[Tuple[np.ndarray, bool, float]]:
 
 
 def head_guides(p, el) -> Dict[str, Tuple[float, float]]:
-    """Where the face features go (units): eye centres, nose, mouth, from the construction."""
+    """Where the face features go (units): eye centres, nose, mouth, from the construction; on a figure posed in 3D,
+    from its 3D head's projected face frame (so they sit where the turned head has them)."""
+    subj = el.get("subject")
+    if subj and p is not None:
+        from .draw_core import dstate
+        fig = next((f for f in dstate(p)["sketch"] if f.get("kind") == "figure" and f.get("subject") == subj
+                    and f.get("face2d") and f.get("rig") and f.get("rig_joints") == f.get("joints")), None)
+        if fig is not None:
+            ff = fig["face2d"]
+            a, b = sorted((tuple(ff["eye-r"]), tuple(ff["eye-l"])))
+            return {"left eye": a, "right eye": b, "nose": tuple(ff["nose"]), "mouth": tuple(ff["mouth"])}
     x0, y0, x1, y1 = el["box"]
     w, h = x1 - x0, y1 - y0
     cx = (x0 + x1) / 2

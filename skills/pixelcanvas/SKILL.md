@@ -260,9 +260,22 @@ pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff
    change joints in degrees: `pixelcanvas pose girl --set "arm-r: raise 120, forward 30; elbow-r: 90; head: turn
    -30"` (-r / -l = the figure's own right / left; `--show joints` names them in the view) · reach with
    `--hand-r railing` or `--hand-l 620,540` · props: `pixelcanvas prop sword --kind sword --hand both`.
-   Read the report: what touches the ground, balance, hidden limbs, the figure's box. `pixelcanvas form girl` saves
-   light, core and cast shadow of the forms; `pixelcanvas shade` follows them on her areas. A flat mannequin is still
-   there: `pixelcanvas sketch figure fox --pose stand|walk|hold|wave|sit|bust` (`--heads 2.5` for chibi).
+   Hands: `--hand-shape-r fist|open|relaxed|point|grip|peace|cup` (a run makes fists, a held prop is gripped).
+   Read the report: what touches the ground, balance, hidden limbs, the figure's box. Dress and do the hair on the
+   3D figure, so they follow every pose: `pixelcanvas dress girl blouse,skirt,thigh-highs,shoes --color navy`
+   (`pixelcanvas dress list`: shirt, blouse, blazer, jacket, hoodie, coat, skirt, dress, pants, shorts, socks,
+   thigh-highs, shoes, boots, gloves, tie, ribbon, scarf; one piece takes `--length short|knee|long`, `--fit`,
+   `--sleeve`, `--style pleated|flared|open|closed`, `--trim gold`) · `pixelcanvas hair3d girl --style twintails
+   --bangs blunt --color pink --bows black` (long, medium, bob, short, spiky, ponytail, twintails, braid, bun; a run
+   trails the hair, `--wind 0.6,-0.2` blows it). Then the line stage starts with `pixelcanvas render`: line art,
+   flat colours and cel shading with cast shadows of every figure, block and prop in one step, each material a
+   region (`pixelcanvas dress girl skirt --color "#3a2c60"` recolours it for good; `flat`, `shade`, `surface`,
+   `polish` work on it), and `pixelcanvas face girl --expression crying` (neutral, smile, open, grin, angry, sad, crying, surprised,
+   panicked, sleepy; `--eyes blue`) on the 3D head. After a render, `pose`, `dress`, `hair3d`, `camera`, `block`,
+   `prop` and `face` render again by themselves: re-pose freely; hand marks go on `--layer touch` to stay.
+   `pixelcanvas form girl` saves light, core and cast shadow of the forms. A flat mannequin is still
+   there: `pixelcanvas sketch figure fox --pose stand|walk|hold|wave|sit|bust` (`--heads 2.5` for chibi), drawn with
+   `wear`, `locks` and `hand` in the line stage.
    Then `pixelcanvas sketch head fox` (a posed figure gives it the head's turn); `pixelcanvas face <head id>` lays brows, nose and mouth (an animal
    gets a muzzle with `--kind animal`). Animals: `pixelcanvas sketch ellipse 320,500,660,710` for the body and
    `pixelcanvas sketch head cat`; a dressed animal (a fox mage in a robe) stands on a mannequin. Things:

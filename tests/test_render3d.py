@@ -198,6 +198,22 @@ def test_render_writes_line_flat_and_shade_and_follows_a_re_pose(draw):
     ok(draw("undo"))
 
 
+def test_the_face_frame_is_in_the_figure_record_for_the_face_tools(draw):
+    _scene(draw)
+    ok(draw("pose", "boy", "--preset", "stand", "--yaw", "0"))
+    fig = next(el for el in state()["draw"]["sketch"] if el.get("subject") == "boy")
+    ff = fig["face2d"]
+    assert ff["eye-r"][0] < ff["eye-l"][0] and ff["eye-r"][1] < ff["mouth"][1] < ff["chin"][1]
+    # a 2D head construction on the posed figure places features on the 3D face frame
+    ok(draw("sketch", "head", "boy"))
+    from pixelcanvas import draw_sketch
+    from pixelcanvas.project import Project
+    p = Project("w.pixelcanvas")
+    head = next(el for el in p.state["draw"]["sketch"] if el["kind"] == "head")
+    g = draw_sketch.head_guides(p, head)
+    assert np.allclose(g["left eye"], ff["eye-r"]) and np.allclose(g["mouth"], ff["mouth"])
+
+
 def test_a_band_behind_survives_a_re_render(draw):
     _scene(draw)
     ok(draw("render"))

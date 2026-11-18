@@ -906,9 +906,17 @@ def depth_order(p) -> List[str]:
     if order:
         return order + [s for s in d["subjects"] if s not in order]
     # no order given: sky and background at the back, then the subjects in the order they were planned (a painter
-    # plans and paints back to front)
+    # plans and paints back to front); figures posed in 3D in front of the rest, farthest first (the camera knows)
     subs = list(d["subjects"])
     back = [s for s in subs if any(w in s for w in ("sky", "background", "cloud")) and is_ground(s)]
+    figs = {el["subject"]: el for el in d["sketch"] if el.get("kind") == "figure" and el.get("j3d") and
+            el.get("rig") and el.get("subject") in d["subjects"]}
+    if figs:
+        from .draw_pose import camera_of
+        cam = camera_of(p)
+        dist = {s: float(cam.to_cam([el["j3d"]["pelvis"]])[0, 2]) for s, el in figs.items()}
+        three = sorted(figs, key=lambda s: -dist[s])
+        return back + [s for s in subs if s not in back and s not in figs] + three
     return back + [s for s in subs if s not in back]
 
 
@@ -1084,12 +1092,32 @@ def holes(p, stage: str) -> List[dict]:
         key = None
     if key is not None and key in _HOLES:
         return [dict(h) for h in _HOLES[key]]
-    out = _holes(p, stage)
+    out = _render_filter(p, _holes(p, stage))
     if key is not None:
         if len(_HOLES) > 16:
             _HOLES.clear()
         _HOLES[key] = [dict(h) for h in out]
     return out
+
+
+def _render_filter(p, out: List[dict]) -> List[dict]:
+    """Subjects drawn by the 3D render: their areas, outlines and overlaps come from the z-buffer, so the checks made
+    for hand-drawn areas (a part without its own area, background showing through, the mass off the plan box) do not
+    apply to them."""
+    d = dstate(p)
+    if not d.get("render"):
+        return out
+    from .workflow_draw import rigged_subjects
+    rig = {s for s in rigged_subjects(p.state) if s}
+    if not rig:
+        return out
+    names = rig | {n for n, v in d["parts"].items() if v.get("of") in rig}
+    drop = {"part without area", "background inside", "subject centre"}
+
+    def concerns(h):
+        t = str(h.get("text", ""))
+        return any(t.startswith(n + " ") or t.startswith(n + ":") or f" inside {n} " in t for n in names)
+    return [h for h in out if not (h.get("metric") in drop and concerns(h))]
 
 
 def _holes(p, stage: str) -> List[dict]:

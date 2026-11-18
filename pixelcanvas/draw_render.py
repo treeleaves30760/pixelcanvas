@@ -323,7 +323,31 @@ def render_layers(p, T: dict, sc: dict, cam, s: float, line_px: float, bands: in
     strokes = T3.lines(T["R"], sc["prims"], T["seg"], T["table"], s, line_px, mat_rgb, dref)
     line_ops = [Stroke(pts=st["pts"], width=st["width"], color=st["rgb"], brush="liner") for st in strokes]
     return {"flat": flat_ops, "shade": shade_ops, "line": line_ops, "regions": region_masks, "colours": used,
-            "n_strokes": len(strokes), "dref": dref}
+            "n_strokes": len(strokes), "dref": dref, "aliases": _alias_regions(p, T, sc, W, H)}
+
+
+def _alias_regions(p, T: dict, sc: dict, W: int, H: int) -> Dict[str, np.ndarray]:
+    """A planned face / head part of a 3D figure: the head's skin (head, ears, neck) as its own region."""
+    from .draw_checks import HEAD_PARTS
+    d = dc.dstate(p)
+    keys: Dict[tuple, int] = {}
+    for k, pr in enumerate(sc["prims"]):
+        keys.setdefault((pr.get("owner", ""), pr.get("piece") or pr.get("part") or f"p{k}"), len(keys))
+    names = list(keys)
+    seg_piece = np.array([t[0] for t in T["table"]] + [-1], np.int64)
+    piece_px = seg_piece[T["seg"]]
+    out: Dict[str, np.ndarray] = {}
+    for el in DP.figures(p):
+        parts = [n for n, v in d["parts"].items() if v.get("of") == el["subject"] and n in HEAD_PARTS
+                 and not v.get("r3d")]
+        if not parts:
+            continue
+        idx = [i for i, (o, pc) in enumerate(names) if o == el["id"] and pc in ("head", "ear-r", "ear-l", "neck")]
+        m = _up(np.isin(piece_px, idx).astype(np.uint8), W, H) > 0
+        if m.sum() > 20:
+            for n in parts:
+                out[n] = m
+    return out
 
 
 def _block_shadow(rgb) -> Tuple[int, int, int]:
@@ -576,7 +600,7 @@ def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, li
     L = render_layers(p, T, sc, cam_r, s, line_px, bands)
     f_ops, f_lines = face_ops(p, T, sc, cam_r, s)
     t2 = time.time()
-    new_regions = set(L["regions"])
+    new_regions = set(L["regions"]) | set(L["aliases"])
     files = _files(p) + [f"regions/{n}.png" for n in new_regions if n not in regions_before]
     step = p.begin_step(list(dict.fromkeys(files)))
     try:
@@ -628,6 +652,11 @@ def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, li
                 i = len(xs) // 2
                 fills.append({"pt": [int(xs[i] * 4), int(ys[i] * 4)], "part": rn2, "swatch": rn2, "r3d": True})
         d["fills"] = fills
+        for rn, m in L["aliases"].items():
+            p.save_region_mask(rn, m)
+            info = p.state["regions"].setdefault(rn, {"focus": 3})
+            info.update({"box": list(coords.px_box_to_units(coords.mask_bbox_px(m), p.W, p.H)),
+                         "area": round(float(m.mean()), 4), "how": "3D render (the head's skin)"})
         _register_parts(p, sc, L)
         d["render"] = {"key": _scene_key(p, line, bands, lv), "line": line, "bands": bands,
                        "light_words": light_words, "regions": sorted(L["regions"]),

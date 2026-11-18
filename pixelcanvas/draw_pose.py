@@ -163,6 +163,12 @@ def write_figure(el: dict, res: dict, cam: P3.Camera) -> None:
     el["picture_left"] = "r" if left_is_r else "l"
     hy, hp = P3.view_angles(cam, F["head"], J["head"])
     el["head_view"] = [round(hy, 1), round(hp, 1)]
+    # the face frame on the 3D head, projected: where the eyes, brows, nose, mouth and chin are in the picture (the
+    # face and eye tools place features on it; -r / -l = the figure's own right / left)
+    from .figure3d import Rig, face_frame
+    ff = face_frame(Rig(res["body"], J, F))
+    U = cam.project_units(np.array(list(ff.values())))
+    el["face2d"] = {k: [round(float(u[0]), 1), round(float(u[1]), 1)] for k, u in zip(ff, U)}
     el["pose"] = res["preset"]
     el["heads"] = float(res["body"].heads)
 
