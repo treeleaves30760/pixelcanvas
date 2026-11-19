@@ -1,20 +1,17 @@
-"""The 3D figure carried through line, flat and shade: ``pixelcanvas dress``, ``hair3d``, ``render`` and the 3D face.
+"""The 3D pose model an illustrator draws over: ``pixelcanvas dress``, ``hair3d``, ``render`` (the guide) and the
+face's expression.
 
 - ``dress <who> <piece>[,<piece>...] [--color] [--length] [--fit] [--sleeve] [--style]`` puts garments on a posed
-  figure: shells round its bones that bend with every joint (``figure3d.GARMENTS``).
+  figure (``figure3d.GARMENTS``); they bend with every joint.
 - ``hair3d <who> --style <long|...> [--bangs] [--color] [--wind dx,dy] [--bows color]``: a cap on the skull and
-  tapered locks that hang, trail behind the motion of the pose and stay outside the head and shoulders.
-- ``render [<who>|all] [--line 2.2] [--bands 2|3] [--light from-plan|<words>]``: the toon render of every figure,
-  block and prop: line art on the line layer (as its base; line records such as the face stay on top), flat material
-  colours on the flat layer, cel shading, cast shadows and the hair ring on the shade layer. Each material is a
-  region and a palette swatch, so ``flat N --color``, ``shade``, ``surface``, ``detail``, ``polish`` and ``export``
-  work on the result. Bands painted behind (sky, far land) stay; marks made after a render on the ``touch`` layer
-  and line records (face, hand-drawn lines) are kept by the next render.
-- ``face <who> --expression <...>`` on a posed figure: brows, eyes, nose, mouth, tears and blush on the 3D head
-  (``face3d``), redrawn by every render, so they turn with the head.
+  locks that hang, trail behind the motion of the pose and stay outside the head and shoulders.
+- ``render``: the 3D scene on the ``guide`` layer, faded under the drawing in the views and left out of every
+  export and score, with its maps (the 3D silhouettes, the shadows the figures cast on the blocks). The picture
+  itself is drawn over it in 2D: ``pixelcanvas draw`` (draw_figure2d).
+- ``face <who> --expression <...>`` on a posed figure: the expression of the 2D face drawn on the head's face frame.
 
-After a render, ``pose``, ``dress``, ``hair3d``, ``camera``, ``block`` and ``prop`` render again on their own (one more
-undo step), so a re-pose never leaves stale line art.
+After a render, ``pose``, ``dress``, ``hair3d``, ``camera``, ``block`` and ``prop`` update the guide on their own (one
+more undo step); the drawing is drawn again with ``pixelcanvas draw <who>``.
 """
 from __future__ import annotations
 
@@ -38,7 +35,7 @@ from .coords import UsageError
 USAGE = {
     "dress": "pixelcanvas dress girl blouse,skirt,thigh-highs,shoes --color navy",
     "hair3d": "pixelcanvas hair3d girl --style twintails --bangs blunt --color pink --bows black",
-    "render": "pixelcanvas render all --line 2.2 --bands 2",
+    "render": "pixelcanvas render   (the 3D guide; then: pixelcanvas draw all)",
 }
 RENDER_MAX = 1700
 R3D = "draw/r3d"
@@ -81,19 +78,25 @@ def _scene_key(p, line: float, bands: int, light) -> str:
     recs = []
     for el in d["sketch"]:
         if el["kind"] in ("block", "prop") or DP.is_rigged(el) or (el["kind"] == "horizon" and el.get("camera")):
-            recs.append({k: v for k, v in el.items() if k not in ("n",)})
+            r = {k: v for k, v in el.items() if k not in ("n", "face2d")}
+            if isinstance(r.get("look"), dict) and "face" in r["look"]:
+                r["look"] = {k: v for k, v in r["look"].items() if k != "face"}
+            recs.append(r)
     return hashlib.sha1(json.dumps([p.W, p.H, recs, round(float(line), 3), int(bands), [round(float(v), 4) for v in
                                                                                        light]],
                                    sort_keys=True, default=str).encode()).hexdigest()
 
 
+DRAWN = ("2D over the 3D guide",)
+
+
 def render_mask(p) -> np.ndarray:
-    """The areas the 3D render painted (figures, garments, hair, faces and blocks); empty when nothing is rendered."""
+    """The areas drawn over the 3D guide (figures, clothes, hair and blocks); empty when nothing is drawn."""
     m = np.zeros((p.H, p.W), bool)
-    if not dc.dstate(p).get("render"):
+    if not dc.dstate(p).get("drawn2d"):
         return m
     for n, info in p.state.get("regions", {}).items():
-        if str(info.get("how", "")).startswith("3D render"):
+        if str(info.get("how", "")).startswith(DRAWN):
             try:
                 m |= p.region_mask(n)
             except Exception:  # noqa: BLE001
@@ -102,14 +105,15 @@ def render_mask(p) -> np.ndarray:
 
 
 def is_render_region(p, name: str) -> bool:
-    return bool(dc.dstate(p).get("render")) and         str(p.state.get("regions", {}).get(name, {}).get("how", "")).startswith("3D render")
+    return bool(dc.dstate(p).get("drawn2d")) and \
+        str(p.state.get("regions", {}).get(name, {}).get("how", "")).startswith(DRAWN)
 
 
 def keeps_clean(p) -> bool:
-    """A rendered cel or soft picture keeps its rendered areas as the render made them: no surface texture,
-    no smoothing or softening by polish."""
+    """A cel or soft picture drawn over the 3D guide keeps its drawn areas clean: no surface texture, no smoothing
+    or softening by polish."""
     from .draw_surface import style_mode
-    return bool(dc.dstate(p).get("render")) and style_mode(p) != "paint"
+    return bool(dc.dstate(p).get("drawn2d")) and style_mode(p) != "paint"
 
 
 def is_stale(p) -> bool:
@@ -284,107 +288,59 @@ def toon_scene(p, cap: int = RENDER_MAX, bands: int = 2, light=None, shadows: bo
     return T, sc, cam, s
 
 
-# ============================================================================================ painting
+# ============================================================================================ the guide picture
 
 def _up(a: np.ndarray, W: int, H: int, interp=cv2.INTER_NEAREST) -> np.ndarray:
     return cv2.resize(a, (W, H), interpolation=interp)
 
 
-def render_layers(p, T: dict, sc: dict, cam, s: float, line_px: float, bands: int) -> dict:
-    """Ops for the flat, shade and line layers, the regions and the per-material colours."""
-    from .ops import Fill, Stroke, mask_to_rle
-    W, H = p.W, p.H
-    mats = T["mats"]
-    colours = sc["colours"]
-    regions = sc["regions"]
-    mat_up = _up(T["mat"].astype(np.int16), W, H)
-    lam_up = _up(T["lam"], W, H, cv2.INTER_LINEAR)
-    cast_up = _up(T["cast"].astype(np.float32), W, H, cv2.INTER_LINEAR)
-    sig = max(0.8, 0.0012 * max(W, H))
-    cast_up = cv2.GaussianBlur(cast_up, (0, 0), sig) > 0.5
-    hl_up = cv2.GaussianBlur(_up(T["hl"].astype(np.float32), W, H, cv2.INTER_LINEAR), (0, 0), sig) > 0.5
-    flat_ops, shade_ops = [], []
-    region_masks: Dict[str, np.ndarray] = {}
-    used = {}
-    skin_keys = {i for i, m in enumerate(mats) if m.split(":")[-1].split("/")[0] == "skin"}
-    for k, m in enumerate(mats):
-        sel = mat_up == k
-        if sel.sum() < 4:
+GUIDE_OPACITY = 0.4
+
+
+def guide_image(p, T: dict, sc: dict, s: float) -> np.ndarray:
+    """The 3D scene as a pale reference (RGBA, canvas size): flat colours washed toward white, the shadow side a
+    step darker, thin grey contours."""
+    from .ops import Stroke
+    from . import brush
+    Hr, Wr = T["mat"].shape
+    img = np.ones((Hr, Wr, 3), np.float32)
+    alpha = np.zeros((Hr, Wr), np.float32)
+    for k, m in enumerate(T["mats"]):
+        sel = T["mat"] == k
+        if not sel.any():
             continue
-        rgb = colours.get(m, (128, 128, 128))
-        used[m] = rgb
-        flat_ops.append(_fill(sel, rgb))
-        rn = regions.get(m, m.replace(":", "-"))
-        region_masks[rn] = region_masks.get(rn, np.zeros((H, W), bool)) | sel
-        if m.endswith("/in"):
-            continue
-        thr = -0.25 if k in skin_keys else 0.08
-        sh = sel & ((lam_up <= thr) | cast_up)
-        sh = dc.clean_mask(sh, max(6, int(2e-6 * W * H)))
-        block = m.split(":")[0] not in sc["figures"] and m.split(":")[0] in sc.get("blocks", ())
-        if sh.sum() >= 6:
-            shade_ops.append(_fill(sh, _block_shadow(rgb) if block else dc.shadow_of(rgb)))
-        if bands >= 3:
-            dp = sel & (lam_up <= thr - 0.45)
-            dp = dc.clean_mask(dp, max(6, int(2e-6 * W * H)))
-            if dp.sum() >= 6:
-                shade_ops.append(_fill(dp, dc.shadow_of(rgb, 1.8)))
-        if m.split(":")[-1] == "hair":
-            hm = sel & hl_up & ~sh
-            if hm.sum() >= 6:
-                shade_ops.append(_fill(hm, dc.light_of(rgb, 1.6)))
-    # contact shadows on the ground under figures that stand on it (with no floor block to catch the shadow)
-    shade_ops += _ground_shadows(p, T, sc)
-    # line art
-    d = T["R"]["depth"]
-    fig_px = np.isin(T["own"], [T["owners"].index(o) for o in sc["figures"] if o in T["owners"]])
-    dref = float(np.median(d[fig_px])) if fig_px.any() else float(np.median(d[np.isfinite(d)])) if \
-        np.isfinite(d).any() else 3.0
+        rgb = np.array(sc["colours"].get(m, (128, 128, 128)), np.float32) / 255.0
+        lit = rgb * 0.55 + 0.45
+        img[sel] = lit
+        img[sel & (T["tone"] >= 2)] = lit * 0.85
+        alpha[sel] = 1.0
     seg_mat = _segment_materials(T)
+    d = T["R"]["depth"]
+    dref = float(np.median(d[np.isfinite(d)])) if np.isfinite(d).any() else 3.0
+    st = T3.lines(T["R"], sc["prims"], T["seg"], T["table"], 1.0, 1.2,
+                  lambda si: (110, 116, 130), dref)
+    lay = np.zeros((Hr, Wr, 4), np.float32)
+    brush.apply_ops(lay, [Stroke(pts=x["pts"], width=x["width"], color=(110, 116, 130), brush="liner") for x in st])
+    a = lay[..., 3:4]
+    img = img * (1 - a) + lay[..., :3] * a
+    alpha = np.maximum(alpha, lay[..., 3])
+    out = np.concatenate([img, alpha[..., None]], -1)
+    return cv2.resize(out, (p.W, p.H), interpolation=cv2.INTER_LINEAR).astype(np.float32)
 
-    def mat_rgb(si):
-        mk = seg_mat.get(si)
-        return colours.get(mats[mk], (60, 60, 60)) if mk is not None else (60, 60, 60)
-    strokes = T3.lines(T["R"], sc["prims"], T["seg"], T["table"], s, line_px, mat_rgb, dref)
-    line_ops = [Stroke(pts=st["pts"], width=st["width"], color=st["rgb"], brush="liner") for st in strokes]
-    return {"flat": flat_ops, "shade": shade_ops, "line": line_ops, "regions": region_masks, "colours": used,
-            "n_strokes": len(strokes), "dref": dref, "aliases": _alias_regions(p, T, sc, W, H)}
 
-
-def _alias_regions(p, T: dict, sc: dict, W: int, H: int) -> Dict[str, np.ndarray]:
-    """A planned face / head part of a 3D figure: the head's skin (head, ears, neck) as its own region."""
-    from .draw_checks import HEAD_PARTS
-    d = dc.dstate(p)
-    keys: Dict[tuple, int] = {}
-    for k, pr in enumerate(sc["prims"]):
-        keys.setdefault((pr.get("owner", ""), pr.get("piece") or pr.get("part") or f"p{k}"), len(keys))
-    names = list(keys)
-    seg_piece = np.array([t[0] for t in T["table"]] + [-1], np.int64)
-    piece_px = seg_piece[T["seg"]]
-    out: Dict[str, np.ndarray] = {}
-    for el in DP.figures(p):
-        parts = [n for n, v in d["parts"].items() if v.get("of") == el["subject"] and n in HEAD_PARTS
-                 and not v.get("r3d")]
-        if not parts:
-            continue
-        idx = [i for i, (o, pc) in enumerate(names) if o == el["id"] and pc in ("head", "ear-r", "ear-l", "neck")]
-        m = _up(np.isin(piece_px, idx).astype(np.uint8), W, H) > 0
-        if m.sum() > 20:
-            for n in parts:
-                out[n] = m
-    return out
+def guide_maps(T: dict, sc: dict) -> dict:
+    """Where the 3D figures are (their silhouette) and the shadows they cast on the blocks (render res)."""
+    own = T["own"]
+    figs = [T["owners"].index(o) for o in sc["figures"] if o in T["owners"]]
+    blocks = [T["owners"].index(o) for o in sc.get("blocks", ()) if o in T["owners"]]
+    fig = np.isin(own, figs)
+    return {"fig": fig, "cast_block": T["cast"] & np.isin(own, blocks)}
 
 
 def _block_shadow(rgb) -> Tuple[int, int, int]:
     """The shadow side of a wall or a floor: the same hue, a step darker (no violet cast on a lit room)."""
     L, C, h = dc.rgb_to_lch(rgb)
     return dc.lch_to_rgb(max(5.0, L - 9.0), C * 1.12 + 1.0, h)
-
-
-def _fill(mask: np.ndarray, rgb, alpha: float = 1.0):
-    from .ops import Fill, mask_to_rle
-    return Fill(mask_rle=mask_to_rle(mask), color=tuple(int(c) for c in rgb), feather=0.7, opacity=alpha) \
-        if alpha < 1.0 else Fill(mask_rle=mask_to_rle(mask), color=tuple(int(c) for c in rgb), feather=0.7)
 
 
 def _segment_materials(T: dict) -> Dict[int, int]:
@@ -403,103 +359,6 @@ def _segment_materials(T: dict) -> Dict[int, int]:
         if si not in out or n > out[si][1]:
             out[si] = (mk, int(n))
     return {k: v[0] for k, v in out.items()}
-
-
-def _ground_shadows(p, T, sc) -> list:
-    """A soft shadow on the ground under each figure whose feet are on it (blocks catch their own cast shadow)."""
-    from .ops import Fill
-    out = []
-    has_floor = any(el["type"] == "plane" or "floor" in el["name"] for el in DP.blocks_rec(p))
-    if has_floor:
-        return out
-    cam = DP.camera_of(p)
-    for el in DP.figures(p):
-        J = {k: np.asarray(v, float) for k, v in el["j3d"].items()}
-        feet = [J[f"heel-{s}"] for s in "rl"] + [J[f"foot-{s}"] for s in "rl"]
-        low = min(f[1] for f in feet)
-        if low > 0.12:
-            continue
-        c = np.mean([[f[0], 0.0, f[2]] for f in feet], 0)
-        ang = np.linspace(0, 2 * np.pi, 40, endpoint=False)
-        rx = 0.2 + 0.5 * float(np.ptp([f[0] for f in feet]))
-        rz = 0.1 + 0.5 * float(np.ptp([f[2] for f in feet]))
-        ring = np.stack([c[0] + rx * np.cos(ang), np.zeros_like(ang), c[2] + rz * np.sin(ang)], 1)
-        px, z = cam.project(ring)
-        if (z <= 0.1).any():
-            continue
-        out.append(Fill(polygons=[px.astype(np.float32)], color=(60, 56, 80), feather=0.02 * max(p.W, p.H) / 3,
-                        opacity=0.2))
-    return out
-
-
-# ============================================================================================ the face
-
-def face_ops(p, T: dict, sc: dict, cam_r, s: float) -> Tuple[list, List[dict]]:
-    """Flat-layer fills (eye whites, irises, pupils, catch-lights, mouth, tears, blush) and line specs (canvas px)
-    for every figure with a face set."""
-    from .ops import Fill
-    from .draw_core import poly_mask
-    fill_ops: list = []
-    line_specs: List[dict] = []
-    cam = DP.camera_of(p)
-    depth = T["R"]["depth"]
-    for el in DP.figures(p):
-        fc = look_of(el).get("face")
-        if not fc:
-            continue
-        rig = sc["heads"].get(el["id"])
-        if rig is None:
-            continue
-        iris = _col(p, fc.get("eyes"), "#4a78c0")
-        lash = dc.shadow_of(_col(p, (look_of(el).get("hair") or {}).get("color"), HAIR), 1.6)
-        lash = tuple(int(v * 0.55) for v in lash)
-        specs = FC.project(rig, cam, FC.features(fc.get("expression", "neutral"), iris, lash), depth, s)
-        clips: Dict[str, np.ndarray] = {}
-        for sp in specs:
-            if sp.get("fill") is None:
-                continue
-            P = sp["px"]
-            if sp["vis"].mean() < (0.25 if sp["kind"] == "tear" else 0.5):
-                continue
-            m = poly_mask(p.H, p.W, P)
-            if sp.get("clip"):
-                cm = clips.get(sp["clip"])
-                if cm is None:
-                    continue
-                m &= cm
-            clips[sp["name"]] = m
-            if m.sum() < 3:
-                continue
-            col = tuple(int(c) for c in sp["fill"])
-            if sp["kind"] == "iris":
-                y0, y1 = float(P[:, 1].min()), float(P[:, 1].max())
-                cx = float(P[:, 0].mean())
-                fill_ops.append(Fill(polygons=[P.astype(np.float32)], color=dc.shadow_of(col, 1.2), color2=dc.light_of(col, 1.2),
-                                     p0=(cx, y0), p1=(cx, y1), feather=0.6) if not sp.get("clip") else
-                                _grad_mask(m, dc.shadow_of(col, 1.2), dc.light_of(col, 1.2), (cx, y0), (cx, y1)))
-            elif sp["kind"] == "blush":
-                fill_ops.append(Fill(polygons=[P.astype(np.float32)], color=col, feather=0.004 * max(p.W, p.H),
-                                     opacity=float(sp.get("alpha", 0.4))))
-            else:
-                from .ops import mask_to_rle
-                fill_ops.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.6,
-                                     opacity=0.85 if sp["kind"] == "tear" else 1.0))
-        for sp in specs:
-            if sp["weight"] <= 0:
-                continue
-            P, vis = sp["px"], sp["vis"]
-            for run in T3._runs(vis, False):
-                if len(run) >= 2:
-                    line_specs.append({"subject": el["subject"], "name": sp["name"], "px": P[run],
-                                       "closed": bool(sp["closed"] and vis.all()), "weight": sp["weight"],
-                                       "taper": sp["taper"], "rgb": sp.get("rgb")})
-    return fill_ops, line_specs
-
-
-def _grad_mask(m, c1, c2, p0, p1):
-    from .ops import Fill, mask_to_rle
-    return Fill(mask_rle=mask_to_rle(m), color=tuple(int(v) for v in c1), color2=tuple(int(v) for v in c2), p0=p0,
-                p1=p1, feather=0.6)
 
 
 # ============================================================================================ layer bookkeeping
@@ -544,62 +403,24 @@ def _snapshot(p, kind: str, before: np.ndarray, after: np.ndarray) -> None:
                         cov=np.packbits(c.ravel()), under=under)
 
 
-def band_files(p, layer: str) -> List[str]:
-    """Files a band on ``layer`` changes besides its own when a render is on the layer (its under snapshot)."""
-    if layer != "flat" or not (p.root / R3D / "flat.npz").exists():
-        return []
-    return [f"{R3D}/flat.npz"]
-
-
-def band_behind_render(p, layer: str, pre: np.ndarray, ops: list) -> None:
-    """After a band was painted on the flat layer: inside the render's pixels the layer shows the render again (the
-    figures and blocks stand in front of the background), and the band is painted, whole, into what lies under the
-    render, so it shows where a figure moves away."""
-    from . import brush
-    z = _load_npz(p, "flat")
-    if z is None or layer != "flat":
-        return
-    x0, y0, x1, y1 = (int(v) for v in z["box"])
-    if tuple(int(v) for v in z["shape"]) != (p.H, p.W):
-        return
-    cov = np.unpackbits(z["cov"])[: (y1 - y0) * (x1 - x0)].reshape(y1 - y0, x1 - x0).astype(bool)
-    cur = p.layer("flat").copy()
-    sub = cur[y0:y1, x0:x1]
-    sub[cov] = pre[y0:y1, x0:x1][cov]
-    p._write_layer_file("flat", cur)
-    tmp = np.zeros((p.H, p.W, 4), np.float32)
-    under = z["under"].astype(np.float32) / 255.0
-    tmp[y0:y1, x0:x1][cov] = under[cov]
-    brush.apply_ops(tmp, ops)
-    new = (np.clip(tmp[y0:y1, x0:x1], 0, 1) * 255 + 0.5).astype(np.uint8)
-    new[~cov] = 0
-    np.savez_compressed(p.root / R3D / "flat.npz", box=z["box"], shape=z["shape"], cov=z["cov"], under=new)
-
-
-def _touch_layer(p) -> None:
+def _guide_layer(p) -> None:
+    """The guide layer just above the paper: faded in the views, left out of every export and score."""
     names = [e["name"] for e in p.state["layers"]]
-    if "touch" in names:
+    if "guide" in names:
         return
-    at = names.index("line") + 1 if "line" in names else len(names)
-    p.state["layers"].insert(at, {"name": "touch", "mode": "normal", "opacity": 1.0, "visible": True, "clip": False,
-                                  "alpha_lock": False, "empty": True})
-    p._write_layer_file("touch", None)
-
-
-def _files(p) -> List[str]:
-    out = ["layers/flat.png", "layers/shade.png", "layers/line.png", "draw/line_base.png", "draw/line_erase.png",
-           f"{R3D}/flat.npz", f"{R3D}/shade.npz", f"{R3D}/line.npz", "draw/scene3d.npz"]
-    out += [f"regions/{n}.png" for n in p.state.get("regions", {})]
-    return out
+    at = names.index("paper") + 1 if "paper" in names else 0
+    p.state["layers"].insert(at, {"name": "guide", "mode": "normal", "opacity": GUIDE_OPACITY, "visible": True,
+                                  "clip": False, "alpha_lock": False, "empty": True})
+    p._write_layer_file("guide", None)
 
 
 # ============================================================================================ render
 
 def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, light_words: Optional[str] = None,
               who: Optional[str] = None, label: Optional[str] = None):
-    """One undoable step: the toon render of the whole 3D scene onto the line, flat and shade layers."""
-    from . import brush, cli, cli_draw, draw_line, workflow_draw
-    from .ops import ops_to_jsonable
+    """One undoable step: the 3D scene as the guide layer (faded under the drawing in the views, never exported) and
+    its maps (the 3D silhouettes, the shadows cast on the blocks) for ``draw`` and ``shade``."""
+    from . import cli_draw, workflow_draw
     p = ctx.project
     d = dc.dstate(p)
     if not DP.figures(p) and not DP.blocks_rec(p):
@@ -616,141 +437,47 @@ def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, li
     t0 = time.time()
     rep = cli_draw.DReport(mutated=True)
     before = dc.composite_u8(p, "view")
-    _touch_layer(p)
-    (p.root / R3D).mkdir(parents=True, exist_ok=True)
-    regions_before = set(p.state.get("regions", {}))
     T, sc, cam_r, s = toon_scene(p, bands=bands, light=lv)
     t1 = time.time()
-    line_px = dc.dpx(p, line)
-    L = render_layers(p, T, sc, cam_r, s, line_px, bands)
-    f_ops, f_lines = face_ops(p, T, sc, cam_r, s)
-    t2 = time.time()
-    new_regions = set(L["regions"]) | set(L["aliases"])
-    files = _files(p) + [f"regions/{n}.png" for n in new_regions if n not in regions_before]
-    step = p.begin_step(list(dict.fromkeys(files)))
+    img = guide_image(p, T, sc, s)
+    gm = guide_maps(T, sc)
+    step = p.begin_step(["layers/guide.png", "draw/guide.npz"])
     try:
-        # the line layer: marks made on it by other commands since its last write go to its base first
-        note = dc.owned_fold(p, "line", d["lines"], draw_line.render_ops)
-        base_f = p.root / "draw" / "line_base.png"
-        base = dc._load_rgba(base_f)
-        base = np.zeros((p.H, p.W, 4), np.float32) if base is None else base
-        base = _restore(p, "line", base)
-        b0 = base.copy()
-        brush.apply_ops(base, L["line"])
-        _snapshot(p, "line", b0, base)
-        dc._save_rgba(base_f, base)
-        # face lines: line records owned by the render (made again every time)
-        d["lines"] = [r for r in d["lines"] if not r.get("face3d")]
-        for fl in f_lines:
-            P = fl["px"]
-            if len(P) < 2 or dc.path_length(P) < 3:
-                continue
-            rec = draw_line.make_record(p, P, dc.px2u(p, P[[0, -1]]), weight=fl["weight"] * line / DEFAULT_LINE,
-                                        taper=fl["taper"], color="line", closed=fl["closed"],
-                                        src=f"face {fl['name']}")
-            rec["face3d"] = fl["subject"]
-            rec["even"] = True
-            if fl.get("rgb"):
-                rec["auto_rgb"] = [int(v) for v in fl["rgb"]]
-                rec["rgb_fixed"] = True         # a tear keeps its blue: line recolouring leaves it
-            d["lines"].append(rec)
-        dc.owned_write(p, "line", d["lines"], draw_line.render_ops)
-        # flat and shade
-        for kind, ops in (("flat", L["flat"] + f_ops), ("shade", L["shade"])):
-            arr = p.layer(kind).copy()
-            arr = _restore(p, kind, arr)
-            a0 = arr.copy()
-            if ops:
-                brush.apply_ops(arr, ops)
-            _snapshot(p, kind, a0, arr)
-            p._write_layer_file(kind, arr)
-        # regions, parts and swatches: each material is a coloured area the later tools work on
-        fills = [f for f in d["fills"] if not f.get("r3d")]
-        for rn, m in L["regions"].items():
-            from .regions import clean_name
-            rn2 = clean_name(rn)
-            p.save_region_mask(rn2, m)
-            box = coords.px_box_to_units(coords.mask_bbox_px(m), p.W, p.H)
-            info = p.state["regions"].setdefault(rn2, {"focus": 1})
-            info.update({"box": list(box), "area": round(float(m.mean()), 4), "how": "3D render"})
-            ys, xs = np.nonzero(m[:: 4, :: 4])
-            if len(xs):
-                i = len(xs) // 2
-                fills.append({"pt": [int(xs[i] * 4), int(ys[i] * 4)], "part": rn2, "swatch": rn2, "r3d": True})
-        d["fills"] = fills
-        for rn, m in L["aliases"].items():
-            p.save_region_mask(rn, m)
-            info = p.state["regions"].setdefault(rn, {"focus": 3})
-            info.update({"box": list(coords.px_box_to_units(coords.mask_bbox_px(m), p.W, p.H)),
-                         "area": round(float(m.mean()), 4), "how": "3D render (the head's skin)"})
-        _register_parts(p, sc, L)
+        _guide_layer(p)
+        p._write_layer_file("guide", img)
+        np.savez_compressed(p.root / "draw" / "guide.npz", fig=gm["fig"], cast_block=gm["cast_block"])
         d["render"] = {"key": _scene_key(p, line, bands, lv), "line": line, "bands": bands,
-                       "light_words": light_words, "regions": sorted(L["regions"]),
-                       "subjects": [el["subject"] for el in DP.figures(p)]}
-        all_ops = L["line"] + L["flat"] + f_ops + L["shade"]
-        ops_file = p.save_ops(step, {"cmd": ctx.cmdline, "layer": "line,flat,shade", "ops": ops_to_jsonable(all_ops)})
+                       "light_words": light_words, "subjects": [el["subject"] for el in DP.figures(p)]}
         ticked = workflow_draw.refresh(p)
-        p.end_step(step, {"cmd": ctx.cmdline, "layer": "line,flat,shade", "ops": ops_file, "n_ops": len(all_ops),
-                          "bbox": None})
+        p.end_step(step, {"cmd": ctx.cmdline, "layer": "guide", "ops": None, "n_ops": 0, "bbox": None})
     except Exception:
         p.abort_step(step)
         raise
-    t3 = time.time()
+    t2 = time.time()
     rep.step = step
-    figs = DP.figures(p)
-    rep.add(f"step {step}  {label or 'render'}  (layers line, flat, shade)  {len(all_ops)} marks: "
-            f"{L['n_strokes']} lines, {len(L['flat'])} flat colours, {len(L['shade'])} shade bands, "
-            f"{len(f_ops)} face fills  ({t3 - t0:.1f} s: 3D render {t1 - t0:.1f}, lines and fills "
-            f"{t2 - t1:.1f}, layers {t3 - t2:.1f})")
-    for el in figs:
+    rep.add(f"step {step}  {label or 'render'}: the 3D guide (layer guide: faded under the drawing in the views, "
+            f"never exported)  ({t2 - t0:.1f} s: 3D render {t1 - t0:.1f})")
+    for el in DP.figures(p):
         lk = look_of(el)
         g = ", ".join(lk["garments"]) or "no clothes (pixelcanvas dress)"
         hr = (lk.get("hair") or {}).get("style") or "no hair (pixelcanvas hair3d)"
-        fc = (lk.get("face") or {}).get("expression") or "no face yet (pixelcanvas face " + el["subject"] + ")"
-        rep.add(f"{el['subject']}: {el['rig'].get('preset')}; {g}; hair {hr}; face {fc}")
-    rep.add("regions: " + ", ".join(sorted(L["regions"]))[:420])
-    rep.add(f"line {line:g} px (delivered), {bands} bands, light from "
-            f"{light_words or dc.light_words(d['light'].get('deg', 135))}")
-    rep.add("re-pose, dress, hair3d, camera, block and prop render again by themselves; marks on the touch layer "
-            "(--layer touch) and line records (face) stay through a render")
-    if note:
-        rep.add("note: " + note)
+        rep.add(f"{el['subject']}: {el['rig'].get('preset')}; {g}; hair {hr}")
+    from .draw_figure2d import drawn, stale_subjects
+    st = stale_subjects(p)
+    if st:
+        rep.add(f"the drawing over it is older than the 3D scene for {', '.join(s_.lstrip('@') for s_ in st)}: "
+                f"pixelcanvas draw {st[0].lstrip('@') if not st[0].startswith('@') else 'scene'}")
+    elif not drawn(p):
+        rep.add("draw over it in 2D: pixelcanvas draw all   (one figure: draw <who>; one part: draw <who> --part hair)")
+    rep.add("re-pose, dress, hair3d, camera, block and prop update the guide by themselves")
     if ticked:
         rep.add(f"todo ticked: {', '.join(map(str, ticked))}")
     if not ctx.batch:
         cli_draw.show_before_after(ctx, rep, before, dc.composite_u8(p, "view"), (0, 0, p.W, p.H), step,
-                                   "the toon render: line, flat and shade")
+                                   "the 3D guide (faded)")
     cli_draw._tail(ctx, rep)
-    rep.summary = f"render {len(all_ops)} marks"
+    rep.summary = "render the 3D guide"
     return rep
-
-
-def _register_parts(p, sc: dict, L: dict) -> None:
-    """Each rendered material becomes a plan part (focus 2 for hair and clothes) with its colour as a swatch, so the
-    shade, detail and polish tools know what it is and its colour."""
-    d = dc.dstate(p)
-    owners = {el["id"]: el["subject"] for el in DP.figures(p)}
-    for key, rn in sc["regions"].items():
-        if key.endswith("/in") or rn not in L["regions"]:
-            continue
-        own, _, mat = key.partition(":")
-        rgb = L["colours"].get(key)
-        if rgb is None:
-            continue
-        subj = owners.get(own)
-        if subj is None:
-            d["palette"]["swatches"][rn] = dc.to_hex(rgb)
-            continue
-        if rn not in d["parts"]:
-            m = L["regions"][rn]
-            box = list(coords.px_box_to_units(coords.mask_bbox_px(m), p.W, p.H))
-            focus = 2 if subj and mat in ("hair",) + tuple(F3.GARMENTS) else 1
-            d["parts"][rn] = {"of": subj or rn, "box": box, "focus": focus, "swatch": rn, "r3d": True}
-            if subj is None and rn not in d["subjects"]:
-                pass
-        if d["parts"][rn].get("r3d") or not d["parts"][rn].get("swatch"):
-            d["parts"][rn]["swatch"] = rn
-        d["palette"]["swatches"][rn] = dc.to_hex(rgb)
 
 
 # ============================================================================================ commands
@@ -994,13 +721,20 @@ def wrap_face(orig):
         def mutate():
             look_of(target)["face"] = fc
             return [f"{target['subject']}'s face: {e}" + (f", eyes {fc['eyes']}" if fc.get("eyes") else "") +
-                    " (on the 3D head: it turns with the head and is drawn again by every render)"]
+                    " (on the head's face frame: it turns with the head)"]
         rep, step = cli_draw.state_step(ctx, f"face {target['subject']} {e}", mutate)
-        if render_state(p):
-            rep = _after_change(ctx, rep, "face")
+        from .draw_figure2d import do_draw, drawn
+        if target["subject"] in drawn(p):
+            r2 = do_draw(ctx, target["subject"], {"face"}, label=f"draw {target['subject']} --part face")
+            for ln in r2.lines:
+                rep.add(ln)
+            rep.view, rep.view_note = r2.view, r2.view_note
+            if getattr(r2, "view_before", None):
+                rep.view_before = r2.view_before
+            rep.add("the face drawn again: two undo steps go back to before the change")
         else:
-            rep.add("the face is drawn with the figure: pixelcanvas render")
-            rep.next = "pixelcanvas render"
+            rep.add("the face is drawn with the figure: pixelcanvas draw " + target["subject"])
+            rep.next = "pixelcanvas draw " + target["subject"]
         return _finish(ctx, rep)
     return run
 

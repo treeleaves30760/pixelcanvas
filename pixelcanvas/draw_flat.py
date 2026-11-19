@@ -137,6 +137,9 @@ def auto_assign(p, labels, table) -> Dict[int, Tuple[str, str]]:
     out.update(outline_corrections(p, labels, table, out))
     out.update(eye_corrections(p, labels, table, out))
     out.update(lock_corrections(p, labels, table, out))
+    if dstate(p).get("drawn2d"):
+        from .draw_figure2d import drawn_corrections
+        out.update(drawn_corrections(p, labels, table))
     return out
 
 

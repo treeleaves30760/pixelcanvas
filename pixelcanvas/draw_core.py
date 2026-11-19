@@ -131,7 +131,8 @@ def composite_u8(p, mode: str = "export") -> np.ndarray:
     on a 3x canvas one composite is ~1 s). Do not modify the returned array."""
     try:
         lays = p.layers_dict()
-        if mode in ("export", "score") and not p.sketch_shown():
+        if mode in ("export", "score") and not p.sketch_shown() and \
+                not any(e["name"] == "guide" for e in p.state["layers"]):
             mode = "view"                   # the same picture: the sketch layer is hidden in both
         key = (id(p), mode, p.sketch_shown(), tuple((n, id(a)) for n, a in lays.items()),
                tuple((e["name"], e.get("visible", True), e.get("opacity", 1.0), e.get("mode")) for e in p.state["layers"]))

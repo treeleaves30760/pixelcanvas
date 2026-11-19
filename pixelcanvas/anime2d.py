@@ -1,0 +1,561 @@
+"""The parts an anime illustrator draws over a 3D pose model: the skeleton says where each limb goes and what is in
+front; the shapes are anime proportions (a slim neck, narrow shoulders, a waist, arms and legs that taper to thin
+wrists and ankles, small hands, small pointed feet), clothes as shapes with hems, cuffs, collars, pleats and folds
+at bent joints, hair as pointed locks with strand lines.
+
+``figure_parts`` returns shape2d parts (see shape2d) for one posed figure. Pure: no disk, no project.
+"""
+from __future__ import annotations
+
+import math
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+
+from . import figure3d as F3
+from .shape2d import chain_tube, ell_samples, perp_basis, ring, unit
+
+# radius profiles along each limb, in head heights (t from the near joint to the far one)
+UPPER = [(0.0, 0.122), (0.2, 0.118), (0.55, 0.102), (1.0, 0.09)]
+FORE = [(0.0, 0.09), (0.22, 0.092), (0.65, 0.07), (1.0, 0.056)]
+THIGH = [(0.0, 0.2), (0.35, 0.182), (0.8, 0.138), (1.0, 0.122)]
+SHIN = [(0.0, 0.12), (0.27, 0.133), (0.62, 0.098), (0.9, 0.066), (1.0, 0.064)]
+NECK = 0.108
+HAND_SCALE = 0.86
+
+# clothes: ease (head heights) over the body
+EASE = {"shirt": 0.014, "blouse": 0.016, "dress": 0.016, "blazer": 0.036, "jacket": 0.046, "hoodie": 0.06,
+        "coat": 0.05, "pants": 0.02, "shorts": 0.03, "socks": 0.01, "thigh-highs": 0.01, "gloves": 0.006}
+TOPS = ("shirt", "blouse", "dress", "blazer", "jacket", "hoodie", "coat")
+OUTER = ("blazer", "jacket", "hoodie", "coat")
+
+
+def _prof(prof, h: float, k: float) -> Tuple[np.ndarray, np.ndarray]:
+    t = np.array([a for a, _ in prof])
+    r = np.array([b for _, b in prof]) * h * k
+    return t, r
+
+
+def _limb_axis(A, B, ts) -> np.ndarray:
+    A, B = np.asarray(A, float), np.asarray(B, float)
+    return np.array([A + t * (B - A) for t in ts])
+
+
+def _part(name, kind, mat, subj, group, joints=None, rad=0.05, **kw) -> dict:
+    d = {"name": name, "kind": kind, "mat": mat, "subj": subj, "group": group, "joints": joints or {},
+         "rad": float(rad), "details": [], "bias": 0.0, "line": True}
+    d.update(kw)
+    return d
+
+
+def _tube(name, mat, subj, group, axis, radii, joints, **kw) -> dict:
+    frames = kw.pop("frames", None)
+    rings = chain_tube(axis, radii, n_rings=kw.pop("n_rings", 14), n_pts=kw.pop("n_pts", 18),
+                       round_start=kw.pop("round_start", True), round_end=kw.pop("round_end", True),
+                       point_end=kw.pop("point_end", False), frames=frames,
+                       depth_ratio=kw.pop("depth_ratio", None))
+    part = _part(name, "tube", mat, subj, group, joints, rad=float(np.max(radii)), rings=rings, **kw)
+    if frames is None:
+        # round cross-sections: the exact solid is a chain of round cones (its depth and normals per pixel)
+        from .render3d import rcone
+        A = [np.asarray(q, float) for q in axis]
+        r = [float(v) for v in radii]
+        if part.get("open_end") and len(A) >= 2:
+            A[-1] = A[-1] - unit(A[-1] - A[-2]) * min(r[-1] * 0.9, 0.45 * float(np.linalg.norm(A[-1] - A[-2])))
+        if part.get("open_start") and len(A) >= 2:
+            A[0] = A[0] + unit(A[1] - A[0]) * min(r[0] * 0.9, 0.45 * float(np.linalg.norm(A[1] - A[0])))
+        part["prims"] = [rcone(A[i], A[i + 1], r[i], r[i + 1]) for i in range(len(A) - 1)
+                         if np.linalg.norm(A[i + 1] - A[i]) > 1e-6]
+    return part
+
+
+def _solid(name, mat, subj, group, prims, joints=None, **kw) -> dict:
+    """A part that is a few 3D solids (a head, an ear, a palm, a hair cap, a bow): drawn as their outline."""
+    P, N = [], []
+    for pr in prims:
+        a, b = _prim_samples(pr, 80)
+        P.append(a)
+        N.append(b)
+    return _part(name, "blob", mat, subj, group, joints, rad=kw.pop("rad", 0.05), prims=list(prims),
+                 pts=np.vstack(P), nrm=np.vstack(N), **kw)
+
+
+def _blob(name, mat, subj, group, P, N, joints=None, **kw) -> dict:
+    return _part(name, "blob", mat, subj, group, joints, rad=kw.pop("rad", 0.05), pts=np.asarray(P),
+                 nrm=np.asarray(N), **kw)
+
+
+def _prim_samples(pr: dict, n: int = 300) -> Tuple[np.ndarray, np.ndarray]:
+    """Surface samples of a 3D primitive (ellipsoid, round cone, cylinder)."""
+    from .render3d import _clipped
+    if pr["t"] == "ell":
+        A = np.asarray(pr["A"], float)
+
+        def keep(q):
+            return ~_clipped(pr, q)[0]
+        return ell_samples(pr["c"], A, n, keep if pr.get("clip") else None)
+    if pr["t"] in ("rcone", "cyl"):
+        if pr["t"] == "rcone":
+            a, b, ra, rb = pr["a"], pr["b"], pr["ra"], pr["rb"]
+        else:
+            A = np.asarray(pr["A"], float)
+            a, b = pr["c"] - A[:, 1], pr["c"] + A[:, 1]
+            ra = rb = float(np.linalg.norm(A[:, 0]))
+        rings = chain_tube([a, b], [ra, rb], n_rings=6, n_pts=16)
+        P = np.vstack([q for _, q in rings])
+        N = np.vstack([unit(q - c) for c, q in rings])
+        return P, N
+    return np.zeros((0, 3)), np.zeros((0, 3))
+
+
+# ============================================================================================ the body
+
+class Torso:
+    """Elliptic cross-sections down the trunk: neck base, shoulders, chest, waist, hips, crotch."""
+
+    def __init__(self, body, J, F, h: float, k: float):
+        C, S, P = F["chest"], F["spine"], F["pelvis"]
+        sh = 0.5 * (J["shoulder-r"] + J["shoulder-l"])
+        span = float(np.linalg.norm(J["shoulder-r"] - J["shoulder-l"]))
+        hip_span = float(np.linalg.norm(J["hip-r"] - J["hip-l"]))
+        hip_a = 0.5 * hip_span + 0.15 * h * k
+        lv = [  # (centre, X, Z, a, b)
+            (J["neck"] + C[:, 1] * 0.02 * h, C[:, 0], C[:, 2], NECK * h * k, NECK * h * k),
+            (sh - C[:, 1] * 0.03 * h, C[:, 0], C[:, 2], 0.5 * span + 0.06 * h, 0.23 * h * k),
+            (sh + (J["spine"] - sh) * 0.42, C[:, 0], C[:, 2], 0.5 * span * 0.94, 0.27 * h * k),
+            (J["spine"], S[:, 0], S[:, 2], 0.68 * hip_a, 0.22 * h * k),
+            (J["pelvis"] + P[:, 1] * 0.02 * h, P[:, 0], P[:, 2], hip_a, 0.26 * h * k),
+            (J["pelvis"] - P[:, 1] * 0.17 * h, P[:, 0], P[:, 2], 0.8 * hip_a, 0.2 * h * k),
+        ]
+        self.lv = lv
+        self.h, self.k = h, k
+
+    def at(self, t: float):
+        """(centre, X, Z, a, b) at t in 0 (neck) .. 5 (crotch), interpolated."""
+        t = float(np.clip(t, 0, len(self.lv) - 1))
+        i = min(int(t), len(self.lv) - 2)
+        f = t - i
+        A, B = self.lv[i], self.lv[i + 1]
+        c = A[0] + f * (B[0] - A[0])
+        X = unit(A[1] + f * (B[1] - A[1]))
+        Z = unit(A[2] + f * (B[2] - A[2]))
+        return c, X, Z, A[3] + f * (B[3] - A[3]), A[4] + f * (B[4] - A[4])
+
+    def tube(self, t0: float, t1: float, ease: float, n: int = 9, scale: float = 1.0, extra=None):
+        ts = np.linspace(t0, t1, n)
+        L = [self.at(t) for t in ts]
+        if extra:
+            L += extra
+        axis = [l[0] for l in L]
+        a = [l[3] * scale + ease for l in L]
+        b = [l[4] * scale + ease for l in L]
+        frames = [(l[1], l[2]) for l in L]
+        return axis, np.array(a), np.array(b) / np.array(a), frames
+
+    def front(self, t: float, x: float, lift: float = 0.0) -> np.ndarray:
+        """A point on the front of the trunk: t down the trunk, x across (-1 her left .. 1 her right)."""
+        c, X, Z, a, b = self.at(t)
+        x = float(np.clip(x, -0.98, 0.98))
+        return c + X * a * x + Z * (b * math.sqrt(1 - x * x) + lift)
+
+
+def _fold_lines(A, M, B, r: float, n: int, side_len: float) -> List[np.ndarray]:
+    """Compression folds on the inside of the bend at M (between A-M and M-B): short curved lines across the
+    tube near the joint."""
+    u1, u2 = unit(A - M), unit(B - M)
+    bend = math.degrees(math.acos(float(np.clip(-u1 @ u2, -1, 1))))
+    if bend < 35:
+        return []
+    inner = unit(u1 + u2)
+    out = []
+    for i in range(n):
+        along = (u2 if i % 2 == 0 else u1) * side_len * (0.35 + 0.45 * (i // 2))
+        c = M + along + inner * r * 0.9
+        x = unit(np.cross(inner, u2 if i % 2 == 0 else u1))
+        pts = [c + x * r * s * 0.75 - inner * r * 0.35 * (s * s) for s in np.linspace(-1, 1, 7)]
+        out.append(np.array(pts))
+    return out
+
+
+def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[List[dict]] = None) -> List[dict]:
+    """Every part of one posed figure (body, hands, feet, clothes, hair, held props)."""
+    h = body.h
+    k = body.k
+    rig = F3.Rig(body, J, F)
+    garments = (look or {}).get("garments") or {}
+    tor = Torso(body, J, F, h, k)
+    parts: List[dict] = []
+    rig_spec = el.get("rig") or {}
+    motion, floating = F3.motion_of(rig_spec, F)
+    hands = dict(zip("rl", F3.PRESET_HANDS.get(rig_spec.get("preset") or "stand", ("relaxed", "relaxed"))))
+    grips: Dict[str, float] = {}
+    for pr in held or []:
+        hs = ("r", "l") if pr.get("hand") == "both" else (pr.get("hand"),)
+        for s in hs:
+            if s in hands:
+                hands[s] = "grip"
+                grips[s] = {"sword": 0.017, "umbrella": 0.012, "stick": 0.016, "bag": 0.01, "cup": 0.04,
+                            "book": 0.02, "ball": 0.1}.get(pr.get("type"), 0.016)
+    for s in "rl":
+        v = (rig_spec.get("hands") or {}).get(s)
+        if v:
+            hands[s] = v
+
+    # ---- head, ears, neck
+    hp = F3.body_prims(rig, "x", hands, grips)
+    head_pr = []
+    for pr in hp:
+        if pr["piece"] == "head":
+            if pr["t"] == "rcone":
+                pr = dict(pr, rb=0.045 * h, b=pr["b"] + rig.Hd[:, 1] * 0.02 * h)      # a small pointed chin
+            head_pr.append(pr)
+    # no joint shared with the neck: the chin's line is always drawn
+    parts.append(_solid("head", "skin", subj, "head", head_pr, {"head": J["head"]}, rad=0.42 * h, bias=0.08 * h))
+    for pr in hp:
+        if pr["piece"].startswith("ear-"):
+            parts.append(_solid(pr["piece"], "skin", subj, "head", [pr], {"ear": None}, rad=0.08 * h, bias=0.09 * h))
+    parts.append(_tube("neck", "skin", subj, "head", [J["neck"] - F["neck"][:, 1] * 0.02 * h, J["neck-top"]],
+                       [NECK * h * k, NECK * h * k * 0.95], {"neck": J["neck"], "neck-top": J["neck-top"]},
+                       round_start=False, round_end=False, n_rings=6, bias=0.1 * h))
+
+    # ---- trunk
+    ax, a, dr, fr = tor.tube(0, 5, 0.0)
+    parts.append(_tube("torso", "skin", subj, "torso", ax, a, {"neck": J["neck"], "shoulder-r": J["shoulder-r"],
+                                                               "shoulder-l": J["shoulder-l"], "hip-r": J["hip-r"],
+                                                               "hip-l": J["hip-l"]},
+                       frames=fr, depth_ratio=dr, round_start=False, n_rings=18, n_pts=24))
+
+    # ---- limbs
+    for s in "rl":
+        for kind, prof, A_, B_ in (("upperarm", UPPER, f"shoulder-{s}", f"elbow-{s}"),
+                                   ("forearm", FORE, f"elbow-{s}", f"wrist-{s}"),
+                                   ("thigh", THIGH, f"hip-{s}", f"knee-{s}"),
+                                   ("shin", SHIN, f"knee-{s}", f"ankle-{s}")):
+            t, r = _prof(prof, h, k)
+            A0 = J[A_] - F["chest"][:, 1] * 0.06 * h if kind == "upperarm" else J[A_]
+            parts.append(_tube(f"{kind}-{s}", "skin", subj, ("arm-" if kind in ("upperarm", "forearm") else "leg-") + s,
+                               _limb_axis(A0, J[B_], t), r, {A_: J[A_], B_: J[B_]}))
+        # hands: palm and fingers from the 3D hand, a little smaller
+        W = J[f"wrist-{s}"]
+        hmat = "gloves" if "gloves" in garments else "skin"
+        hprims = F3.hand_prims(rig, "x", s, hands.get(s, "relaxed"), grips.get(s), mat=hmat)
+        fingers: Dict[str, list] = {}
+        for pr in hprims:
+            if pr["piece"] == f"hand-{s}":
+                pr = dict(pr, c=W + (np.asarray(pr["c"]) - W) * HAND_SCALE, A=np.asarray(pr["A"]) * HAND_SCALE)
+                parts.append(_solid(f"hand-{s}", hmat, subj, f"hand-{s}", [pr], {f"wrist-{s}": W, f"palm-{s}": None},
+                                    rad=0.08 * h))
+            elif pr["t"] == "rcone":
+                fingers.setdefault(pr["piece"], []).append(pr)
+        for fn, chain in fingers.items():
+            pts = [W + (c["a"] - W) * HAND_SCALE for c in chain] + [W + (chain[-1]["b"] - W) * HAND_SCALE]
+            rr = [c["ra"] * HAND_SCALE * 0.88 for c in chain] + [chain[-1]["rb"] * HAND_SCALE * 0.8]
+            parts.append(_tube(fn, hmat, subj, f"hand-{s}", pts, rr, {f"palm-{s}": None, fn: pts[0]},
+                               n_rings=8, n_pts=12, bias=-0.002 * h))
+        # feet: a small wedge from the ankle to a pointed toe
+        heel, toe, _, _ = rig.foot(s)
+        ank = J[f"ankle-{s}"]
+        ball = heel + (toe - heel) * 0.55
+        shoe = garments.get("shoes") is not None or garments.get("boots") is not None
+        sock = any(g in garments for g in ("socks", "thigh-highs"))
+        fmat = "shoes" if "shoes" in garments else "boots" if "boots" in garments else \
+            ("socks" if "socks" in garments else "thigh-highs" if "thigh-highs" in garments else "skin")
+        fr_ = 1.15 if shoe else 1.0
+        tip = toe - (toe - heel) * (0.2 if shoe else 0.22)
+        parts.append(_tube(f"foot-{s}", fmat, subj, f"foot-{s}", [ank, ball, tip],
+                           [0.068 * h * k * fr_, 0.062 * h * k * fr_, (0.042 if shoe else 0.03) * h * k * fr_],
+                           {f"ankle-{s}": ank}, point_end=not shoe, round_end=shoe, n_rings=10,
+                           bias=-0.012 * h if shoe else 0.0))
+        if shoe:
+            parts[-1]["details"].append({"pts": np.array([J[f"heel-{s}"] + (toe - heel) * 0.05, ball,
+                                                          toe + (toe - heel) * 0.04]), "w": 0.5})
+        _ = sock
+
+    # ---- clothes
+    parts += _clothes(el, body, J, F, h, k, tor, garments, motion, hands, grips, rig, subj)
+
+    # ---- hair
+    hair = (look or {}).get("hair")
+    if hair:
+        parts += _hair(rig, hair, motion, floating, subj, h)
+
+    # ---- held props
+    for pe in held or []:
+        from .pose3d import prop_prims
+        for pr in prop_prims(pe["type"], pe["hand"], pe.get("length"), body, J, F, pe["id"]):
+            if pr["t"] in ("ell", "rcone", "cyl"):
+                parts.append(_solid(f"{pe['name']}-{pr['part']}", f"prop:{pe['name']}", subj, "props", [pr],
+                                    rad=0.05))
+    # the joints the folds and seams need
+    for pt in parts:
+        pt.setdefault("subj", subj)
+    return parts
+
+
+# ============================================================================================ clothes
+
+def _limb_cover(J, s, kind, t0, t1, ease, h, k, scale=1.08):
+    prof = {"upperarm": UPPER, "forearm": FORE, "thigh": THIGH, "shin": SHIN}[kind]
+    A_, B_ = {"upperarm": ("shoulder", "elbow"), "forearm": ("elbow", "wrist"), "thigh": ("hip", "knee"),
+              "shin": ("knee", "ankle")}[kind]
+    tt, rr = _prof(prof, h, k)
+    ts = np.linspace(t0, t1, 6)
+    r = np.interp(ts, tt, rr) * scale + ease
+    A0 = J[f"{A_}-{s}"]
+    if kind == "upperarm":
+        A0 = A0 - unit(J["neck"] - 0.5 * (J["hip-r"] + J["hip-l"])) * 0.06 * h
+    return _limb_axis(A0, J[f"{B_}-{s}"], ts), r, {f"{A_}-{s}": J[f"{A_}-{s}"], f"{B_}-{s}": J[f"{B_}-{s}"]}
+
+
+def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, grips, rig, subj) -> List[dict]:
+    out: List[dict] = []
+    order = sorted(garments, key=lambda g: F3.LAYER.get(g, 3))
+    inner_top = next((g for g in ("blouse", "shirt", "dress") if g in garments), None)
+    for g in order:
+        o = garments[g] or {}
+        ease = EASE.get(g, 0.02) * h
+        lay = F3.LAYER.get(g, 3)
+        bias = -0.007 * h * (lay + 1)
+        loose = str(o.get("fit") or ("loose" if g in ("hoodie", "coat") else "tight")) == "loose"
+        if loose:
+            ease *= 1.6
+        if g in TOPS:
+            outer = g in OUTER
+            t1 = 5.3 if outer else (3.0 if g == "dress" else 4.6)
+            extra = []
+            if outer:
+                c, X, Z, a, b = tor.at(5.0)
+                c2 = c - F["pelvis"][:, 1] * 0.08 * h
+                extra = [(c2, X, Z, tor.at(4.0)[3] * 1.06, b * 1.15)]
+            ax, a, dr, fr = tor.tube(0, min(t1, 5.0), ease, n=9 if outer else 8, extra=extra)
+            body_part = _tube(g, g, subj, "clothes", ax, a, {"neck": J["neck"], "shoulder-r": J["shoulder-r"],
+                                                               "shoulder-l": J["shoulder-l"], "hip-r": J["hip-r"],
+                                                               "hip-l": J["hip-l"], "waist": J["spine"]},
+                              frames=fr, depth_ratio=dr, round_start=False, round_end=False, open_end=True,
+                              open_start=True, n_rings=16, n_pts=24, bias=bias)
+            out.append(body_part)
+            # sleeves
+            sleeve = str(o.get("sleeve") or ("short" if g == "dress" else "long"))
+            trim = g in ("blazer", "coat") and o.get("trim", True) is not False
+            for s in "rl":
+                if sleeve == "none":
+                    continue
+                sc = 1.12 if outer else 1.06
+                if sleeve == "short":
+                    axs, rs, js = _limb_cover(J, s, "upperarm", 0.0, 0.5, ease, h, k, sc)
+                    out.append(_tube(f"{g}-sleeve-{s}", g, subj, f"arm-{s}", axs, rs, js, round_end=False,
+                                     open_end=True, bias=bias - 0.002 * h))
+                    continue
+                axs, rs, js = _limb_cover(J, s, "upperarm", 0.0, 1.0, ease, h, k, sc)
+                up = _tube(f"{g}-sleeve-{s}", g, subj, f"arm-{s}", axs, rs, js, bias=bias - 0.002 * h)
+                axf, rf, jf = _limb_cover(J, s, "forearm", 0.0, 0.97, ease * 1.15, h, k, sc * 1.05)
+                lo = _tube(f"{g}-cuff-{s}" if False else f"{g}-forearm-{s}", g, subj, f"arm-{s}", axf, rf, jf,
+                           round_end=False, open_end=True, bias=bias - 0.003 * h)
+                # compression folds inside the bent elbow
+                for fl in _fold_lines(J[f"shoulder-{s}"], J[f"elbow-{s}"], J[f"wrist-{s}"], float(rs[-1]), 3,
+                                      0.18 * h):
+                    lo["details"].append({"pts": fl, "w": 0.45})
+                out += [up, lo]
+                if trim:
+                    axc, rc, jc = _limb_cover(J, s, "forearm", 0.8, 0.97, ease * 1.15 + 0.008 * h, h, k, sc * 1.05)
+                    out.append(_tube(f"{g}-trim-{s}", "trim", subj, f"arm-{s}", axc, rc, jc, round_start=False,
+                                     round_end=False, open_end=True, open_start=True, bias=bias - 0.006 * h,
+                                     n_rings=5))
+            # the front: an open V shows the shirt; lapels, buttons; a blouse collar
+            if outer and g != "hoodie":
+                style = str(o.get("style") or ("open" if g == "jacket" else "closed"))
+                apex_t = 1.9 if style == "closed" else 4.4
+                lift = ease + 0.006 * h
+                vpts = [tor.front(0.15, 0.62, lift), tor.front(0.15, -0.62, lift)]
+                vpts += [tor.front(apex_t * f + 0.15 * (1 - f), -0.62 * (1 - f), lift) for f in np.linspace(0.2, 1, 5)]
+                vpts += [tor.front(apex_t * f + 0.15 * (1 - f), 0.62 * (1 - f), lift) for f in np.linspace(1, 0.2, 5)[1:]]
+                inner_mat = inner_top or "skin"
+                P_, N_ = _fan_samples(np.array(vpts), tor.at(1.5)[2])
+                out.append(_blob(f"{g}-v", inner_mat, subj, "clothes", P_, N_, {"neck": J["neck"]}, rad=0.1 * h,
+                                 hull=False, poly3=np.array(vpts), decal=[g]))
+                for sg in (1.0, -1.0):
+                    lap = [tor.front(0.25, sg * 0.95, lift), tor.front(0.9, sg * 0.82, lift),
+                           tor.front(apex_t * 0.98, sg * 0.04, lift)]
+                    body_part["details"].append({"pts": np.array(lap), "w": 0.5})
+                if style == "closed":
+                    for tt in (apex_t + 0.35, apex_t + 1.1):
+                        if tt < 5.0:
+                            c = tor.front(tt, 0.0, lift)
+                            from .render3d import ell_prim
+                            out.append(_solid(f"{g}-button", "trim" if trim else "button", subj, "clothes",
+                                              [ell_prim(c, np.eye(3), (0.028 * h,) * 3)], rad=0.03 * h,
+                                              bias=bias - 0.02 * h))
+            if g == "blouse" or (g == "shirt" and not any(x in garments for x in OUTER)):
+                for sg in (1.0, -1.0):
+                    cpts = np.array([tor.front(0.0, sg * 0.9, ease + 0.01 * h), tor.front(0.75, sg * 0.75, ease + 0.012 * h),
+                                     tor.front(0.55, sg * 0.08, ease + 0.012 * h), tor.front(0.05, sg * 0.05, ease + 0.01 * h)])
+                    P_, N_ = _fan_samples(cpts, tor.at(0.5)[2])
+                    out.append(_blob(f"{g}-collar-{'r' if sg > 0 else 'l'}", g, subj, "clothes", P_, N_,
+                                     {"neck": J["neck"]}, rad=0.08 * h, poly3=cpts,
+                                     decal=[g] + [f"{x}-v" for x in OUTER] + list(OUTER)))
+            if g == "dress":
+                out += _shell_parts(F3.garment_prims(rig, "x", "skirt", {"length": o.get("length", "knee"),
+                                                                       "style": "flared"}, motion, hands, grips),
+                                    g, subj, tor, h, bias + 0.002 * h)
+            if g == "hoodie":
+                for pr in F3.garment_prims(rig, "x", g, o, motion, hands, grips):
+                    if pr["piece"] == "hood":
+                        out.append(_solid("hood", g, subj, "clothes", [pr], rad=0.1, bias=0.02 * h))
+            if g == "coat":
+                out += _shell_parts(F3.garment_prims(rig, "x", "coat", o, motion, hands, grips), g, subj, tor, h,
+                                    bias + 0.002 * h, only="coat-tails")
+        elif g == "skirt":
+            out += _shell_parts(F3.garment_prims(rig, "x", "skirt", o, motion, hands, grips), g, subj, tor, h, bias)
+        elif g in ("pants", "shorts"):
+            ax, a, dr, fr = tor.tube(3.0, 4.75, ease, n=5)
+            out.append(_tube(g, g, subj, "clothes", ax, a, {"hip-r": J["hip-r"], "hip-l": J["hip-l"],
+                                                             "waist": J["spine"]},
+                             frames=fr, depth_ratio=dr, round_start=False, round_end=False, n_rings=8, n_pts=20,
+                             bias=bias))
+            for s in "rl":
+                t1 = 0.45 if g == "shorts" else 1.0
+                axs, rs, js = _limb_cover(J, s, "thigh", 0.0, t1, ease * (0.7 if g == "shorts" else 1.0), h, k, 1.06)
+                th = _tube(f"{g}-{s}", g, subj, f"leg-{s}", axs, rs, js, round_end=False, open_end=g == "shorts",
+                           bias=bias - 0.002 * h)
+                out.append(th)
+                if g == "pants":
+                    axl, rl, jl = _limb_cover(J, s, "shin", 0.0, 0.98, ease * 1.2, h, k, 1.12)
+                    lo = _tube(f"{g}-shin-{s}", g, subj, f"leg-{s}", axl, rl, jl, round_end=False, open_end=True,
+                               bias=bias - 0.003 * h)
+                    for fl in _fold_lines(J[f"hip-{s}"], J[f"knee-{s}"], J[f"ankle-{s}"], float(rl[0]), 3, 0.22 * h):
+                        lo["details"].append({"pts": fl, "w": 0.45})
+                    out.append(lo)
+        elif g in ("socks", "thigh-highs"):
+            for s in "rl":
+                if g == "thigh-highs":
+                    axs, rs, js = _limb_cover(J, s, "thigh", 0.45, 1.0, ease, h, k, 1.0)
+                    out.append(_tube(f"{g}-thigh-{s}", g, subj, f"leg-{s}", axs, rs, js, round_start=False,
+                                     open_start=True, bias=bias))
+                    t0 = 0.0
+                else:
+                    t0 = 0.42
+                axs, rs, js = _limb_cover(J, s, "shin", t0, 1.0, ease, h, k, 1.0)
+                out.append(_tube(f"{g}-{s}", g, subj, f"leg-{s}", axs, rs, js, round_start=g == "thigh-highs",
+                                 open_start=g == "socks", bias=bias))
+        elif g == "boots":
+            for s in "rl":
+                axs, rs, js = _limb_cover(J, s, "shin", 0.5, 1.0, 0.03 * h, h, k, 1.1)
+                out.append(_tube(f"{g}-{s}", g, subj, f"foot-{s}", axs, rs, js, round_start=False, open_start=True,
+                                 bias=bias))
+        elif g in ("tie", "ribbon", "scarf"):
+            for i, pr in enumerate(F3.garment_prims(rig, "x", g, o, motion, hands, grips)):
+                if pr["t"] not in ("ell", "rcone", "cyl"):
+                    continue
+                # on the slim trunk: pulled in toward the spine as much as the trunk is slimmer
+                pr = _slim_prim(pr, tor)
+                out.append(_solid(f"{g}-{pr['piece']}-{i}", g, subj, "clothes", [pr], rad=0.05 * h, bias=-0.03 * h))
+    return out
+
+
+def _slim_prim(pr: dict, tor: Torso) -> dict:
+    """A primitive made for the 3D mannequin's chest, moved onto the slimmer drawn trunk (toward the spine)."""
+    c, X, Z, a, b = tor.at(1.3)
+    Y = np.cross(Z, X)
+
+    def mv(P):
+        q = np.asarray(P, float) - c
+        return c + X * (q @ X) * 0.8 + Z * (q @ Z) * 0.9 + Y * (q @ Y)
+    out = dict(pr)
+    for key in ("c", "a", "b"):
+        if key in out:
+            out[key] = mv(out[key])
+    return out
+
+
+def _fan_samples(poly3: np.ndarray, normal: np.ndarray, n: int = 6) -> Tuple[np.ndarray, np.ndarray]:
+    """Samples inside a small 3D polygon (a fan from its middle) with one normal."""
+    c = poly3.mean(0)
+    P = [c]
+    m = len(poly3)
+    for i in range(m):
+        a, b = poly3[i], poly3[(i + 1) % m]
+        for u in np.linspace(0, 1, n):
+            for v in np.linspace(0, 1, n):
+                if u + v <= 1:
+                    P.append(c + u * (a - c) + v * (b - c))
+    P = np.asarray(P)
+    return P, np.repeat(unit(normal)[None], len(P), 0)
+
+
+def _shell_parts(prims: List[dict], mat: str, subj: str, tor: Torso, h: float, bias: float,
+                 only: Optional[str] = None) -> List[dict]:
+    """A skirt (or coat tails) from the 3D cloth shell: rings from the waist to the hem, narrowed at the waist to
+    the drawn trunk, with pleat lines on the front."""
+    out = []
+    for pr in prims:
+        if pr["t"] != "shell" or (only and pr["piece"] != only):
+            continue
+        A = np.asarray(pr["A"], float)
+        c = np.asarray(pr["c"], float)
+        r0 = float(np.linalg.norm(A[:, 0]))
+        hem_r = r0 * (1 + abs(pr["flare"]))
+        waist_a = tor.at(3.4)[3] + 0.02 * h
+        f = waist_a / max(r0, 1e-6)
+        flare = max(0.0, hem_r / max(r0 * f, 1e-6) - 1)
+        Ax = A[:, 0] * f
+        Az = A[:, 2] * f
+        Ay = A[:, 1]
+        tilt = np.asarray(pr.get("hem_tilt", [0.0, 0.0]), float)
+        n = 24
+        th = np.linspace(0, 2 * math.pi, n, endpoint=False)
+        cs, sn = np.cos(th), np.sin(th)
+        y_hem = -1.0 + np.maximum(0.0, tilt[0] * cs + tilt[1] * sn)
+        rings = []
+        for kk in range(10):
+            fy = kk / 9.0
+            y = y_hem * fy
+            rr = 1 + flare * np.abs(y)
+            P = c[None] + np.outer(rr * cs, Ax) + np.outer(y, Ay) + np.outer(rr * sn, Az)
+            rings.append((P.mean(0), P))
+        part = _part(pr["piece"], "tube", mat, subj, "clothes", {"waist": None, "hip-r": None, "hip-l": None},
+                     rad=hem_r, rings=rings, open_end=True, bias=bias)
+        # pleats: lines from below the waist band to the hem
+        if int(pr.get("pleats", 0)) or mat == "skirt":
+            m_ = max(8, int(pr.get("pleats", 0)) or 12)
+            for j in range(m_):
+                a_ = 2 * math.pi * (j + 0.5) / m_
+                yh = -1.0 + max(0.0, tilt[0] * math.cos(a_) + tilt[1] * math.sin(a_))
+                ys = np.linspace(-0.3, yh, 6)
+                rr = 1 + flare * np.abs(ys)
+                pts = c[None] + np.outer(rr * math.cos(a_), Ax) + np.outer(ys, Ay) + np.outer(rr * math.sin(a_), Az)
+                part["details"].append({"pts": pts, "w": 0.42, "nrm": unit(np.outer(math.cos(a_), Ax) + np.outer(math.sin(a_), Az)).repeat(len(pts), 0)})
+        out.append(part)
+    return out
+
+
+# ============================================================================================ hair
+
+def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[dict]:
+    prims = F3.hair_prims(rig, "x", hair, motion, floating)
+    out: List[dict] = []
+    locks: Dict[str, list] = {}
+    for pr in prims:
+        if pr["piece"] == "hair-cap":
+            out.append(_solid("hair-cap", "hair", subj, "hair", [pr], {"scalp": None}, rad=0.45 * h,
+                              bias=-0.004 * h))
+        elif pr["t"] == "rcone" and pr["mat"] == "hair":
+            locks.setdefault(pr["piece"], []).append(pr)
+        elif pr["t"] in ("ell", "rcone", "cyl"):
+            out.append(_solid(pr["piece"], pr["mat"], subj, "hair", [pr], rad=0.05 * h, bias=-0.006 * h))
+    for name, chain in locks.items():
+        pts = [c["a"] for c in chain] + [chain[-1]["b"]]
+        rr = [c["ra"] for c in chain] + [max(chain[-1]["rb"], 0.004)]
+        rr = np.asarray(rr) * 0.95
+        root = pts[0]
+        part = _tube(name, "hair", subj, "hair", pts, rr, {"scalp": root}, point_end=True, n_rings=max(8, 3 * len(pts)),
+                     n_pts=14, bias=-0.002 * h)
+        L = float(np.sum(np.linalg.norm(np.diff(np.asarray(pts), axis=0), axis=1)))
+        if L > 3.5 * float(np.max(rr)) and len(pts) >= 3:
+            # one strand line inside a long lock, from its middle toward the tip
+            P = np.asarray(pts)
+            X, Z = perp_basis(P[-1] - P[0])
+            m = len(P)
+            sl = P[m // 3: max(m // 3 + 2, m - 1)] + X * float(np.mean(rr)) * 0.25
+            part["details"].append({"pts": sl, "w": 0.4})
+        out.append(part)
+    return out

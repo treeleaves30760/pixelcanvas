@@ -564,7 +564,8 @@ def cmd_help(ctx: Ctx, args: List[str]) -> Report:
             "block <name> box|stairs|cylinder|plane|railing --at x,y --size w,d,h   prop <name> --kind sword --hand r   "
             "form <subject>   dress <subject> blouse,skirt,shoes --color navy   dress list   "
             "hair3d <subject> --style long|twintails|... --bangs blunt --color pink   "
-            "render [--line 2.2] [--bands 2|3]   face <subject> --expression crying")
+            "render (the 3D guide)   draw <subject>|all|scene [--part hair|face|arm-r|...]   "
+            "shade <subject>|all (cel shadows)   face <subject> --expression crying")
     rep.add("finish:  polish (one finishing pass over a drawn picture; --no-<part> leaves a part out)   "
             "sharpen (the finishing sharpen, fitted to the reference)   "
             "fx <glow|grain|blur|vignette|paper|sharpen|levels> [region] [--amount 0..1]   "

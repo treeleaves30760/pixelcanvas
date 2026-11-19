@@ -325,9 +325,15 @@ def build_todo(state: dict) -> None:
             poster = state.get("style") == "poster"
             rig3 = [s for s in rigged_subjects(state) if s]
             if rig3 and not ref:
-                add("line", "render the 3D figures and blocks: line art, flat colours and shading in one step",
-                    "pixelcanvas render   (then look; a re-pose, dress or hair3d renders again by itself)",
-                    key="render")
+                add("line", "render the 3D guide: the posed figures and blocks, faded under the drawing",
+                    "pixelcanvas render   (a re-pose, dress or hair3d updates it by itself)", key="render")
+                for s in rig3:
+                    add("line", f"draw {s} over the guide: anime contours, clothes, hair locks and the face as line "
+                        f"art", f"pixelcanvas draw {s}   (then look; one part again: draw {s} --part hair)",
+                        region=s, key="draw2d")
+                if any(el.get("kind") == "block" for el in state.get("draw", {}).get("sketch", [])):
+                    add("line", "draw the blocks over the guide: flat faces and perspective lines",
+                        "pixelcanvas draw scene", key="draw2d", region="@scene")
             for n in _ordered_parts(state):
                 if is_text(n) or poster:
                     continue        # lettering is set with pixelcanvas text; poster shapes need no outline
@@ -359,9 +365,9 @@ def build_todo(state: dict) -> None:
                     else:
                         cmd = f'pixelcanvas line "x,y x,y x,y ..."   (along the {n} outline)'
                     if parts[n].get("of") in rig3 and not ref:
-                        if parts[n].get("r3d"):
-                            continue            # a material of the render: it has its outline already
-                        cmd = f"pixelcanvas render   (draws {n} from the 3D figure)"
+                        if parts[n].get("d2d"):
+                            continue            # a material of the drawing: it has its outline already
+                        cmd = f"pixelcanvas draw {parts[n]['of']}   (draws {n} over the 3D guide)"
                     add("line", f"line {n}", cmd, region=n, key="line")
                     if n in ("face", "head") and not ref and not poster:
                         add("line", *face_item(state, n), region=n, key="face")
@@ -376,6 +382,9 @@ def build_todo(state: dict) -> None:
                         add("flat", f"{n} as a colour band", f'pixelcanvas band {n} "x,y x,y x,y ..." {side} --color {n}',
                             region=n, key="mass")
         elif stage == "shade":
+            for s in [x for x in rigged_subjects(state) if x and not ref]:
+                add("shade", f"cel shadows on {s}: two tones, hair in three, a highlight band, cast shadows",
+                    f"pixelcanvas shade {s}", region=s, key="cel")
             for n in sorted(parts, key=lambda k: -parts[k].get("focus", 2)):
                 if not is_text(n) and (ref or not is_scenery(state, n)):     # sky and sea bands carry their light
                     add("shade", f"shade {n}", f"pixelcanvas shade {n}", region=n, key="shade")
@@ -538,31 +547,38 @@ def refresh(p) -> List[int]:
         if k == "render":
             from .draw_render import is_stale
             return bool(d.get("render")) and not is_stale(p)
+        dd = d.get("drawn2d") or {}
+        sh = d.get("shaded2d") or {}
+        if k == "draw2d":
+            from .draw_figure2d import scene_key
+            return r in dd and dd[r].get("key") == scene_key(p, r)
+        if k == "cel":
+            return r in sh
         subj_r = d.get("parts", {}).get(r, {}).get("of") if r else None
+        drawn_r = subj_r in rigged_subjects(st) and subj_r in dd
         if k == "face" and subj_r in rigged_subjects(st):
             fig = next(el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == subj_r)
-            return bool((fig.get("look") or {}).get("face")) and bool(d.get("render"))
+            return bool((fig.get("look") or {}).get("face")) and drawn_r
         if r and str(r).startswith("eye") and subj_r in rigged_subjects(st) and k in ("line", "detail", "shade"):
             fig = next(el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == subj_r)
-            return bool((fig.get("look") or {}).get("face")) and bool(d.get("render"))
-        if d.get("render") and subj_r in rigged_subjects(st) and r in st.get("regions", {}) and \
-                str(st["regions"][r].get("how", "")).startswith("3D render"):
+            return bool((fig.get("look") or {}).get("face")) and drawn_r
+        if drawn_r:
             if stage == "shade" and k == "shade":
-                return True             # shaded by the render (a part turned to the light has no shadow shape)
+                return subj_r in sh     # the cel shadows of the drawn figure (a part turned to the light has none)
             if stage == "detail" and k == "detail" and r in ("face", "head"):
                 fig = next(el for el in d.get("sketch", []) if el.get("kind") == "figure" and el.get("subject") == subj_r)
-                return bool((fig.get("look") or {}).get("face"))    # blush and shine come with the 3D face
-        if stage == "shade" and k == "cast" and d.get("render") and any(
-                "hair" in n and v.get("of") in rigged_subjects(st) for n, v in d.get("parts", {}).items()):
-            return True                 # the render casts the hair's shadow on the face from the light
+                return bool((fig.get("look") or {}).get("face"))    # blush and shine come with the drawn face
+        if stage == "shade" and k == "cast" and any(
+                "hair" in n and v.get("of") in sh for n, v in d.get("parts", {}).items()):
+            return True                 # the cel shading casts the hair's shadow on the face
         if k == "face":
             from .draw_checks import face_missing, head_elements
             els = [el for el in head_elements(p) if el.get("subject") == d.get("parts", {}).get(r, {}).get("of")]
             return bool(els) and not any(face_missing(p, el) for el in els)
         if stage == "line":
             if k == "line":
-                if subj_r in rigged_subjects(st) and d.get("render"):
-                    return True         # drawn by the render from the 3D figure
+                if drawn_r:
+                    return True         # drawn over the 3D guide
                 return part_has_lines(p, r)
             if k == "gaps":
                 others = [t for t in st.get("todo", []) if t["stage"] == "line" and t.get("key") == "line"
@@ -782,8 +798,13 @@ def next_action(p, comparison=None) -> Tuple[str, str]:
         try:
             from .draw_render import is_stale
             if is_stale(p):
-                return ("the 3D scene changed since the last render: draw it again (the face and touch-layer marks "
-                        "stay)", "pixelcanvas render")
+                return ("the 3D scene changed since the last render: the guide again", "pixelcanvas render")
+            from .draw_figure2d import stale_subjects
+            st_ = stale_subjects(p)
+            if st_:
+                w = st_[0].lstrip("@") if not st_[0].startswith("@") else "scene"
+                return (f"the 3D scene changed since {w} was drawn over the guide: draw it again (then flat auto and "
+                        f"shade again)", f"pixelcanvas draw {w}")
         except Exception:  # noqa: BLE001
             pass
         if d.get("palette", {}).get("candidates") and not d["palette"].get("swatches"):

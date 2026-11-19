@@ -58,22 +58,24 @@ def _load_layer_file(path: Path) -> Optional[np.ndarray]:
 
 
 def blockout_only(p) -> bool:
-    """Only the sketch layer holds paint (a 3D blockout, a construction): the export shows it instead of a blank."""
+    """Only the sketch layer (and the 3D guide) hold paint (a 3D blockout, a construction): the export shows them
+    instead of a blank."""
     has_sketch = False
     for e in p.state["layers"]:
         arr = p.layer(e["name"], create=False)
         if e["name"] == "paper" or arr is None or not (arr[..., 3] > 0.004).any():
             continue
-        if e["name"] != "sketch":
+        if e["name"] not in ("sketch", "guide"):
             return False
         has_sketch = True
     return has_sketch
 
 
 def blockout_picture(p) -> np.ndarray:
-    """The sketch layer at full strength over the paper (uint8 RGB)."""
-    lays = [dict(e, visible=True, opacity=1.0) if e["name"] == "sketch" else e for e in p.state["layers"]]
-    return compose.to_uint8(compose.composite(lays, p.layers_dict(), p.H, p.W, background=p.background()))
+    """The 3D guide and the sketch layer at full strength over the paper (uint8 RGB)."""
+    lays = [dict(e, visible=True, opacity=1.0) if e["name"] in ("sketch", "guide") else e for e in p.state["layers"]]
+    return compose.to_uint8(compose.composite(lays, p.layers_dict(), p.H, p.W, background=p.background(),
+                                              show=("guide",)))
 
 
 def _sketch_shown(state: dict) -> bool:
@@ -148,7 +150,7 @@ def layer_records(p, bake_clip: bool = False) -> List[LayerRec]:
         if arr is not None and clip and bake_clip:
             arr = arr.copy()
             arr[..., 3] *= np.clip(base_alpha, 0, 1) if base_alpha is not None else 0.0
-        visible = bool(e.get("visible", True)) and name != "sketch"
+        visible = bool(e.get("visible", True)) and name not in ("sketch", "guide")
         if arr is None:
             recs.append(LayerRec(name, np.zeros((0, 0, 4), np.uint8), (0, 0, 0, 0), visible,
                                  float(e.get("opacity", 1.0)), e.get("mode", "normal"), clip))

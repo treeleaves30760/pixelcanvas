@@ -1101,14 +1101,14 @@ def holes(p, stage: str) -> List[dict]:
 
 
 def _render_filter(p, out: List[dict]) -> List[dict]:
-    """Subjects drawn by the 3D render: their areas, outlines and overlaps come from the z-buffer, so the checks made
-    for hand-drawn areas (a part without its own area, background showing through, the mass off the plan box) do not
-    apply to them."""
+    """Subjects drawn over the 3D guide: their areas, outlines and overlaps come from the posed figure, so the checks
+    made for hand-drawn areas (a part without its own area, background showing through, the mass off the plan box)
+    do not apply to them."""
     d = dstate(p)
-    if not d.get("render"):
+    if not d.get("drawn2d"):
         return out
     from .workflow_draw import rigged_subjects
-    rig = {s for s in rigged_subjects(p.state) if s}
+    rig = {s for s in rigged_subjects(p.state) if s and s in d["drawn2d"]}
     if not rig:
         return out
     names = rig | {n for n, v in d["parts"].items() if v.get("of") in rig}

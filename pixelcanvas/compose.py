@@ -44,19 +44,24 @@ def composite_over(dst_rgb: np.ndarray, dst_a: np.ndarray, src: np.ndarray, mode
     return rgb.astype(np.float32), ao.astype(np.float32)
 
 
+SCAFFOLD = ("guide",)     # drawn over, never part of the picture: shown faded in the views only
+
+
 def composite(stack: List[dict], layers: Dict[str, Optional[np.ndarray]], H: int, W: int,
-              background=(1.0, 1.0, 1.0), skip: Iterable[str] = (), upto: Optional[str] = None) -> np.ndarray:
+              background=(1.0, 1.0, 1.0), skip: Iterable[str] = (), upto: Optional[str] = None,
+              show: Iterable[str] = ()) -> np.ndarray:
     """Flatten a layer stack (bottom to top) to float32 RGB [H,W,3] over an opaque ``background``.
 
     ``stack`` entries: dict(name, mode, opacity, visible, clip). ``layers`` maps name -> array or None (empty).
     ``clip``: the layer is clipped to the alpha of the nearest non-clipped layer below (its clipping base).
     ``upto``: stop before this layer (used to get the canvas under a layer). ``skip``: names left out.
+    Scaffold layers (``SCAFFOLD``: the 3D guide) are left out unless named in ``show``.
     """
     rgb = np.empty((H, W, 3), np.float32)
     rgb[:] = np.asarray(background, np.float32)
     a = np.ones((H, W), np.float32)
     base_alpha: Optional[np.ndarray] = None
-    skip = set(skip)
+    skip = set(skip) | (set(SCAFFOLD) - set(show))
     for entry in stack:
         name = entry["name"]
         if upto is not None and name == upto:

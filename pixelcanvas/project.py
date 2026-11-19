@@ -452,7 +452,8 @@ class Project:
         if mode in ("score", "export") or not self.sketch_shown():
             skip.append("sketch")
         return compose.composite(self.state["layers"], self.layers_dict(), self.H, self.W,
-                                 background=self.background(), skip=skip, upto=upto)
+                                 background=self.background(), skip=skip, upto=upto,
+                                 show=("guide",) if mode == "view" else ())
 
     def composite_u8(self, mode: str = "view", upto: Optional[str] = None) -> np.ndarray:
         return compose.to_uint8(self.composite(mode, upto))
