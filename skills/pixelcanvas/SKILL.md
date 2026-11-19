@@ -267,12 +267,9 @@ pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff
    thigh-highs, shoes, boots, gloves, tie, ribbon, scarf; one piece takes `--length short|knee|long`, `--fit`,
    `--sleeve`, `--style pleated|flared|open|closed`, `--trim gold`) · `pixelcanvas hair3d girl --style twintails
    --bangs blunt --color pink --bows black` (long, medium, bob, short, spiky, ponytail, twintails, braid, bun; a run
-   trails the hair, `--wind 0.6,-0.2` blows it). Then the line stage starts with `pixelcanvas render`: line art,
-   flat colours and cel shading with cast shadows of every figure, block and prop in one step, each material a
-   region (`pixelcanvas dress girl skirt --color "#3a2c60"` recolours it for good; `flat`, `shade`, `surface`,
-   `polish` work on it), and `pixelcanvas face girl --expression crying` (neutral, smile, open, grin, angry, sad, crying, surprised,
-   panicked, sleepy; `--eyes blue`) on the 3D head. After a render, `pose`, `dress`, `hair3d`, `camera`, `block`,
-   `prop` and `face` render again by themselves: re-pose freely; hand marks go on `--layer touch` to stay.
+   trails the hair, `--wind 0.6,-0.2` blows it). The 3D scene is a pose model to draw over, never the picture:
+   the line stage starts with `pixelcanvas render`, the guide (faded under the drawing in every view, left out of
+   every export); `pose`, `dress`, `hair3d`, `camera`, `block` and `prop` update it by themselves, so re-pose freely.
    `pixelcanvas form girl` saves light, core and cast shadow of the forms. A flat mannequin is still
    there: `pixelcanvas sketch figure fox --pose stand|walk|hold|wave|sit|bust` (`--heads 2.5` for chibi), drawn with
    `wear`, `locks` and `hand` in the line stage.
@@ -280,14 +277,30 @@ pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff
    gets a muzzle with `--kind animal`). Animals: `pixelcanvas sketch ellipse 320,500,660,710` for the body and
    `pixelcanvas sketch head cat`; a dressed animal (a fox mage in a robe) stands on a mannequin. Things:
    `pixelcanvas sketch curve "x,y x,y ..."`. Landscapes: `pixelcanvas sketch horizon 560`.
-3. **line** (cel, ink) - 3-8 points per line: `pixelcanvas line "330,190 300,280 305,350"`; the tool smooths, tapers
+3. **line** (cel, ink) - posed figures: `pixelcanvas render` (the guide), then `pixelcanvas draw all` draws every
+   figure and block again in 2D over it, the way an anime illustrator draws over a pose model: anime contours (slim
+   neck, narrow shoulders, a waist, arms and legs tapering to thin wrists and ankles, small hands and feet),
+   clothes with hems, cuffs, an open V, pleats and folds at bent joints, hair as pointed locks with strand lines,
+   the face (big eyes, iris, pupil, shine, mouth) on the head's face frame, blocks as flat faces with perspective
+   lines. The guide says where a limb goes and what is in front; the stroke is 2D line art: line records with ids
+   (the report lists them per part). Redo one part: `pixelcanvas draw girl --part hair` (hair, face, head, torso,
+   arm-r, arm-l, hand-r, hand-l, leg-r, leg-l, foot-r, foot-l, clothes, props); one stroke: `pixelcanvas line redo
+   L42 "x,y x,y x,y"`, `pixelcanvas line weight L42 1.3`, `pixelcanvas line delete L42`. The expression:
+   `pixelcanvas face girl --expression crying` (neutral, smile, open, grin, angry, sad, crying, surprised,
+   panicked, sleepy; `--eyes blue`) draws the face again. After a re-pose, NEXT says `pixelcanvas draw <who>`.
+   Lines by hand: 3-8 points per line: `pixelcanvas line "330,190 300,280 305,350"`; the tool smooths, tapers
    and joins ends. Eyes: `pixelcanvas line eye eye-l,eye-r`. Leaks: `pixelcanvas line gaps`, then all closes in ONE
    command: `pixelcanvas line close G1,G3` (ids renumber after a close). Sky, sea and cliffs need no lines.
-4. **flat** - `pixelcanvas flat auto`, look at the numbered VIEW, fix one area: `pixelcanvas flat 8 --color fur --part paw`;
+4. **flat** - `pixelcanvas flat auto` (a figure drawn over the guide gets each part's colour on exactly its shape;
+   recolour a piece for good with `pixelcanvas dress girl skirt --color "#3a2c60"`, then `draw` and `flat auto`),
+   look at the numbered VIEW, fix one area: `pixelcanvas flat 8 --color fur --part paw`;
    the area under a point: `pixelcanvas flat 500,700 --color robe`; background showing inside a figure:
    `pixelcanvas flat hole 230,640`. Sky, sea and cliffs are colour bands: `pixelcanvas band sea "0,700 1000,700" --below
    --color sea`.
-5. **shade** - `pixelcanvas shade all --soft 0.3`, cast shadows `pixelcanvas shadow --from hair --onto face`, `pixelcanvas rim hair`.
+5. **shade** - figures drawn over the guide: `pixelcanvas shade all` (or `shade girl`): cel shadows as clean
+   hard-edged shapes from the light, two tones (three on hair), a highlight band on the hair, short cast shadows
+   under the bangs and the chin, longer ones from arms and skirts, the figures' shadows on the floor. Otherwise
+   `pixelcanvas shade all --soft 0.3`, cast shadows `pixelcanvas shadow --from hair --onto face`, `pixelcanvas rim hair`.
 6. **detail** - `pixelcanvas eye eye-l,eye-r --color iris` · `pixelcanvas hair hair --flow "x,y x,y x,y"` ·
    `pixelcanvas fold "x,y x,y x,y" --region robe` · `pixelcanvas blush face` ·
    `pixelcanvas scatter robe --kind star --count 14` · `pixelcanvas text "BLUE NOTE" --box 60,50,940,240 --color "#f1e3c3"`.

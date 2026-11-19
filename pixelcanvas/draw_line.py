@@ -502,6 +502,8 @@ def analyze(p) -> dict:
     min_len = 0.1 * S             # brows, noses, mouths, lashes and fold ticks are meant to stay open
     for r in recs:
         P = paths[r["id"]]
+        if r.get("d2d"):
+            continue              # drawn over the 3D guide: an end meets the shape in front (flat fills the shapes)
         if len(P) < 2 or r.get("closed") or math.hypot(*(P[0] - P[-1])) < conn or path_length(P) < min_len:
             continue
         s_own = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(P, axis=0).T))])

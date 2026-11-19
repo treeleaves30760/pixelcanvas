@@ -784,7 +784,23 @@ def do_cel_shade(ctx, who: str = "all"):
             M = np.float32([[1, 0, -dx], [0, 1, -dy]])
             zs = cv2.warpAffine(zm, M, (Wl, Hl), flags=cv2.INTER_NEAREST, borderValue=1e4)
             tgt |= mine & (zs < z - body.h * 0.1)
-    near |= False
+    # hair is shaded as one mass, not lock by lock: its normals smoothed over the whole hair of each figure
+    lam_hair = lam.copy()
+    for subj in subjects:
+        el = figs.get(subj)
+        if el is None:
+            continue
+        hm = np.isin(lab, [k for k, t in enumerate(tb) if t["subj"] == subj and t["mat"] == "hair"])
+        if not hm.any():
+            continue
+        hj = dc.u2px(p, [el["j2d"]["head-top"], el["j2d"]["chin"]])
+        sig = max(1.0, float(np.linalg.norm(hj[0] - hj[1])) * s * 0.12)
+        w = cv2.GaussianBlur(hm.astype(np.float32), (0, 0), sig)
+        ns = np.stack([cv2.GaussianBlur((nrm[..., c] * hm).astype(np.float32), (0, 0), sig) for c in range(3)], -1)
+        ns = ns / np.maximum(w[..., None], 1e-4)
+        ns /= np.maximum(np.linalg.norm(ns, axis=-1, keepdims=True), 1e-4)
+        lh = (ns * lv[None, None, :].astype(np.float32)).sum(-1)
+        lam_hair[hm] = lh[hm]
     shade_parts: Dict[str, Tuple[np.ndarray, np.ndarray, Tuple[int, int, int]]] = {}
     for k, t in enumerate(tb):
         if t["subj"] not in keep or not t["drawn"]:
@@ -801,12 +817,13 @@ def do_cel_shade(ctx, who: str = "all"):
                 sm |= m
             continue
         thr = -0.05 if t["mat"] == "skin" else 0.12
-        if t["group"] == "head" or t["mat"] == "hair":
-            sm |= m & ((lam < thr) | near)          # the face and the hair: only short cast shadows
+        if t["mat"] == "hair":
+            sm |= m & ((lam_hair < thr) | near)     # the hair: one mass, short cast shadows (bangs on the cap)
+            dm |= m & (lam_hair < thr - 0.45)
+        elif t["group"] == "head":
+            sm |= m & ((lam < -0.35) | near)        # the face stays lit: its far side, the shadow under bangs and chin
         else:
             sm |= m & ((lam < thr) | cast | near)
-        if t["mat"] == "hair":
-            dm |= m & (lam < thr - 0.6)
     files = ["layers/shade.png", "draw/r3d/shade2d.npz"]
     step = p.begin_step(files)
     try:
@@ -870,12 +887,11 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         h = rig.h
         Hd = rig.Hd
         c = rig.cr_c
-        y0 = 0.2 * h
-        R0 = 0.47 * h
-        th = np.linspace(-math.pi * 0.75, math.pi * 0.75, 60)
-        # the band faces the light: rotate it toward the light's side
+        y0 = 0.3 * h
+        R0 = 0.45 * h
+        # an arc on the lit side of the crown, its lower edge in points
         side = 1.0 if lv[0] > 0 else -1.0
-        th = th * 0.75 + side * 0.25
+        th = np.linspace(-0.5, 0.5, 40) * math.pi + side * 0.35
         teeth = np.abs(np.sin(th * 9.0))
         up = [c + Hd @ np.array([R0 * math.sin(t), y0, R0 * math.cos(t)]) for t in th]
         dn = [c + Hd @ np.array([R0 * 0.99 * math.sin(t), y0 - (0.05 + 0.06 * tt) * h, R0 * 0.99 * math.cos(t)])
@@ -886,6 +902,9 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         if vis.mean() < 0.3:
             continue
         q, zz = cam.project(P3)
+        hc, _ = cam.project(c[None])
+        if float(np.median(q[:, 1])) > float(hc[0, 1]):
+            continue                    # seen from below, the crown is out of sight: no band on the forehead
         band = dc.poly_mask(p.H, p.W, q)
         hair_ids = [k for k, t in enumerate(tb) if t["subj"] == el["subject"] and t["mat"] == "hair"]
         hm = cv2.resize(np.isin(lab, hair_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
@@ -894,7 +913,7 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         if band.sum() < 10:
             continue
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
-        out.append(Fill(mask_rle=mask_to_rle(band), color=dc.light_of(hairc, 1.5), feather=0.6))
+        out.append(Fill(mask_rle=mask_to_rle(band), color=dc.light_of(hairc, 1.2), feather=0.6))
     return out
 
 
@@ -917,11 +936,11 @@ def _ground_shadows(p, mp: dict, keep: set) -> list:
         m = np.isin(lab, ids)
         m = cv2.resize(m.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
         c = cv2.resize(cb.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_LINEAR) > 0
-        sh = S2.clean_shape(c & m, 0.006 * S, (0.015 * S) ** 2) & m
+        sh = S2.clean_shape(c & m, 0.012 * S, (0.02 * S) ** 2) & m
         if sh.sum() < 10:
             continue
         rgb = tuple(next(t["rgb"] for t in tb if t.get("block") == name))
-        out.append(Fill(mask_rle=mask_to_rle(sh), color=_block_shadow(_block_shadow(rgb)), feather=0.6))
+        out.append(Fill(mask_rle=mask_to_rle(sh), color=_block_shadow(rgb), feather=0.6))
     return out
 
 
