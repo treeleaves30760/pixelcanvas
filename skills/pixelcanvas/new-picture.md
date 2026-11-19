@@ -28,7 +28,9 @@ drawing that figure again, never by painting over it.
    first (then the painter runs `draw <who>` for that figure), drawing issues to the painter; then the painter
    exports again.
 
-Keep your own context small: you do not open views yourself except the final picture. Pass each subagent the
+Wait for every subagent's answer before you go on, and never end your turn while a subagent is still working:
+the picture is done only when `final.png` was exported after the last change and `pixelcanvas status` says
+FINISHED. Keep your own context small: you do not open views yourself except the final picture. Pass each subagent the
 project folder, the level it owns and the critic's issues for that level, word for word. Four to six subagent
 calls make a picture; do not add more.
 
