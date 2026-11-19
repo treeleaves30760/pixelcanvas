@@ -530,6 +530,8 @@ def swatch(p, name: str, example: str = 'pixelcanvas palette set hair "#c0c8d8"'
     if alt.endswith(("-shadow", "-light")) and alt.rsplit("-", 1)[0] in DEFAULTS:
         b = DEFAULTS[alt.rsplit("-", 1)[0]]
         return shadow_of(b) if alt.endswith("-shadow") else light_of(b)
+    if alt in ("background", "paper", "bg"):    # no background swatch yet: a warm paper tone
+        return (232, 224, 204)
     try:
         return colour_words(name)
     except UsageError:

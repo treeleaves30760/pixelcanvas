@@ -1,7 +1,7 @@
 {
   "name": "pixelcanvas",
   "displayName": "pixelcanvas",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "pixelcanvas: a command-line paint program your agent drives stage by stage (plan, sketch, line, flat, shade, detail, finish) on a project folder with layers, undo and a view after every command. Redraws a reference picture or paints from a text request. Needs the pixelcanvas command: pip install pixelcanvas.",
   "author": {
     "name": "treeleaves30760",

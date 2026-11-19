@@ -165,6 +165,32 @@ pixelcanvas plan part head --of fox --box 200,90,720,500 --focus 3
 pixelcanvas sketch figure fox --pose hold --heads 2.5
 ```
 
+People in a scene are posed on a 3D skeleton first, then drawn in 2D over it. The camera, the blocks a figure
+touches, the pose, the clothes and the hair live in 3D; `render` turns them into a faded guide that is never
+exported, and `draw` lays anime line art over it, part by part, with an id on every stroke:
+
+```bash
+pixelcanvas camera --horizon 620 --eye-height 1.2
+pixelcanvas block bench box --size 1.8,0.45,0.45 --at 520,860
+pixelcanvas pose girl --preset sit-ledge --on bench --yaw -20 --set "head: turn 30" --hand-shape-r relaxed
+pixelcanvas dress girl blouse,skirt,thigh-highs,shoes --color navy
+pixelcanvas hair3d girl --style twintails --bangs blunt --color pink
+pixelcanvas render                     # the 3D guide
+pixelcanvas draw all                   # 2D line art over the guide
+pixelcanvas flat auto
+pixelcanvas shade all                  # hard-edged cel shadows
+pixelcanvas face girl --expression smile --eyes blue
+```
+
+A re-pose updates the guide by itself; `pixelcanvas draw girl --part arm-r` redraws one part.
+
+### Claude Code plugin
+
+The plugin adds `/pixelcanvas:draw <request>` and four subagents that build a new picture from the coarsest
+decision down: `pixelcanvas-director` writes the brief (shot, camera, each figure's action and pose, clothes,
+light, palette), `pixelcanvas-blocker` poses the figures and renders the guide, `pixelcanvas-painter` draws and
+finishes, and `pixelcanvas-critic` checks the guide and the finished picture and names the command for each fix.
+
 ## Commands
 
 `pixelcanvas help`:
@@ -181,6 +207,7 @@ changes: change add <kind> ...  change list  change drop <n>  change none   (sta
          recolor <region> --to "#hex"   region refine <region> --by lines|hue   canvas --size WxH --place x0,y0,x1,y1 [--color "#hex"]   palette map --to "dark,...,light" [--accent "region=#hex"]   graphic disc|rect|ring|frame <box> --color "#hex"
          cutout <subject> --regions a,b,c   background --from <pixelcanvas project|picture> | --gradient "#a,#b" | --color "#hex"   light [--tint "#hex"] [--rim left|right]   shadow <subject>
 free:    no reference: plan  palette make|pick|set  sketch figure|head|ellipse|box|curve  line  band  face  eye  hair  locks  blush  hand  wear  fold  crease  tufts  mark  pattern  scatter  surface  highlight  rim  shadow --from <part> --onto <part>  reflect  wet  haze  atmosphere  glow  cloud  ground  foliage  window  linestyle
+3D:      camera --horizon <y> --eye-height <m>   pose <subject> --preset run --at x,y --yaw <deg> --set "arm-r: raise 90; knee-l: 60" [--on <block>] [--hand-r <block|x,y>]   pose list   block <name> box|stairs|cylinder|plane|railing --at x,y --size w,d,h   prop <name> --kind sword --hand r   form <subject>   dress <subject> blouse,skirt,shoes --color navy   dress list   hair3d <subject> --style long|twintails|... --bangs blunt --color pink   render (the 3D guide)   draw <subject>|all|scene [--part hair|face|arm-r|...]   shade <subject>|all (cel shadows)   face <subject> --expression crying
 finish:  polish (one finishing pass over a drawn picture; --no-<part> leaves a part out)   sharpen (the finishing sharpen, fitted to the reference)   fx <glow|grain|blur|vignette|paper|sharpen|levels> [region] [--amount 0..1]   text "<string>" --box x0,y0,x1,y1 [--font --color --align --outline px,#hex --vertical --fit]   fonts
 other:   layer  export <file.png> [--psd] [--ora] [--timelapse film.gif|film.mp4] [--stages dir]   do "<cmd>; <cmd>"   help [command]
 NEXT: pixelcanvas next

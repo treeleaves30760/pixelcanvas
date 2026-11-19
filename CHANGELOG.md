@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0 (2026-11-20)
+
+People in a scene are posed on a 3D skeleton first and drawn in 2D over it, and the Claude Code plugin builds a
+new picture from the coarsest decision down with four subagents.
+
+### Posed figures in 3D
+- `camera` (horizon, eye height, lens, tilt), `block` (box, stairs, cylinder, plane, railing, sizes in metres)
+  and `prop` (stick, sword, umbrella, bag, ball, book, cup, held in a hand).
+- `pose <who> --preset <name>`: 36 presets (run, sprint, jump, sit-ledge, sit-stairs, kneel, look-back,
+  lean-railing, reach-viewer, ...), joint edits in degrees with anatomical limits, `--on <block>`, hands and feet
+  that reach a block or a point, `--hand-shape-r fist|open|relaxed|point|grip|peace|cup`, heads or height, yaw.
+- `dress <who> <pieces>` (18 garments with colour, length, fit, sleeve, style, trim), `hair3d <who> --style`
+  (long, medium, bob, short, spiky, ponytail, twintails, braid, bun; bangs, bows, wind), `face <who>
+  --expression` (10 expressions) on the 3D head.
+
+### Drawn in 2D over a guide
+- `render` turns the 3D scene into a faded guide that is never exported; a re-pose, re-dress or camera change
+  updates it by itself.
+- `draw all|<who>|scene [--part hair|face|arm-r|...]` lays anime line art over the guide: a body template by head
+  count that keeps the pose's foreshortening, clothes with hems, cuffs and pleats, hair in clumps with pointed
+  tips, hands per hand shape, a silhouette line heavier than inner lines, an id on every stroke
+  (`line redo`, `line weight`, `line delete`).
+- `flat auto` fills each drawn part; `shade all` lays hard-edged cel shadows from the light and a compact contact
+  shadow under each figure.
+- On a drawn picture `surface auto` leaves cel areas clean, `polish` keeps line colours and edges, and `fx blur`
+  blurs each area only with itself.
+- `export` of a blockout writes the 3D view; `pose --show joints` is read-only.
+
+### Claude Code plugin
+- `/pixelcanvas:draw <request>` and the subagents `pixelcanvas-director` (the brief), `pixelcanvas-blocker` (pose
+  and guide), `pixelcanvas-painter` (drawing and finish) and `pixelcanvas-critic` (checks with a command per fix).
+
 ## 0.6.0 (2026-11-18)
 
 pixelcanvas is now a command-line paint program an agent drives stage by stage. The old tool, where the
