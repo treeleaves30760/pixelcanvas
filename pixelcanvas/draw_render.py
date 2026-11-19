@@ -329,12 +329,9 @@ def guide_image(p, T: dict, sc: dict, s: float) -> np.ndarray:
 
 
 def guide_maps(T: dict, sc: dict) -> dict:
-    """Where the 3D figures are (their silhouette) and the shadows they cast on the blocks (render res)."""
-    own = T["own"]
+    """Where the 3D figures are: their silhouette (render res), to measure the drawing against."""
     figs = [T["owners"].index(o) for o in sc["figures"] if o in T["owners"]]
-    blocks = [T["owners"].index(o) for o in sc.get("blocks", ()) if o in T["owners"]]
-    fig = np.isin(own, figs)
-    return {"fig": fig, "cast_block": T["cast"] & np.isin(own, blocks)}
+    return {"fig": np.isin(T["own"], figs)}
 
 
 def _block_shadow(rgb) -> Tuple[int, int, int]:
@@ -419,7 +416,7 @@ def _guide_layer(p) -> None:
 def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, light_words: Optional[str] = None,
               who: Optional[str] = None, label: Optional[str] = None):
     """One undoable step: the 3D scene as the guide layer (faded under the drawing in the views, never exported) and
-    its maps (the 3D silhouettes, the shadows cast on the blocks) for ``draw`` and ``shade``."""
+    the 3D silhouettes, to measure the 2D drawing against."""
     from . import cli_draw, workflow_draw
     p = ctx.project
     d = dc.dstate(p)
@@ -445,7 +442,7 @@ def do_render(ctx, line: Optional[float] = None, bands: Optional[int] = None, li
     try:
         _guide_layer(p)
         p._write_layer_file("guide", img)
-        np.savez_compressed(p.root / "draw" / "guide.npz", fig=gm["fig"], cast_block=gm["cast_block"])
+        np.savez_compressed(p.root / "draw" / "guide.npz", fig=gm["fig"])
         d["render"] = {"key": _scene_key(p, line, bands, lv), "line": line, "bands": bands,
                        "light_words": light_words, "subjects": [el["subject"] for el in DP.figures(p)]}
         ticked = workflow_draw.refresh(p)

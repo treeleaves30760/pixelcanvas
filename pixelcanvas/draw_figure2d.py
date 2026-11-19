@@ -34,7 +34,7 @@ GROUPS = ("hair", "face", "head", "torso", "arm-r", "arm-l", "hand-r", "hand-l",
           "clothes", "props")
 LAB_MAX = 1600
 NPZ = "draw/draw2d.npz"
-W_SIL, W_IN, W_HAIR, W_DET, W_BLOCK = 1.1, 0.75, 0.6, 0.45, 0.55
+W_SIL, W_IN, W_HAIR, W_DET, W_BLOCK = 1.35, 0.7, 0.6, 0.42, 0.55     # the outer silhouette about 2x the inner lines
 
 
 # ============================================================================================ the scene in 2D
@@ -123,7 +123,7 @@ def figure_parts(p, el) -> List[dict]:
     from .draw_render import look_of
     body, J, F = DP._fig_state(el)
     held = [pr for pr in DP.props_rec(p) if pr.get("subject") == el["subject"]]
-    return A2.figure_parts(el, body, J, F, look_of(el), el["subject"], held)
+    return A2.figure_parts(el, body, J, F, look_of(el), el["subject"], held, eye=DP.camera_of(p).C)
 
 
 def build(p) -> dict:
@@ -184,6 +184,10 @@ def build(p) -> dict:
 def _centre3(pt: dict) -> np.ndarray:
     if pt["kind"] == "tube":
         return np.mean([c for c, _ in pt["rings"]], 0)
+    if pt.get("flat3") is not None:
+        return np.asarray(pt["flat3"], float).mean(0)
+    if pt.get("canopy") is not None:
+        return np.asarray(pt["canopy"]["c"], float)
     return np.asarray(pt["pts"], float).mean(0)
 
 
@@ -225,6 +229,18 @@ def _outline(p, cam, pt: dict, R) -> Optional[dict]:
         q, _ = cam.project(P3)
         q = _clip_rect(q, -m, -m, W + m, H + m)
         return {"poly": q} if len(q) >= 3 else None
+    if pt.get("flat3") is not None:
+        q, zz = cam.project(pt["flat3"])
+        if (zz <= 0.05).any():
+            return None
+        n3 = np.asarray(pt["normal"], float)
+        ns = S2.unit(np.array([n3 @ cam.right, -(n3 @ cam.up), -(n3 @ cam.fwd)]))
+        c2 = q.mean(0)
+        spx = np.vstack([q, c2[None], 0.5 * (q + c2)])
+        sz = np.concatenate([zz, [zz.mean()], zz])
+        return {"poly": q, "spx": spx, "sz": sz, "snrm": np.repeat(ns[None], len(spx), 0)}
+    if pt.get("canopy") is not None:
+        return _canopy_outline(cam, pt)
     px, z, nrm = S2.front_samples(cam, pt["pts"], pt["nrm"], slack=0.0 if pt.get("splat") else 0.15)
     if len(px) < 3:
         return None
@@ -240,6 +256,36 @@ def _outline(p, cam, pt: dict, R) -> Optional[dict]:
     else:
         poly = S2._hull(px)
     return {"poly": poly, "spx": px, "sz": z, "snrm": nrm}
+
+
+def _canopy_outline(cam, pt: dict) -> Optional[dict]:
+    """The canopy seen from the camera: the hull of its top and rib tips with the rim scalloped between the tips,
+    the ribs that face the viewer as lines."""
+    cn = pt["canopy"]
+    tips, apex, c, up = cn["tips"], cn["apex"], cn["c"], cn["up"]
+    qt, zt = cam.project(tips)
+    qa, za = cam.project(apex[None])
+    if (zt <= 0.05).any() or za[0] <= 0.05:
+        return None
+    allp = np.vstack([qt, qa])
+    hull = cv2.convexHull(allp.astype(np.float32), returnPoints=False).ravel().tolist()
+    order = hull[::-1] if cv2.contourArea(allp[hull].astype(np.float32), oriented=True) < 0 else hull
+    poly = []
+    n = len(tips)
+    for i, j in zip(order, order[1:] + order[:1]):
+        poly.append(allp[i])
+        if i < n and j < n and (abs(i - j) == 1 or abs(i - j) == n - 1):
+            m = 0.5 * (allp[i] + allp[j])
+            poly.append(m + (qa[0] - m) * 0.08)              # the rim sags between two ribs
+    poly = np.asarray(poly)
+    P = S2._catmull(np.vstack([poly, poly[:2]]), 10 * len(poly))[:-10] if len(poly) > 3 else poly
+    toward = (tips - c) @ S2.unit(cam.C - c)
+    ribs = [np.vstack([qa[0], qt[i]]) for i in range(n) if toward[i] > -0.05 * np.linalg.norm(tips[0] - c)]
+    n3 = S2.unit(up)
+    ns = S2.unit(np.array([n3 @ cam.right, -(n3 @ cam.up), -(n3 @ cam.fwd)]))
+    spx = np.vstack([qt, qa])
+    sz = np.concatenate([zt, za])
+    return {"poly": P, "spx": spx, "sz": sz, "snrm": np.repeat(ns[None], len(spx), 0), "details_px": ribs}
 
 
 def _splat_outline(px: np.ndarray, s: float, size_px: float) -> Optional[np.ndarray]:
@@ -313,8 +359,8 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
         if groups and pt["group"] not in groups:
             continue
         block = pt["kind"] == "plane" or pt.get("block")
-        for st in S2.outline_strokes(o["poly"], k, R, _keep_fn(sc, k, R), step, min_len,
-                                     sigma=0.6 if block else 1.4):
+        for st in S2.outline_strokes(o["poly"], k, R, _keep_fn(sc, k, R), step, min_len * 1.5,
+                                     sigma=0.6 if block else 2.5, bridge=int(round(0.006 * S / step))):
             c = st["cls"]
             if block:
                 w = W_BLOCK
@@ -326,6 +372,10 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
                 w = W_IN
             out.append({"pts": st["pts"], "closed": st["closed"], "w": w, "part": pt, "k": k})
         cam = sc["cam"]
+        for q in o.get("details_px", []):
+            dense = S2.resample(q, step)
+            for run in S2.detail_strokes(dense, k, R, step, min_len * 0.7):
+                out.append({"pts": run, "closed": False, "w": W_DET, "part": pt, "k": k, "detail": True})
         for det in pt.get("details", []):
             P3 = np.asarray(det["pts"], float)
             if det.get("nrm") is not None:
@@ -551,10 +601,17 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
             return r.get("d2d_group") in groups
         d["lines"] = [r for r in d["lines"] if not gone(r)]
         S = float(max(p.W, p.H))
-        eps = 0.0011 * S
+        eps = 0.0016 * S
+        over = 0.0035 * S
         for st in sts:
             pt = st["part"]
-            ctrl = S2.simplify(st["pts"], eps, closed=st["closed"])
+            pts = st["pts"]
+            if not st["closed"] and len(pts) >= 4:
+                # a small overlap at each end: the stroke runs on a little into the line it meets
+                for end, nb in ((0, 3), (-1, -4)):
+                    d_ = S2.unit(pts[end] - pts[nb])
+                    pts = np.vstack([pts[:1] + d_ * over, pts]) if end == 0 else np.vstack([pts, pts[-1:] + d_ * over])
+            ctrl = S2.simplify(pts, eps, closed=st["closed"])
             if len(ctrl) < 2:
                 continue
             if st["closed"] and len(ctrl) < 4:
@@ -569,6 +626,7 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
             rec["d2d_group"] = pt["group"]
             rec["d2d_part"] = pt["name"]
             rec["part"] = region_of(p, pt)
+            rec["even"] = True                  # one confident weight along the stroke, tapered at its ends
             d["lines"].append(rec)
             ids.setdefault(f"{pt['subj'].lstrip('@')} {pt['group']}", []).append(rec["id"])
         for subj, fl in face_lines:
@@ -844,7 +902,7 @@ def do_cel_shade(ctx, who: str = "all"):
                     dc.shadow_of(rgb, depth)
                 ops.append(Fill(mask_rle=mask_to_rle(big), color=tuple(int(c) for c in col), feather=0.6))
         ops += _hair_bands(p, mp, subjects, lv)
-        ops += _ground_shadows(p, mp, keep)
+        ops += _figure_shadows(p, mp, subjects)
         arr = p.layer("shade").copy()
         arr = _restore(p, "shade2d", arr)
         a0 = arr.copy()
@@ -917,30 +975,70 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
     return out
 
 
-def _ground_shadows(p, mp: dict, keep: set) -> list:
-    """Shadows the figures cast on the blocks (from the 3D guide's shadow map), as flat shapes."""
+def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
+    """One clean flat shadow on the floor under each figure: a contact ellipse round the feet joined with the
+    figure's bones projected along the light, smoothed into a single shape."""
     from .draw_render import _block_shadow
     from .ops import Fill, mask_to_rle
-    gf = p.root / "draw" / "guide.npz"
-    if not gf.exists():
-        return []
-    z = np.load(gf, allow_pickle=False)
-    if "cast_block" not in z.files:
-        return []
-    cb = z["cast_block"]
+    from .render3d import light_world
     lab, tb = mp["lab"], mp["table"]
-    out = []
+    block_ids = [k for k, t in enumerate(tb) if t.get("block")]
+    if not block_ids:
+        return []
+    cam = DP.camera_of(p)
+    L = light_world(cam, dc.light_vec(dc.dstate(p)))
+    if L[1] < 0.8:
+        L = S2.unit(L + np.array([0, 2.0 * (0.8 - L[1]), 0]))   # a short shadow: the shape stays under the figure
     S = float(max(p.W, p.H))
-    for name in sorted({t["block"] for t in tb if t.get("block") and t["subj"] in keep}):
-        ids = [k for k, t in enumerate(tb) if t.get("block") == name]
-        m = np.isin(lab, ids)
-        m = cv2.resize(m.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
-        c = cv2.resize(cb.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_LINEAR) > 0
-        sh = S2.clean_shape(c & m, 0.012 * S, (0.02 * S) ** 2) & m
+    blocks = cv2.resize(np.isin(lab, block_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
+    out = []
+    bones = [("pelvis", "neck"), ("neck", "head"), ("hip-r", "knee-r"), ("knee-r", "ankle-r"), ("hip-l", "knee-l"),
+             ("knee-l", "ankle-l"), ("shoulder-r", "elbow-r"), ("elbow-r", "wrist-r"), ("shoulder-l", "elbow-l"),
+             ("elbow-l", "wrist-l"), ("ankle-r", "foot-r"), ("ankle-l", "foot-l")]
+    for el in DP.figures(p):
+        if el["subject"] not in subjects:
+            continue
+        J = {k: np.asarray(v, float) for k, v in el["j3d"].items()}
+        feet = [J[f"heel-{s_}"] for s_ in "rl"] + [J[f"foot-{s_}"] for s_ in "rl"]
+        lift = max(0.0, min(f[1] for f in feet))
+        if lift > 1.2:
+            continue
+        fc = np.mean([[f[0], 0.0, f[2]] for f in feet], 0)
+
+        def onto(P):
+            return P - L * (P[1] / L[1])
+        m = np.zeros((p.H, p.W), np.uint8)
+        sc_ = 1.0 / (1.0 + 1.5 * lift)
+        ang = np.linspace(0, 2 * math.pi, 40, endpoint=False)
+        rx = (0.2 + 0.5 * float(np.ptp([f[0] for f in feet]))) * sc_
+        rz = (0.1 + 0.5 * float(np.ptp([f[2] for f in feet]))) * sc_
+        ring = np.stack([fc[0] + rx * np.cos(ang), np.zeros_like(ang), fc[2] + rz * np.sin(ang)], 1)
+        q, z = cam.project(ring)
+        if (z <= 0.1).any():
+            continue
+        cv2.fillPoly(m, [np.round(q).astype(np.int32)], 1)
+        reach = 0.6 * max(0.3, 1.0 - lift)
+        pts = [q]
+        for a_, b_ in bones:
+            for P_ in (onto(J[a_]), onto(J[b_])):
+                d_ = P_ - fc
+                n_ = float(np.linalg.norm(d_[[0, 2]]))
+                if n_ > reach:
+                    P_ = fc + d_ * (reach / n_)
+                qa, za = cam.project(P_[None])
+                if za[0] > 0.1:
+                    pts.append(qa)
+        # one simple shape: the hull of the contact ellipse and the shadow's far points, its corners rounded
+        hull = cv2.convexHull(np.vstack(pts).astype(np.float32)).reshape(-1, 2)
+        cv2.fillPoly(m, [np.round(hull).astype(np.int32)], 1)
+        sh = S2.clean_shape(m > 0, 0.01 * S, (0.01 * S) ** 2)
+        sh &= blocks
         if sh.sum() < 10:
             continue
-        rgb = tuple(next(t["rgb"] for t in tb if t.get("block") == name))
-        out.append(Fill(mask_rle=mask_to_rle(sh), color=_block_shadow(rgb), feather=0.6))
+        cx, cy = np.round(q.mean(0)).astype(int)
+        k0 = lab[int(np.clip(cy * mp["s"], 0, lab.shape[0] - 1)), int(np.clip(cx * mp["s"], 0, lab.shape[1] - 1))]
+        t0 = tb[k0] if k0 >= 0 and tb[k0].get("block") else tb[block_ids[0]]
+        out.append(Fill(mask_rle=mask_to_rle(sh), color=_block_shadow(tuple(t0["rgb"])), feather=0.8))
     return out
 
 

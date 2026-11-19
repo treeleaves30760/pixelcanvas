@@ -24,8 +24,8 @@ NECK = 0.108
 HAND_SCALE = 0.86
 
 # clothes: ease (head heights) over the body
-EASE = {"shirt": 0.014, "blouse": 0.016, "dress": 0.016, "blazer": 0.036, "jacket": 0.046, "hoodie": 0.06,
-        "coat": 0.05, "pants": 0.02, "shorts": 0.03, "socks": 0.01, "thigh-highs": 0.01, "gloves": 0.006}
+EASE = {"shirt": 0.012, "blouse": 0.014, "dress": 0.014, "blazer": 0.026, "jacket": 0.034, "hoodie": 0.045,
+        "coat": 0.04, "pants": 0.02, "shorts": 0.03, "socks": 0.01, "thigh-highs": 0.01, "gloves": 0.006}
 TOPS = ("shirt", "blouse", "dress", "blazer", "jacket", "hoodie", "coat")
 OUTER = ("blazer", "jacket", "hoodie", "coat")
 
@@ -110,22 +110,74 @@ def _prim_samples(pr: dict, n: int = 300) -> Tuple[np.ndarray, np.ndarray]:
 
 # ============================================================================================ the body
 
-class Torso:
-    """Elliptic cross-sections down the trunk: neck base, shoulders, chest, waist, hips, crotch."""
+MALE_WORDS = ("boy", "man", "male", "guy", "father", "dad", "king", "prince", "knight", "gentleman", "brother",
+              "grandpa", "uncle", "husband", "son", "lad", "mr")
+# half widths of the anime body in head heights: (child ~5 heads, teen ~7 heads) x (girl, boy)
+TEMPLATE = {
+    "child": {"girl": {"shoulder": 0.6, "chest": 0.48, "waist": 0.42, "hip": 0.5, "neck": 0.1},
+              "boy": {"shoulder": 0.64, "chest": 0.5, "waist": 0.44, "hip": 0.48, "neck": 0.105}},
+    "teen": {"girl": {"shoulder": 0.64, "chest": 0.52, "waist": 0.38, "hip": 0.58, "neck": 0.1},
+             "boy": {"shoulder": 0.74, "chest": 0.6, "waist": 0.47, "hip": 0.52, "neck": 0.115}},
+}
 
-    def __init__(self, body, J, F, h: float, k: float):
+
+def is_male(subj: str, el: Optional[dict] = None) -> bool:
+    if el and el.get("sex"):
+        return str(el["sex"]).lower().startswith(("m", "b"))
+    words = str(subj or "").lower().replace("_", "-").split("-")
+    return any(w in MALE_WORDS for w in words)
+
+
+def template(heads: float, male: bool) -> Dict[str, float]:
+    """Half widths (head heights) of the anime trunk: a child (5-6 heads) is stockier, a teen (6.5-7) slimmer
+    with a waist."""
+    t = float(np.clip((heads - 5.0) / 2.0, 0.0, 1.0))
+    a = TEMPLATE["child"]["boy" if male else "girl"]
+    b = TEMPLATE["teen"]["boy" if male else "girl"]
+    return {k: a[k] + t * (b[k] - a[k]) for k in a}
+
+
+def fit_joints(J: Dict[str, np.ndarray], F, tpl: Dict[str, float], h: float, k: float) -> Dict[str, np.ndarray]:
+    """The skeleton moved onto the template: each arm hangs from the template's shoulder, each leg from its hip
+    (the whole limb moves across the trunk; the pose and the ground contact stay)."""
+    J = {n: np.asarray(v, float).copy() for n, v in J.items()}
+    C, P = F["chest"], F["pelvis"]
+    sh = 0.5 * (J["shoulder-r"] + J["shoulder-l"])
+    hp = 0.5 * (J["hip-r"] + J["hip-l"])
+    r_up = UPPER[0][1] * h * k
+    r_th = THIGH[0][1] * h * k
+    for s in "rl":
+        sg = 1.0 if float((J[f"shoulder-{s}"] - sh) @ C[:, 0]) >= 0 else -1.0
+        cur = float((J[f"shoulder-{s}"] - sh) @ C[:, 0])
+        want = sg * max(0.05 * h, tpl["shoulder"] * h - r_up)
+        d = C[:, 0] * (want - cur)
+        for n in (f"shoulder-{s}", f"elbow-{s}", f"wrist-{s}", f"hand-{s}"):
+            J[n] = J[n] + d
+        sg = 1.0 if float((J[f"hip-{s}"] - hp) @ P[:, 0]) >= 0 else -1.0
+        cur = float((J[f"hip-{s}"] - hp) @ P[:, 0])
+        want = sg * max(0.05 * h, tpl["hip"] * h - r_th)
+        d = P[:, 0] * (want - cur)
+        d = d - np.array([0, 1.0, 0]) * d[1]            # across, never up or down: the feet stay on the ground
+        for n in (f"hip-{s}", f"knee-{s}", f"ankle-{s}", f"heel-{s}", f"foot-{s}"):
+            J[n] = J[n] + d
+    return J
+
+
+class Torso:
+    """Elliptic cross-sections down the trunk (neck base, shoulders, chest, waist, hips, crotch) from the anime
+    template."""
+
+    def __init__(self, body, J, F, h: float, k: float, tpl: Optional[Dict[str, float]] = None):
         C, S, P = F["chest"], F["spine"], F["pelvis"]
+        tpl = tpl or template(body.heads, False)
         sh = 0.5 * (J["shoulder-r"] + J["shoulder-l"])
-        span = float(np.linalg.norm(J["shoulder-r"] - J["shoulder-l"]))
-        hip_span = float(np.linalg.norm(J["hip-r"] - J["hip-l"]))
-        hip_a = 0.5 * hip_span + 0.15 * h * k
         lv = [  # (centre, X, Z, a, b)
-            (J["neck"] + C[:, 1] * 0.02 * h, C[:, 0], C[:, 2], NECK * h * k, NECK * h * k),
-            (sh - C[:, 1] * 0.03 * h, C[:, 0], C[:, 2], 0.5 * span + 0.06 * h, 0.23 * h * k),
-            (sh + (J["spine"] - sh) * 0.42, C[:, 0], C[:, 2], 0.5 * span * 0.94, 0.27 * h * k),
-            (J["spine"], S[:, 0], S[:, 2], 0.68 * hip_a, 0.22 * h * k),
-            (J["pelvis"] + P[:, 1] * 0.02 * h, P[:, 0], P[:, 2], hip_a, 0.26 * h * k),
-            (J["pelvis"] - P[:, 1] * 0.17 * h, P[:, 0], P[:, 2], 0.8 * hip_a, 0.2 * h * k),
+            (J["neck"] + C[:, 1] * 0.02 * h, C[:, 0], C[:, 2], tpl["neck"] * h, tpl["neck"] * h),
+            (sh - C[:, 1] * 0.03 * h, C[:, 0], C[:, 2], (tpl["shoulder"] - 0.07) * h, 0.22 * h),
+            (sh + (J["spine"] - sh) * 0.42, C[:, 0], C[:, 2], tpl["chest"] * h, 0.27 * h),
+            (J["spine"], S[:, 0], S[:, 2], tpl["waist"] * h, 0.22 * h),
+            (J["pelvis"] + P[:, 1] * 0.02 * h, P[:, 0], P[:, 2], tpl["hip"] * h, 0.26 * h),
+            (J["pelvis"] - P[:, 1] * 0.17 * h, P[:, 0], P[:, 2], 0.78 * tpl["hip"] * h, 0.2 * h),
         ]
         self.lv = lv
         self.h, self.k = h, k
@@ -177,13 +229,17 @@ def _fold_lines(A, M, B, r: float, n: int, side_len: float) -> List[np.ndarray]:
     return out
 
 
-def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[List[dict]] = None) -> List[dict]:
-    """Every part of one posed figure (body, hands, feet, clothes, hair, held props)."""
+def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[List[dict]] = None,
+                 eye: Optional[np.ndarray] = None) -> List[dict]:
+    """Every part of one posed figure (body, hands, feet, clothes, hair, held props). ``eye`` (the camera's
+    position) turns the flat parts (hands, an umbrella) toward the viewer."""
     h = body.h
     k = body.k
+    tpl = template(body.heads, is_male(subj, el))
+    J = fit_joints(J, F, tpl, h, k)
     rig = F3.Rig(body, J, F)
     garments = (look or {}).get("garments") or {}
-    tor = Torso(body, J, F, h, k)
+    tor = Torso(body, J, F, h, k, tpl)
     parts: List[dict] = []
     rig_spec = el.get("rig") or {}
     motion, floating = F3.motion_of(rig_spec, F)
@@ -235,10 +291,14 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
             A0 = J[A_] - F["chest"][:, 1] * 0.06 * h if kind == "upperarm" else J[A_]
             parts.append(_tube(f"{kind}-{s}", "skin", subj, ("arm-" if kind in ("upperarm", "forearm") else "leg-") + s,
                                _limb_axis(A0, J[B_], t), r, {A_: J[A_], B_: J[B_]}))
-        # hands: palm and fingers from the 3D hand, a little smaller
+        # hands: an anime hand silhouette for the hand shape, turned to the viewer, foreshortened with the hand
         W = J[f"wrist-{s}"]
         hmat = "gloves" if "gloves" in garments else "skin"
-        hprims = F3.hand_prims(rig, "x", s, hands.get(s, "relaxed"), grips.get(s), mat=hmat)
+        if eye is not None:
+            parts.append(_hand2d(rig, s, hands.get(s, "relaxed"), hmat, subj, eye, h, k))
+            hprims = []
+        else:
+            hprims = F3.hand_prims(rig, "x", s, hands.get(s, "relaxed"), grips.get(s), mat=hmat)
         fingers: Dict[str, list] = {}
         for pr in hprims:
             if pr["piece"] == f"hand-{s}":
@@ -283,9 +343,17 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
     for pe in held or []:
         from .pose3d import prop_prims
         for pr in prop_prims(pe["type"], pe["hand"], pe.get("length"), body, J, F, pe["id"]):
-            if pr["t"] in ("ell", "rcone", "cyl"):
-                parts.append(_solid(f"{pe['name']}-{pr['part']}", f"prop:{pe['name']}", subj, "props", [pr],
-                                    rad=0.05))
+            nm = f"{pe['name']}-{pr['part'].split()[-1]}"
+            if pr["part"].endswith("canopy") and eye is not None:
+                parts.append(_canopy2d(pr, nm, f"prop:{pe['name']}", subj))
+            elif pr["t"] in ("ell", "rcone", "cyl"):
+                parts.append(_solid(nm, f"prop:{pe['name']}", subj, "props", [pr], rad=0.05))
+            elif pr["t"] == "box":
+                A = np.asarray(pr["A"], float)
+                q = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], float)
+                P_ = np.asarray(pr["c"], float) + q @ A.T
+                parts.append(_blob(nm, f"prop:{pe['name']}", subj, "props", P_, unit(q @ A.T), rad=0.05, hull=True,
+                                   bias=-0.01))
     # the joints the folds and seams need
     for pt in parts:
         pt.setdefault("subj", subj)
@@ -326,7 +394,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
             if outer:
                 c, X, Z, a, b = tor.at(5.0)
                 c2 = c - F["pelvis"][:, 1] * 0.08 * h
-                extra = [(c2, X, Z, tor.at(4.0)[3] * 1.06, b * 1.15)]
+                extra = [(c2, X, Z, tor.at(4.0)[3] * 1.0, b * 1.05)]
             ax, a, dr, fr = tor.tube(0, min(t1, 5.0), ease, n=9 if outer else 8, extra=extra)
             body_part = _tube(g, g, subj, "clothes", ax, a, {"neck": J["neck"], "shoulder-r": J["shoulder-r"],
                                                                "shoulder-l": J["shoulder-l"], "hip-r": J["hip-r"],
@@ -340,7 +408,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
             for s in "rl":
                 if sleeve == "none":
                     continue
-                sc = 1.12 if outer else 1.06
+                sc = 1.05 if outer else 1.03
                 if sleeve == "short":
                     axs, rs, js = _limb_cover(J, s, "upperarm", 0.0, 0.5, ease, h, k, sc)
                     out.append(_tube(f"{g}-sleeve-{s}", g, subj, f"arm-{s}", axs, rs, js, round_end=False,
@@ -357,7 +425,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                     lo["details"].append({"pts": fl, "w": 0.45})
                 out += [up, lo]
                 if trim:
-                    axc, rc, jc = _limb_cover(J, s, "forearm", 0.8, 0.97, ease * 1.15 + 0.008 * h, h, k, sc * 1.05)
+                    axc, rc, jc = _limb_cover(J, s, "forearm", 0.88, 0.96, ease * 1.15 + 0.003 * h, h, k, sc * 1.05)
                     out.append(_tube(f"{g}-trim-{s}", "trim", subj, f"arm-{s}", axc, rc, jc, round_start=False,
                                      round_end=False, open_end=True, open_start=True, bias=bias - 0.006 * h,
                                      n_rings=5))
@@ -407,10 +475,10 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
         elif g == "skirt":
             out += _shell_parts(F3.garment_prims(rig, "x", "skirt", o, motion, hands, grips), g, subj, tor, h, bias)
         elif g in ("pants", "shorts"):
-            ax, a, dr, fr = tor.tube(3.0, 4.75, ease, n=5)
+            ax, a, dr, fr = tor.tube(3.0, 5.0, ease * 0.6, n=5)
             out.append(_tube(g, g, subj, "clothes", ax, a, {"hip-r": J["hip-r"], "hip-l": J["hip-l"],
                                                              "waist": J["spine"]},
-                             frames=fr, depth_ratio=dr, round_start=False, round_end=False, n_rings=8, n_pts=20,
+                             frames=fr, depth_ratio=dr, round_start=False, round_end=True, n_rings=8, n_pts=20,
                              bias=bias))
             for s in "rl":
                 t1 = 0.45 if g == "shorts" else 1.0
@@ -542,20 +610,158 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
             locks.setdefault(pr["piece"], []).append(pr)
         elif pr["t"] in ("ell", "rcone", "cyl"):
             out.append(_solid(pr["piece"], pr["mat"], subj, "hair", [pr], rad=0.05 * h, bias=-0.006 * h))
-    for name, chain in locks.items():
-        pts = [c["a"] for c in chain] + [chain[-1]["b"]]
-        rr = [c["ra"] for c in chain] + [max(chain[-1]["rb"], 0.004)]
-        rr = np.asarray(rr) * 0.95
-        root = pts[0]
-        part = _tube(name, "hair", subj, "hair", pts, rr, {"scalp": root}, point_end=True, n_rings=max(8, 3 * len(pts)),
-                     n_pts=14, bias=-0.002 * h)
-        L = float(np.sum(np.linalg.norm(np.diff(np.asarray(pts), axis=0), axis=1)))
-        if L > 3.5 * float(np.max(rr)) and len(pts) >= 3:
-            # one strand line inside a long lock, from its middle toward the tip
-            P = np.asarray(pts)
-            X, Z = perp_basis(P[-1] - P[0])
-            m = len(P)
-            sl = P[m // 3: max(m // 3 + 2, m - 1)] + X * float(np.mean(rr)) * 0.25
-            part["details"].append({"pts": sl, "w": 0.4})
+    style = str(hair.get("style") or "medium")
+    clumps = _clumps(rig, locks, style, h)
+    for ci, (pts, rr) in enumerate(clumps):
+        part = _tube(f"clump{ci}", "hair", subj, "hair", pts, rr, {"scalp": pts[0]}, point_end=True,
+                     n_rings=max(10, 3 * len(pts)), n_pts=14, bias=-0.002 * h)
+        # inner strand lines: two to four, following the clump from near its root toward the tip
+        P = np.asarray(pts)
+        L = float(np.sum(np.linalg.norm(np.diff(P, axis=0), axis=1)))
+        n_lines = int(np.clip(round(L / (0.35 * h)) + 1, 2, 4)) if L > 2.5 * float(np.max(rr)) else 0
+        for li in range(n_lines):
+            off = (-0.35, 0.3, -0.05, 0.5)[li]
+            t0, t1 = 0.12 + 0.08 * li, 0.62 + 0.09 * ((li * 7) % 3)
+            idx = np.linspace(t0, t1, 7) * (len(P) - 1)
+            base = np.array([P[int(np.floor(x))] + (P[min(int(np.floor(x)) + 1, len(P) - 1)] - P[int(np.floor(x))]) *
+                             (x - np.floor(x)) for x in idx])
+            rad = np.interp(idx, np.arange(len(rr)), rr)
+            X, _ = perp_basis(P[-1] - P[0])
+            part["details"].append({"pts": base + X[None] * (rad * off)[:, None], "w": 0.38})
         out.append(part)
     return out
+
+
+CLUMPS = {"long": 9, "medium": 8, "bob": 7, "short": 7, "ponytail": 7, "twintails": 10, "braid": 6, "bun": 6}
+
+
+def _resample_chain(P: np.ndarray, r: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
+    s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))])
+    if s[-1] <= 1e-9:
+        return np.repeat(P[:1], n, 0), np.repeat(r[:1], n)
+    ts = np.linspace(0, s[-1], n)
+    return np.stack([np.interp(ts, s, P[:, c]) for c in range(3)], 1), np.interp(ts, s, r)
+
+
+def _kmeans(X: np.ndarray, k: int, iters: int = 20) -> np.ndarray:
+    n = len(X)
+    if k >= n:
+        return np.arange(n)
+    cent = [X[0]]
+    for _ in range(1, k):                                   # farthest-point start: the same clumps every time
+        d = np.min([np.sum((X - c) ** 2, 1) for c in cent], 0)
+        cent.append(X[int(np.argmax(d))])
+    C = np.array(cent)
+    lab = np.zeros(n, int)
+    for _ in range(iters):
+        lab = np.argmin(((X[:, None] - C[None]) ** 2).sum(-1), 1)
+        for c in range(k):
+            if (lab == c).any():
+                C[c] = X[lab == c].mean(0)
+    return lab
+
+
+def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """The 3D locks gathered into a few big clumps (bangs apart from the rest), each with an S-curve and a sharp
+    tip: an anime head of hair is 6-10 clumps, not a curtain of strands."""
+    chains = []
+    for name, chain in locks.items():
+        P = np.array([c["a"] for c in chain] + [chain[-1]["b"]], float)
+        r = np.array([c["ra"] for c in chain] + [max(chain[-1]["rb"], 0.004)], float)
+        chains.append(_resample_chain(P, r, 8))
+    if not chains:
+        return []
+    if style == "spiky":
+        return [(P, r * 1.05) for P, r in chains]
+    Hd = rig.Hd
+    front = []
+    for P, r in chains:
+        q = Hd.T @ (P[0] - rig.J["head"])
+        front.append(q[2] > 0.12 * h and (Hd.T @ (P[-1] - P[0]))[1] < 0)
+    out = []
+    for grp, k in ((True, 4), (False, CLUMPS.get(style, 8))):
+        idx = [i for i, f in enumerate(front) if f == grp]
+        if not idx:
+            continue
+        X = np.array([chains[i][0].ravel() / h for i in idx])
+        lab = _kmeans(X, min(k, len(idx)))
+        for c in sorted(set(lab.tolist())):
+            mem = [chains[idx[i]] for i in np.flatnonzero(lab == c)]
+            Pm = np.mean([m[0] for m in mem], 0)
+            spread = np.max([np.linalg.norm(m[0] - Pm, axis=1) + m[1] for m in mem], 0)
+            rr = np.maximum(spread * 0.55, np.mean([m[1] for m in mem], 0) * 1.3)
+            t = np.linspace(0, 1, len(Pm))
+            rr = rr * np.clip(1.0 - 0.15 * t, 0.2, 1)
+            # an S-curve across the clump
+            X3, _ = perp_basis(Pm[-1] - Pm[0])
+            sgn = 1.0 if c % 2 == 0 else -1.0
+            Pm = Pm + X3[None] * (sgn * 0.3 * float(np.mean(rr)) * np.sin(2 * math.pi * t) * t)[:, None]
+            out.append((Pm, rr))
+    return out
+
+
+# hand silhouettes in the hand's own frame: x from the wrist toward the fingertips, y toward the thumb (lengths in
+# hand lengths); details: finger separation, knuckle and thumb lines
+HANDS = {
+    "open": ([(0, -0.15), (0.42, -0.21), (0.92, -0.18), (1.0, -0.1), (1.02, 0.0), (0.97, 0.1), (0.6, 0.17),
+              (0.5, 0.2), (0.62, 0.4), (0.6, 0.47), (0.5, 0.45), (0.3, 0.28), (0, 0.15)],
+             [[(0.6, -0.09), (0.97, -0.1)], [(0.6, 0.0), (0.99, 0.0)], [(0.58, 0.09), (0.93, 0.1)]]),
+    "relaxed": ([(0, -0.15), (0.42, -0.2), (0.78, -0.18), (0.86, -0.1), (0.88, 0.0), (0.84, 0.1), (0.6, 0.16),
+                 (0.48, 0.2), (0.55, 0.32), (0.5, 0.36), (0.3, 0.26), (0, 0.15)],
+                [[(0.58, -0.09), (0.82, -0.1)], [(0.6, 0.02), (0.85, 0.02)]]),
+    "fist": ([(0, -0.15), (0.15, -0.21), (0.52, -0.23), (0.64, -0.15), (0.66, 0.0), (0.62, 0.15), (0.52, 0.21),
+              (0.34, 0.25), (0.18, 0.21), (0, 0.15)],
+             [[(0.48, -0.2), (0.52, 0.0), (0.49, 0.17)], [(0.22, 0.17), (0.5, 0.1)],
+              [(0.52, -0.1), (0.63, -0.1)], [(0.53, 0.04), (0.65, 0.04)]]),
+    "point": ([(0, -0.15), (0.15, -0.21), (0.52, -0.23), (0.64, -0.15), (0.66, 0.02), (1.02, 0.06), (1.05, 0.12),
+               (1.01, 0.17), (0.6, 0.19), (0.34, 0.25), (0.18, 0.21), (0, 0.15)],
+              [[(0.48, -0.2), (0.52, -0.02)], [(0.22, 0.17), (0.5, 0.12)]]),
+    "peace": ([(0, -0.15), (0.15, -0.21), (0.52, -0.23), (0.62, -0.12), (0.64, -0.04), (0.98, -0.08),
+               (1.01, -0.02), (0.97, 0.04), (0.66, 0.05), (1.0, 0.16), (1.0, 0.23), (0.95, 0.24), (0.6, 0.2),
+               (0.34, 0.25), (0.18, 0.21), (0, 0.15)],
+              [[(0.48, -0.2), (0.5, -0.06)], [(0.22, 0.17), (0.48, 0.12)]]),
+}
+HANDS["grip"] = HANDS["fist"]
+HANDS["cup"] = HANDS["relaxed"]
+
+
+def _hand2d(rig, s: str, shape: str, mat: str, subj: str, eye: np.ndarray, h: float, k: float) -> dict:
+    """An anime hand: a simple silhouette for its shape in the plane facing the viewer that holds the hand's
+    direction (so it foreshortens with the hand), with finger separation and knuckle lines."""
+    W, u, t, n = F3.hand_frame(rig, s)
+    L = 0.5 * h * min(k, 1.15)
+    view = unit(np.asarray(eye, float) - W)
+    v = np.cross(u, view)
+    if np.linalg.norm(v) < 1e-6:
+        v = t
+    v = unit(v)
+    thumb = 1.0 if float(t @ v) >= 0 else -1.0
+    poly, lines = HANDS.get(shape, HANDS["relaxed"])
+
+    def to3(xy):
+        xy = np.asarray(xy, float)
+        return W + np.outer(xy[:, 0] * L, u) + np.outer(xy[:, 1] * L * thumb, v) + view * 0.01 * h
+    P3 = to3(poly)
+    # a smooth closed outline through the points
+    from .shape2d import _catmull
+    Q = np.vstack([P3, P3[:2]])
+    P3s = _catmull(Q, 8 * len(poly))[:-8]
+    part = _part(f"hand-{s}", "blob", mat, subj, f"hand-{s}", {f"wrist-{s}": W}, rad=0.12 * h,
+                 flat3=P3s, normal=view, bias=-0.004 * h)
+    for ln in lines:
+        part["details"].append({"pts": to3(ln), "w": 0.4})
+    return part
+
+
+def _canopy2d(pr: dict, name: str, mat: str, subj: str) -> dict:
+    """An umbrella's canopy: eight ribs from the top to a scalloped rim."""
+    A = np.asarray(pr["A"], float)
+    c = np.asarray(pr["c"], float)
+    up = unit(A[:, 1])
+    R = float(np.linalg.norm(A[:, 0]))
+    x, z = unit(A[:, 0]), unit(A[:, 2])
+    apex = c + up * 0.32 * R
+    th = np.linspace(0, 2 * math.pi, 8, endpoint=False)
+    tips = np.array([c + R * (math.cos(a) * x + math.sin(a) * z) - up * 0.06 * R for a in th])
+    return _part(name, "blob", mat, subj, "props", {}, rad=R, canopy={"apex": apex, "tips": tips, "c": c, "up": up},
+                 bias=-0.01)

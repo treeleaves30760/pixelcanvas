@@ -362,3 +362,37 @@ def test_z_buffer_decides_overlaps_and_outlines_split_at_them():
     n = len(S2.resample(of["poly"], 1.0, closed=True))
     assert sum(len(x["pts"]) for x in st) > 0.95 * n            # the near bar's outline is drawn all round
     assert {x["cls"] for x in st} == {1, 2}                    # silhouette, and the line over the far bar
+
+
+def test_anime_template_by_heads_and_sex_moves_the_limbs():
+    from pixelcanvas import anime2d as A2
+    girl, boy = A2.template(7.0, False), A2.template(7.0, True)
+    child = A2.template(5.0, False)
+    assert boy["shoulder"] > girl["shoulder"] and girl["hip"] > boy["hip"] and girl["waist"] < child["waist"]
+    assert A2.is_male("boy") and not A2.is_male("girl")
+    cam = P3.Camera(400, 500, horizon=420, eye=1.2)
+    res = P3.solve_figure({"preset": "stand", "at": [500, 930]}, cam, {}, {})
+    h = res["body"].h
+    J2 = A2.fit_joints(res["J"], res["F"], boy, h, res["body"].k)
+    X = res["F"]["chest"][:, 0]
+    half = abs(float((J2["shoulder-r"] - J2["shoulder-l"]) @ X)) / 2
+    assert abs(half - (boy["shoulder"] * h - A2.UPPER[0][1] * h * res["body"].k)) < 1e-6
+    assert abs(J2["foot-r"][1] - res["J"]["foot-r"][1]) < 1e-9          # the feet stay on the ground
+
+
+def test_hands_hair_clumps_and_umbrella_are_2d_shapes():
+    from pixelcanvas import anime2d as A2
+    cam = P3.Camera(400, 500, horizon=420, eye=1.2)
+    spec = {"preset": "umbrella", "at": [500, 930], "hands": {"r": "fist", "l": "open"}}
+    res = P3.solve_figure(spec, cam, {}, {})
+    held = [{"type": "umbrella", "hand": "r", "name": "umbrella", "id": "P1", "subject": "g"}]
+    look = {"hair": {"style": "long"}, "garments": {}}
+    parts = A2.figure_parts({"rig": spec}, res["body"], res["J"], res["F"], look, "g", held, eye=cam.C)
+    by = {pt["name"]: pt for pt in parts}
+    assert by["hand-r"]["flat3"] is not None and len(by["hand-r"]["details"]) >= 3     # fist: knuckle, thumb lines
+    clumps = [pt for pt in parts if pt["name"].startswith("clump")]
+    assert 6 <= len(clumps) <= 14 and all(2 <= len(c["details"]) <= 4 for c in clumps if len(c["details"]))
+    can = next(pt for pt in parts if pt.get("canopy") is not None)
+    from pixelcanvas import draw_figure2d as DF
+    o = DF._canopy_outline(cam, can)
+    assert o is not None and len(o["details_px"]) >= 3                 # ribs that face the viewer

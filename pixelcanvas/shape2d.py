@@ -455,8 +455,28 @@ def runs(flags: np.ndarray, closed: bool) -> List[np.ndarray]:
     return out
 
 
+def _bridge(cls: np.ndarray, gap: int) -> np.ndarray:
+    """Short breaks inside a run of one class (a pixel of z-fighting, a seam's edge) closed: one stroke, not two."""
+    if gap <= 0:
+        return cls
+    out = cls.copy()
+    n = len(cls)
+    i = 0
+    while i < n:
+        if out[i] == 0:
+            j = i
+            while j < n and out[j] == 0:
+                j += 1
+            if 0 < i and j < n and j - i <= gap and out[i - 1] == out[j]:
+                out[i:j] = out[i - 1]
+            i = j
+        else:
+            i += 1
+    return out
+
+
 def outline_strokes(poly: np.ndarray, k: int, R: Raster, keep_fn, step: float, min_len: float,
-                    sigma: float = 1.5) -> List[dict]:
+                    sigma: float = 1.5, bridge: int = 0) -> List[dict]:
     """The visible stretches of part ``k``'s outline: a point is drawn where the part is in front just inside its
     outline and ``keep_fn(q, P, z_in, z_out)`` accepts the label q just outside (-1 for nothing) with a class. Returns [{pts, cls}]
     with cls the label class from keep_fn (strokes split where it changes)."""
@@ -477,6 +497,7 @@ def outline_strokes(poly: np.ndarray, k: int, R: Raster, keep_fn, step: float, m
     zin, zout = R.depth_at(Pin), R.depth_at(Pout)
     cls = np.array([keep_fn(int(q), P[i], float(zin[i]), float(zout[i])) if inside[i] == k else 0
                     for i, q in enumerate(outside)], np.int8)
+    cls = _bridge(cls, bridge)
     out = []
     n = len(P)
     for c in (1, 2, 3):
@@ -507,7 +528,7 @@ def simplify(P: np.ndarray, eps: float, closed: bool = False) -> np.ndarray:
     return out
 
 
-def mask_outline(box, m: np.ndarray, s: float, sigma: float = 1.2) -> Optional[np.ndarray]:
+def mask_outline(box, m: np.ndarray, s: float, sigma: float = 2.2) -> Optional[np.ndarray]:
     """The smooth outer outline (canvas px) of a label-res mask placed at ``box``."""
     u = np.pad(m.astype(np.uint8), 1)
     cs, _ = cv2.findContours(u, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
