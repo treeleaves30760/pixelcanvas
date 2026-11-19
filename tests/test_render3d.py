@@ -377,7 +377,45 @@ def test_anime_template_by_heads_and_sex_moves_the_limbs():
     X = res["F"]["chest"][:, 0]
     half = abs(float((J2["shoulder-r"] - J2["shoulder-l"]) @ X)) / 2
     assert abs(half - (boy["shoulder"] * h - A2.UPPER[0][1] * h * res["body"].k)) < 1e-6
-    assert abs(J2["foot-r"][1] - res["J"]["foot-r"][1]) < 1e-9          # the feet stay on the ground
+    for n in ("hip-r", "knee-l", "foot-r", "pelvis", "neck"):
+        assert np.allclose(J2[n], res["J"][n])                         # legs and trunk stay as posed
+
+
+def test_a_raised_knee_keeps_its_foreshortening_and_overlaps_the_shin():
+    from pixelcanvas import anime2d as A2
+    from pixelcanvas import draw_figure2d as DF
+    cam = P3.Camera(400, 500, horizon=420, eye=1.0)
+    spec = {"preset": "run", "at": [500, 930], "yaw": 15}
+    res = P3.solve_figure(spec, cam, {}, {})
+    parts = {pt["name"]: pt for pt in A2.figure_parts({"rig": spec}, res["body"], res["J"], res["F"], {}, "boy",
+                                                      eye=cam.C, cam=cam)}
+    thigh, shin = parts["thigh-r"], parts["shin-r"]
+    bend = DF._bend(thigh, shin, {"knee-r"})
+    assert bend > 70                                                   # the run's raised knee
+    # the thigh on the canvas is shorter than the shin: it points at the viewer
+    q, _ = cam.project(np.array([res["J"]["hip-r"], res["J"]["knee-r"], res["J"]["ankle-r"]]))
+    assert np.linalg.norm(q[1] - q[0]) < np.linalg.norm(q[2] - q[1])
+    sc = {"parts": [thigh, shin], "outs": [{"rpx": 10, "j2d": {"knee-r": np.zeros(2)}},
+                                           {"rpx": 10, "j2d": {"knee-r": np.zeros(2)}}]}
+    keep = DF._keep_fn(sc, 0, None)
+    assert keep(1, (0.0, 0.0), 1.0, 1.05) == 2                         # the knee's line over the shin is drawn
+    straight = DF._keep_fn({"parts": [parts["upperarm-r"], parts["forearm-r"]], "outs": sc["outs"]}, 0, None)
+    if DF._bend(parts["upperarm-r"], parts["forearm-r"], {"elbow-r"}) < 70:
+        assert straight(1, (0.0, 0.0), 1.0, 1.0) == 0
+
+
+def test_a_small_hand_is_a_mitten_and_the_floor_shadow_is_compact():
+    from pixelcanvas import anime2d as A2
+    spec = {"preset": "stand", "at": [500, 930], "hands": {"r": "open", "l": "open"}}
+    big = P3.Camera(400, 500, horizon=420, eye=1.2)
+    res = P3.solve_figure(spec, big, {}, {})
+    rig = F3.Rig(res["body"], res["J"], res["F"])
+    near = A2._hand2d(rig, "r", "open", "skin", "g", big.C, res["body"].h, res["body"].k, big)
+    res2 = P3.solve_figure(dict(spec, at=[500, 470]), big, {}, {})          # far down the floor: small
+    rig2 = F3.Rig(res2["body"], res2["J"], res2["F"])
+    far = A2._hand2d(rig2, "r", "open", "skin", "g", big.C, res2["body"].h, res2["body"].k, big)
+    assert not near["mitten"] and len(near["details"]) == 3
+    assert far["mitten"] and 1 <= len(far["details"]) <= 2
 
 
 def test_hands_hair_clumps_and_umbrella_are_2d_shapes():
@@ -396,3 +434,55 @@ def test_hands_hair_clumps_and_umbrella_are_2d_shapes():
     from pixelcanvas import draw_figure2d as DF
     o = DF._canopy_outline(cam, can)
     assert o is not None and len(o["details_px"]) >= 3                 # ribs that face the viewer
+
+
+def test_pose_show_joints_is_a_look_not_a_step(draw):
+    _scene(draw)
+    import os
+    before = open("w.pixelcanvas/state.json", encoding="utf-8").read()
+    hist = sorted(os.listdir("w.pixelcanvas/history")) if os.path.isdir("w.pixelcanvas/history") else []
+    sketch = _alpha("sketch").copy()
+    out = ok(draw("pose", "boy", "--show", "joints"))
+    assert "nothing changed" in out and "VIEW" in out
+    assert open("w.pixelcanvas/state.json", encoding="utf-8").read() == before
+    assert (sorted(os.listdir("w.pixelcanvas/history")) if os.path.isdir("w.pixelcanvas/history") else []) == hist
+    assert np.array_equal(_alpha("sketch"), sketch)
+
+
+def test_floor_shadow_is_compact_and_blur_leaves_no_halo(draw):
+    _scene(draw)
+    ok(draw("block", "floor", "plane", "--at", "500,990", "--size", "8,6,0"))
+    ok(draw("dress", "boy", "blazer,shorts", "--color", "navy"))
+    ok(draw("render"))
+    ok(draw("draw", "all"))
+    ok(draw("flat", "auto"))
+    ok(draw("shade", "all"))
+    from pixelcanvas.project import Project
+    from pixelcanvas import draw_pose as DP, draw_core as dc
+    p = Project("w.pixelcanvas")
+    boy = next(el for el in DP.figures(p) if el["subject"] == "boy")
+    sh = dc.u2px(p, [boy["j2d"]["shoulder-r"], boy["j2d"]["shoulder-l"]])
+    shoulder_px = float(np.linalg.norm(sh[0] - sh[1]))
+    from pixelcanvas import draw_figure2d as DF
+    mp = DF.load_maps(p)
+    fills = DF._figure_shadows(p, mp, ["boy"])
+    assert len(fills) == 1
+    from pixelcanvas.ops import rle_to_mask
+    m = rle_to_mask(fills[0].mask_rle)
+    xs = np.nonzero(m.any(0))[0]
+    assert 0.8 * shoulder_px < np.ptp(xs) < 2.2 * shoulder_px             # about as wide as the shoulders
+    before = p.composite_u8("export").astype(int)
+    ok(draw("fx", "blur", "boy", "--amount", "0.6"))
+    after = Project("w.pixelcanvas").composite_u8("export").astype(int)
+    line = _alpha("line")[..., 3] > 64
+    import cv2
+    ids = [k for k, t in enumerate(mp["table"]) if t["subj"] == "boy"]
+    region = cv2.resize(np.isin(mp["lab"], ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST)
+    region = region > 0                                                  # the boy's drawn areas
+    ring = (cv2.dilate(region.astype(np.uint8), np.ones((13, 13), np.uint8)) > 0) & ~region & ~line
+    boy_rgb = before[region & ~line].mean(0)
+    toward = np.linalg.norm(before - boy_rgb, axis=-1) - np.linalg.norm(after - boy_rgb, axis=-1)
+    diff = np.abs(after - before).max(-1)
+    assert diff[line].max() < 4                                          # the line art stays sharp
+    assert np.percentile(toward[ring], 99) < 6                           # no halo of his colours beside him
+    assert diff[region].max() > 0                                        # the blur did run inside

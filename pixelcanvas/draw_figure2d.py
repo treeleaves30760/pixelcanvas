@@ -123,7 +123,8 @@ def figure_parts(p, el) -> List[dict]:
     from .draw_render import look_of
     body, J, F = DP._fig_state(el)
     held = [pr for pr in DP.props_rec(p) if pr.get("subject") == el["subject"]]
-    return A2.figure_parts(el, body, J, F, look_of(el), el["subject"], held, eye=DP.camera_of(p).C)
+    cam = DP.camera_of(p)
+    return A2.figure_parts(el, body, J, F, look_of(el), el["subject"], held, eye=cam.C, cam=cam)
 
 
 def build(p) -> dict:
@@ -316,6 +317,21 @@ def _splat_outline(px: np.ndarray, s: float, size_px: float) -> Optional[np.ndar
 
 # ============================================================================================ strokes
 
+def _bend(a: dict, b: dict, shared) -> float:
+    """Degrees two limb segments bend at their shared joint (0 = straight on)."""
+    for n in shared:
+        J = a["joints"].get(n)
+        if J is None:
+            continue
+        oa = [v for m, v in a["joints"].items() if m != n and v is not None]
+        ob = [v for m, v in b["joints"].items() if m != n and v is not None]
+        if not oa or not ob:
+            continue
+        u1, u2 = S2.unit(np.asarray(oa[0]) - J), S2.unit(np.asarray(ob[0]) - J)
+        return 180.0 - math.degrees(math.acos(float(np.clip(u1 @ u2, -1, 1))))
+    return 0.0
+
+
 def _keep_fn(sc: dict, k: int, R):
     parts, outs = sc["parts"], sc["outs"]
     pk, ok = parts[k], outs[k]
@@ -337,6 +353,10 @@ def _keep_fn(sc: dict, k: int, R):
                     pos = list(ok.get("j2d", {}).values()) + list(oq.get("j2d", {}).values())
                 r = max(ok["rpx"], oq["rpx"]) if hair else min(ok["rpx"], oq["rpx"])
                 near = any(float(np.hypot(*(np.asarray(P) - q2))) < 1.9 * r for q2 in pos) if pos else True
+                # a joint bent hard (a raised knee, a folded arm): the near segment overlaps the far one and its
+                # end is drawn (the knee over the shin)
+                if near and not hair and _bend(pk, pq, shared) > 70.0 and z_in < z_out:
+                    return 2
                 # where two parts of one material meet at their joint and lie at one depth: one continuous shape
                 if near and abs(z_out - z_in) < 0.7 * min(pk["rad"], pq["rad"]):
                     return 0
@@ -931,14 +951,16 @@ def do_cel_shade(ctx, who: str = "all"):
 
 
 def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
-    """A highlight band across the crown on the lit side, its lower edge in points (the anime 'angel ring')."""
+    """A highlight on the crown on the lit side (the anime 'angel ring'): a few short pieces with pointed lower
+    edges, on the hair cap only (never across the bangs, where a band reads as a headband); spiky hair gets none."""
     from .draw_render import look_of
     from .ops import Fill, mask_to_rle
     out = []
     cam = DP.camera_of(p)
     lab, tb, s = mp["lab"], mp["table"], mp["s"]
     for el in DP.figures(p):
-        if el["subject"] not in subjects or not (look_of(el).get("hair")):
+        hair = look_of(el).get("hair") or {}
+        if el["subject"] not in subjects or not hair or str(hair.get("style") or "") == "spiky":
             continue
         body, J, F = DP._fig_state(el)
         rig = F3.Rig(body, J, F)
@@ -951,6 +973,7 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         side = 1.0 if lv[0] > 0 else -1.0
         th = np.linspace(-0.5, 0.5, 40) * math.pi + side * 0.35
         teeth = np.abs(np.sin(th * 9.0))
+        gaps = np.abs(np.sin(th * 3.0 + 0.4)) < 0.28           # breaks: pieces of shine, not a ring
         up = [c + Hd @ np.array([R0 * math.sin(t), y0, R0 * math.cos(t)]) for t in th]
         dn = [c + Hd @ np.array([R0 * 0.99 * math.sin(t), y0 - (0.05 + 0.06 * tt) * h, R0 * 0.99 * math.cos(t)])
               for t, tt in zip(th, teeth)]
@@ -968,6 +991,16 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         hm = cv2.resize(np.isin(lab, hair_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
         # only where the band faces the camera: the head's front half in the picture
         band &= hm
+        cap_ids = [k for k in hair_ids if tb[k]["name"] == "hair-cap"]
+        if cap_ids:
+            band &= cv2.resize(np.isin(lab, cap_ids).astype(np.uint8), (p.W, p.H),
+                               interpolation=cv2.INTER_NEAREST) > 0
+        bu = band.astype(np.uint8)
+        for i in np.nonzero(gaps)[0]:
+            qa, qb = q[i], q[len(th) * 2 - 1 - i]
+            cv2.line(bu, tuple(int(v) for v in np.round(qa)), tuple(int(v) for v in np.round(qb)), 0,
+                     max(2, int(0.006 * max(p.W, p.H))))
+        band = bu > 0
         if band.sum() < 10:
             continue
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
@@ -976,8 +1009,9 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
 
 
 def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
-    """One clean flat shadow on the floor under each figure: a contact ellipse round the feet joined with the
-    figure's bones projected along the light, smoothed into a single shape."""
+    """One compact flat contact shadow on the floor under each figure: an ellipse about as wide as the shoulders
+    round the feet, a little off toward the side away from the light, smaller the higher the figure is off the
+    floor."""
     from .draw_render import _block_shadow
     from .ops import Fill, mask_to_rle
     from .render3d import light_world
@@ -987,14 +1021,10 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
         return []
     cam = DP.camera_of(p)
     L = light_world(cam, dc.light_vec(dc.dstate(p)))
-    if L[1] < 0.8:
-        L = S2.unit(L + np.array([0, 2.0 * (0.8 - L[1]), 0]))   # a short shadow: the shape stays under the figure
-    S = float(max(p.W, p.H))
+    off = np.array([-L[0], 0.0, -L[2]])
+    off = off / max(1e-6, float(np.linalg.norm(off))) if np.linalg.norm(off) > 1e-3 else np.zeros(3)
     blocks = cv2.resize(np.isin(lab, block_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
     out = []
-    bones = [("pelvis", "neck"), ("neck", "head"), ("hip-r", "knee-r"), ("knee-r", "ankle-r"), ("hip-l", "knee-l"),
-             ("knee-l", "ankle-l"), ("shoulder-r", "elbow-r"), ("elbow-r", "wrist-r"), ("shoulder-l", "elbow-l"),
-             ("elbow-l", "wrist-l"), ("ankle-r", "foot-r"), ("ankle-l", "foot-l")]
     for el in DP.figures(p):
         if el["subject"] not in subjects:
             continue
@@ -1004,35 +1034,21 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
         if lift > 1.2:
             continue
         fc = np.mean([[f[0], 0.0, f[2]] for f in feet], 0)
-
-        def onto(P):
-            return P - L * (P[1] / L[1])
-        m = np.zeros((p.H, p.W), np.uint8)
-        sc_ = 1.0 / (1.0 + 1.5 * lift)
-        ang = np.linspace(0, 2 * math.pi, 40, endpoint=False)
-        rx = (0.2 + 0.5 * float(np.ptp([f[0] for f in feet]))) * sc_
-        rz = (0.1 + 0.5 * float(np.ptp([f[2] for f in feet]))) * sc_
-        ring = np.stack([fc[0] + rx * np.cos(ang), np.zeros_like(ang), fc[2] + rz * np.sin(ang)], 1)
+        shoulders = float(np.linalg.norm((J["shoulder-r"] - J["shoulder-l"])[[0, 2]]))
+        shoulders = max(shoulders, 0.12 * float(J["head-top"][1] - min(f[1] for f in feet)))
+        sc_ = 1.0 / (1.0 + 1.8 * lift)
+        spread = float(np.ptp([f[0] for f in feet]))
+        rx = max(0.65 * shoulders, 0.5 * spread + 0.08) * sc_
+        rz = max(0.28 * shoulders, 0.5 * float(np.ptp([f[2] for f in feet])) + 0.05) * sc_
+        c = fc + off * 0.25 * rx
+        ang = np.linspace(0, 2 * math.pi, 48, endpoint=False)
+        ring = np.stack([c[0] + rx * np.cos(ang), np.zeros_like(ang), c[2] + rz * np.sin(ang)], 1)
         q, z = cam.project(ring)
         if (z <= 0.1).any():
             continue
+        m = np.zeros((p.H, p.W), np.uint8)
         cv2.fillPoly(m, [np.round(q).astype(np.int32)], 1)
-        reach = 0.6 * max(0.3, 1.0 - lift)
-        pts = [q]
-        for a_, b_ in bones:
-            for P_ in (onto(J[a_]), onto(J[b_])):
-                d_ = P_ - fc
-                n_ = float(np.linalg.norm(d_[[0, 2]]))
-                if n_ > reach:
-                    P_ = fc + d_ * (reach / n_)
-                qa, za = cam.project(P_[None])
-                if za[0] > 0.1:
-                    pts.append(qa)
-        # one simple shape: the hull of the contact ellipse and the shadow's far points, its corners rounded
-        hull = cv2.convexHull(np.vstack(pts).astype(np.float32)).reshape(-1, 2)
-        cv2.fillPoly(m, [np.round(hull).astype(np.int32)], 1)
-        sh = S2.clean_shape(m > 0, 0.01 * S, (0.01 * S) ** 2)
-        sh &= blocks
+        sh = (m > 0) & blocks
         if sh.sum() < 10:
             continue
         cx, cy = np.round(q.mean(0)).astype(int)

@@ -197,6 +197,43 @@ def cmd_fx(ctx, args: List[str]):
 
     def target_for(amt: float) -> np.ndarray:
         return blend_region(cur, apply_effect(name, cur, amt, **kw), mask)
+    from .draw_render import keeps_clean
+    if name == "blur" and keeps_clean(p):
+        # a drawing over the 3D guide: each drawn area blurs only with itself (no colour crosses a contour, no halo
+        # beside a hard edge) and the line art stays sharp
+        from .draw_figure2d import load_maps
+        la = p.layer("line", create=False)
+        line_m = (la[..., 3] > 0.02) if la is not None else np.zeros((p.H, p.W), bool)
+        mp = load_maps(p)
+        lab = cv2.resize(mp["lab"].astype(np.int32), (p.W, p.H), interpolation=cv2.INTER_NEAREST)             if mp is not None else np.zeros((p.H, p.W), np.int32)
+        # a thin band along every contour is left as it is and lends no colour (the flat colours and the drawn
+        # shapes may differ there by a pixel)
+        lab_f = lab.astype(np.float32)
+        k3 = np.ones((3, 3), np.uint8)
+        edge = cv2.dilate(lab_f, k3) != cv2.erode(lab_f, k3)
+        line_m = line_m | (cv2.dilate(edge.astype(np.uint8), k3) > 0)
+        L_ = float(max(p.W, p.H))
+
+        def target_for(amt: float) -> np.ndarray:  # noqa: F811
+            sig = float(radius) if radius else max(0.5, amt * 0.012 * L_)
+            m = np.ones((p.H, p.W), bool) if mask is None else np.asarray(mask) > 0.5
+            rgb = np.asarray(cur, np.float32)[..., :3]
+            out = rgb.copy()
+            pad = int(3 * sig) + 2
+            for v in np.unique(lab[m]):
+                area = (lab == v) & m
+                ys, xs = np.nonzero(area)
+                y0, y1 = max(0, ys.min() - pad), min(p.H, ys.max() + pad + 1)
+                x0, x1 = max(0, xs.min() - pad), min(p.W, xs.max() + pad + 1)
+                src = ((lab[y0:y1, x0:x1] == v) & ~line_m[y0:y1, x0:x1]).astype(np.float32)
+                w = cv2.GaussianBlur(src, (0, 0), sig)
+                blur = np.stack([cv2.GaussianBlur(rgb[y0:y1, x0:x1, c] * src, (0, 0), sig) for c in range(3)], -1)
+                blur = blur / np.maximum(w[..., None], 1e-4)
+                sel = area[y0:y1, x0:x1] & ~line_m[y0:y1, x0:x1] & (w > 1e-3)
+                out[y0:y1, x0:x1][sel] = blur[sel]
+            res = np.array(cur, np.float32, copy=True)
+            res[..., :3] = out
+            return res
 
     extra: List[str] = []
     worse_than_before = False

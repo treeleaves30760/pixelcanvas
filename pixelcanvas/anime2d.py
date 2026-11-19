@@ -138,27 +138,19 @@ def template(heads: float, male: bool) -> Dict[str, float]:
 
 
 def fit_joints(J: Dict[str, np.ndarray], F, tpl: Dict[str, float], h: float, k: float) -> Dict[str, np.ndarray]:
-    """The skeleton moved onto the template: each arm hangs from the template's shoulder, each leg from its hip
-    (the whole limb moves across the trunk; the pose and the ground contact stay)."""
+    """The skeleton fitted to the template: each arm hangs from the template's shoulder (the whole arm moves
+    across the chest). The legs, the trunk's length and every limb's direction stay as posed, so a limb that points
+    at the viewer stays short and overlapping and the stride reads as in the 3D guide."""
     J = {n: np.asarray(v, float).copy() for n, v in J.items()}
-    C, P = F["chest"], F["pelvis"]
+    C = F["chest"]
     sh = 0.5 * (J["shoulder-r"] + J["shoulder-l"])
-    hp = 0.5 * (J["hip-r"] + J["hip-l"])
     r_up = UPPER[0][1] * h * k
-    r_th = THIGH[0][1] * h * k
     for s in "rl":
-        sg = 1.0 if float((J[f"shoulder-{s}"] - sh) @ C[:, 0]) >= 0 else -1.0
         cur = float((J[f"shoulder-{s}"] - sh) @ C[:, 0])
+        sg = 1.0 if cur >= 0 else -1.0
         want = sg * max(0.05 * h, tpl["shoulder"] * h - r_up)
         d = C[:, 0] * (want - cur)
         for n in (f"shoulder-{s}", f"elbow-{s}", f"wrist-{s}", f"hand-{s}"):
-            J[n] = J[n] + d
-        sg = 1.0 if float((J[f"hip-{s}"] - hp) @ P[:, 0]) >= 0 else -1.0
-        cur = float((J[f"hip-{s}"] - hp) @ P[:, 0])
-        want = sg * max(0.05 * h, tpl["hip"] * h - r_th)
-        d = P[:, 0] * (want - cur)
-        d = d - np.array([0, 1.0, 0]) * d[1]            # across, never up or down: the feet stay on the ground
-        for n in (f"hip-{s}", f"knee-{s}", f"ankle-{s}", f"heel-{s}", f"foot-{s}"):
             J[n] = J[n] + d
     return J
 
@@ -230,7 +222,7 @@ def _fold_lines(A, M, B, r: float, n: int, side_len: float) -> List[np.ndarray]:
 
 
 def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[List[dict]] = None,
-                 eye: Optional[np.ndarray] = None) -> List[dict]:
+                 eye: Optional[np.ndarray] = None, cam=None) -> List[dict]:
     """Every part of one posed figure (body, hands, feet, clothes, hair, held props). ``eye`` (the camera's
     position) turns the flat parts (hands, an umbrella) toward the viewer."""
     h = body.h
@@ -295,7 +287,7 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
         W = J[f"wrist-{s}"]
         hmat = "gloves" if "gloves" in garments else "skin"
         if eye is not None:
-            parts.append(_hand2d(rig, s, hands.get(s, "relaxed"), hmat, subj, eye, h, k))
+            parts.append(_hand2d(rig, s, hands.get(s, "relaxed"), hmat, subj, eye, h, k, cam))
             hprims = []
         else:
             hprims = F3.hand_prims(rig, "x", s, hands.get(s, "relaxed"), grips.get(s), mat=hmat)
@@ -389,9 +381,10 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
             ease *= 1.6
         if g in TOPS:
             outer = g in OUTER
-            t1 = 5.3 if outer else (3.0 if g == "dress" else 4.6)
+            # a blazer or jacket ends at the hip bone, a hoodie at the hips, a coat below the crotch
+            t1 = {"blazer": 4.55, "jacket": 4.45, "hoodie": 4.3, "coat": 5.3}.get(g, 3.0 if g == "dress" else 4.6)
             extra = []
-            if outer:
+            if g == "coat":
                 c, X, Z, a, b = tor.at(5.0)
                 c2 = c - F["pelvis"][:, 1] * 0.08 * h
                 extra = [(c2, X, Z, tor.at(4.0)[3] * 1.0, b * 1.05)]
@@ -723,20 +716,38 @@ HANDS = {
 }
 HANDS["grip"] = HANDS["fist"]
 HANDS["cup"] = HANDS["relaxed"]
+# a small hand on the canvas: a mitten (the fingers one mass, a thumb) and one or two lines
+MITTENS = {
+    "open": ([(0, -0.15), (0.45, -0.2), (0.86, -0.17), (0.97, -0.06), (0.95, 0.08), (0.62, 0.16), (0.54, 0.34),
+              (0.44, 0.38), (0.28, 0.25), (0, 0.15)], [[(0.5, 0.12), (0.78, 0.1)]]),
+    "relaxed": ([(0, -0.15), (0.42, -0.2), (0.76, -0.16), (0.84, -0.04), (0.8, 0.08), (0.58, 0.16), (0.5, 0.3),
+                 (0.4, 0.33), (0.27, 0.24), (0, 0.15)], [[(0.48, 0.11), (0.7, 0.09)]]),
+    "fist": ([(0, -0.15), (0.2, -0.21), (0.5, -0.22), (0.63, -0.1), (0.62, 0.1), (0.5, 0.21), (0.3, 0.24),
+              (0.14, 0.2), (0, 0.15)], [[(0.47, -0.17), (0.5, 0.02), (0.47, 0.15)]]),
+}
+MITTENS["grip"] = MITTENS["fist"]
+MITTENS["cup"] = MITTENS["point"] = MITTENS["peace"] = MITTENS["relaxed"]
+MITTEN_PX = 0.035          # a hand shorter than this share of the canvas is drawn as a mitten
 
 
-def _hand2d(rig, s: str, shape: str, mat: str, subj: str, eye: np.ndarray, h: float, k: float) -> dict:
+def _hand2d(rig, s: str, shape: str, mat: str, subj: str, eye: np.ndarray, h: float, k: float,
+            cam=None) -> dict:
     """An anime hand: a simple silhouette for its shape in the plane facing the viewer that holds the hand's
-    direction (so it foreshortens with the hand), with finger separation and knuckle lines."""
+    direction (so it foreshortens with the hand), with finger separation and knuckle lines; a mitten with one or
+    two lines when the hand is small on the canvas (``cam`` measures it)."""
     W, u, t, n = F3.hand_frame(rig, s)
     L = 0.5 * h * min(k, 1.15)
+    small = False
+    if cam is not None:
+        z = float(cam.project(np.asarray([W]))[1][0])
+        small = z > 1e-6 and cam.f * L / z < MITTEN_PX * max(cam.W, cam.H)
     view = unit(np.asarray(eye, float) - W)
     v = np.cross(u, view)
     if np.linalg.norm(v) < 1e-6:
         v = t
     v = unit(v)
     thumb = 1.0 if float(t @ v) >= 0 else -1.0
-    poly, lines = HANDS.get(shape, HANDS["relaxed"])
+    poly, lines = (MITTENS if small else HANDS).get(shape, (MITTENS if small else HANDS)["relaxed"])
 
     def to3(xy):
         xy = np.asarray(xy, float)
@@ -747,7 +758,7 @@ def _hand2d(rig, s: str, shape: str, mat: str, subj: str, eye: np.ndarray, h: fl
     Q = np.vstack([P3, P3[:2]])
     P3s = _catmull(Q, 8 * len(poly))[:-8]
     part = _part(f"hand-{s}", "blob", mat, subj, f"hand-{s}", {f"wrist-{s}": W}, rad=0.12 * h,
-                 flat3=P3s, normal=view, bias=-0.004 * h)
+                 flat3=P3s, normal=view, bias=-0.004 * h, mitten=small)
     for ln in lines:
         part["details"].append({"pts": to3(ln), "w": 0.4})
     return part

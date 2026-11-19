@@ -694,6 +694,20 @@ def cmd_pose(ctx, args):
         spec["at"] = [round((box[0] + box[2]) / 2, 1), round(box[3] - 0.015 * (box[3] - box[1]), 1)] if box \
             else [500.0, 950.0]
     show = str(a.get("show") or "").lower()
+    changes = [k for k, v in a.items() if v not in (None, False, "") and k not in ("subject", "show")]
+    if show and old is not None and old.get("j2d") and not changes:
+        # a look, not a change: the posed figure with its joints named; no step, no history, the state untouched
+        from . import cli_draw
+        rep = cli_draw.DReport()
+        rep.add(f"{subj}: {old['rig'].get('preset')} (joints named; -r / -l = the figure's own right / left); "
+                f"nothing changed")
+        if not ctx.batch:
+            img = _overlay(p, subj if show.startswith("joint") else None)(dc.composite_u8(p, "view"),
+                                                                          (0, 0, p.W, p.H))
+            cli_draw.show_one(ctx, rep, img, (0, 0, p.W, p.H), f"POSE: {subj}", "the posed figure, joints named",
+                              f"pose-{cli._view_counter(p):04d}")
+        rep.next = cli._finish_next(ctx)
+        return rep
     lines: List[str] = []
     if subj not in d["subjects"]:
         ctx.notes.append(f"{subj} is not a planned subject (pixelcanvas plan subject {subj} --box ... gives it a box)")
