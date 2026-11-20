@@ -679,6 +679,7 @@ def cmd_pose(ctx, args):
         v = a.get(f"hand-shape-{s}")
         if v:
             v = str(v).lower()
+            v = {"wave": "spread", "rest": "flat", "hip": "flat", "v": "peace"}.get(v, v)
             if v in ("auto", "default", "preset"):
                 hands.pop(s, None)
             elif v not in HAND_SHAPES:
