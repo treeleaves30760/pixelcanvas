@@ -170,6 +170,15 @@ pixelcanvas face girl --expression smile --eyes blue
 
 重新擺姿勢時參考層會自動更新；`pixelcanvas draw girl --part arm-r` 只重畫一個部件。
 
+一行設定整個人物，一個指令檔整批執行：
+
+```bash
+pixelcanvas figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --hand-shape-r fist   --wear "blouse:white,skirt:navy:pleated,thigh-highs:black,shoes:brown"   --hair "twintails,blunt,pink,bows:black" --face "smile,blue"
+pixelcanvas do @steps.txt                        # 鏡頭、方塊、人物：每行一個指令
+pixelcanvas do "draw all; flat auto; shade all"
+pixelcanvas help pose,figure,block               # 一次列出多個指令的選項與值
+```
+
 ### Claude Code 外掛
 
 外掛提供 `/pixelcanvas:draw <需求>` 與四個子代理，從最粗的決定往細處畫一張新圖：`pixelcanvas-director` 寫出企劃（鏡頭、

@@ -184,12 +184,23 @@ pixelcanvas face girl --expression smile --eyes blue
 
 A re-pose updates the guide by itself; `pixelcanvas draw girl --part arm-r` redraws one part.
 
+One line sets up a whole figure, and a file of commands runs as one batch:
+
+```bash
+pixelcanvas figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --hand-shape-r fist   --wear "blouse:white,skirt:navy:pleated,thigh-highs:black,shoes:brown"   --hair "twintails,blunt,pink,bows:black" --face "smile,blue"
+pixelcanvas do @steps.txt                        # camera, blocks, figures: one command per line
+pixelcanvas do "draw all; flat auto; shade all"
+pixelcanvas help pose,figure,block               # options and values of several commands at once
+```
+
 ### Claude Code plugin
 
 The plugin adds `/pixelcanvas:draw <request>` and four subagents that build a new picture from the coarsest
 decision down: `pixelcanvas-director` writes the brief (shot, camera, each figure's action and pose, clothes,
 light, palette), `pixelcanvas-blocker` poses the figures and renders the guide, `pixelcanvas-painter` draws and
-finishes, and `pixelcanvas-critic` checks the guide and the finished picture and names the command for each fix.
+finishes, and `pixelcanvas-critic` checks the finished picture and names the command for each fix. The
+director writes the setup as `steps.txt`; the blocker runs it in one `do @steps.txt`, so a two-figure picture
+takes about ten pixelcanvas commands.
 
 ## Commands
 

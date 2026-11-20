@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+A picture costs a session fewer commands and less reading.
+
+- `figure <who> --pose <preset> --at x,y --wear "..." --hair "..." --face "..."` poses, dresses, gives hair and a
+  face to a figure in one command line.
+- `do @steps.txt` runs a file of commands (one per line, `#` comments) as one batch.
+- `help pose,dress,hair3d` prints each command's arguments, options, values and an example in a few lines; `pose
+  list`, `dress list` and `block list` run without a project.
+- Guessed option names map to the real ones (`--elevation` -> `--lift`, `--colour`, `--position`, ...); `hip-r`
+  is the leg joint; `hair3d --bangs swept`, `--wind left|right|back`.
+- A picture drawn over a 3D guide closes every stage with one `stage done` after `export final.png`; the plan
+  boxes, todo items and checks of the 2D-only route stay out of its way.
+- The plugin guides follow the short path: the director writes `steps.txt`, the blocker runs it in one call, the
+  painter looks once per level, the critic checks the finished picture once.
+
 ## 0.7.0 (2026-11-20)
 
 People in a scene are posed on a 3D skeleton first and drawn in 2D over it, and the Claude Code plugin builds a
