@@ -198,7 +198,7 @@ def _finger_of(lab: np.ndarray) -> np.ndarray:
     return np.where(lab < 0, -1, f)
 
 
-def _edges(zb, lb, cover, thr: float, max_sep: bool) -> np.ndarray:
+def _edges(zb, lb, cover, thr: float, max_sep: bool, margin: int = 2) -> np.ndarray:
     E = np.zeros(lb.shape, bool)
     f = _finger_of(lb)
     for ax in (0, 1):
@@ -216,7 +216,7 @@ def _edges(zb, lb, cover, thr: float, max_sep: bool) -> np.ndarray:
         front = np.where(a_z <= b_z, 0, 1)
         E |= e & (front == 0)
         E |= np.roll(e & (front == 1), 1, ax)
-    inner = cv2.erode(cover.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    inner = cv2.erode(cover.astype(np.uint8), np.ones((2 * margin + 1, 2 * margin + 1), np.uint8)) > 0
     return E & inner
 
 
@@ -296,8 +296,15 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
     close_r = int(max(1, round(1.6 * grid_per_canvas))) if small else int(max(1, round(0.8 * grid_per_canvas)))
     ker = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * close_r + 1, 2 * close_r + 1))
     covm = cv2.morphologyEx(cover.astype(np.uint8), cv2.MORPH_CLOSE, ker)
+    gL = GRID / (ext / L)                                   # grid px per hand length
+    if name != "spread":
+        # the anime grouping: middle, ring and little finger one tapered shape (the index stays apart)
+        grp = np.isin(_finger_of(lb), [3, 4, 5]).astype(np.uint8)
+        rg = int(max(2, round((0.11 if small else 0.07) * gL)))
+        gk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * rg + 1, 2 * rg + 1))
+        covm = np.maximum(covm, cv2.morphologyEx(grp, cv2.MORPH_CLOSE, gk))
     thr = 0.6 * FINGER_R[1] * L
-    edges = _edges(zb, lb, covm > 0, thr, max_sep=True)
+    edges = _edges(zb, lb, covm > 0, thr, max_sep=True, margin=int(max(2, round(0.05 * gL))))
     lines = _trace(edges, 0.16 * GRID / (ext / L))
     lines = lines[:1] if small else lines[:4]
 
@@ -306,7 +313,7 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
         if not cs:
             return None
         c = max(cs, key=cv2.contourArea).reshape(-1, 2).astype(float)
-        c = np.stack([ndi.gaussian_filter1d(c[:, j], 2.5, mode="wrap") for j in range(2)], 1)
+        c = np.stack([ndi.gaussian_filter1d(c[:, j], max(2.5, 0.022 * gL), mode="wrap") for j in range(2)], 1)
         step = max(1, len(c) // 120)
         return c[::step]
 
@@ -341,7 +348,8 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
                     fpart["details"].append({"pts": pl.lift(to_plane(ln), front_d - 0.001 * h), "w": 0.4})
             parts.append(fpart)
         return parts
-    depth = d_near - 0.004 * h
+    # in front of the wrist's end of the forearm, so the hand is never cut by the cloth it hangs beside
+    depth = min(d_near, float(pl.depth(W[None])[0]) - 0.03 * h) - 0.004 * h
     if G is not None:
         depth = min(depth, float(pl.depth(G[None])[0]) - float(grip_r) - 0.004 * h)
     part = _part(f"hand-{s}", "blob", mat, subj, f"hand-{s}", joints, rad=0.12 * h,

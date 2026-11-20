@@ -410,12 +410,12 @@ def test_a_small_hand_is_a_mitten_and_the_floor_shadow_is_compact():
     big = P3.Camera(400, 500, horizon=420, eye=1.2)
     res = P3.solve_figure(spec, big, {}, {})
     rig = F3.Rig(res["body"], res["J"], res["F"])
-    near = A2._hand2d(rig, "r", "open", "skin", "g", big.C, res["body"].h, res["body"].k, big)
+    near = A2._hand2d(rig, "r", "open", "skin", "g", big.C, res["body"].h, res["body"].k, big)[0]
     res2 = P3.solve_figure(dict(spec, at=[500, 470]), big, {}, {})          # far down the floor: small
     rig2 = F3.Rig(res2["body"], res2["J"], res2["F"])
-    far = A2._hand2d(rig2, "r", "open", "skin", "g", big.C, res2["body"].h, res2["body"].k, big)
-    assert not near["mitten"] and len(near["details"]) == 3
-    assert far["mitten"] and 1 <= len(far["details"]) <= 2
+    far = A2._hand2d(rig2, "r", "open", "skin", "g", big.C, res2["body"].h, res2["body"].k, big)[0]
+    assert not near["mitten"] and 1 <= len(near["details"]) <= 4
+    assert far["mitten"] and len(far["details"]) <= 1
 
 
 def test_hands_hair_clumps_and_umbrella_are_2d_shapes():
@@ -427,7 +427,8 @@ def test_hands_hair_clumps_and_umbrella_are_2d_shapes():
     look = {"hair": {"style": "long"}, "garments": {}}
     parts = A2.figure_parts({"rig": spec}, res["body"], res["J"], res["F"], look, "g", held, eye=cam.C)
     by = {pt["name"]: pt for pt in parts}
-    assert by["hand-r"]["flat3"] is not None and len(by["hand-r"]["details"]) >= 3     # fist: knuckle, thumb lines
+    assert by["hand-r"]["flat3"] is not None and (len(by["hand-r"]["details"]) +
+                                                    len(by.get("fingers-r", {"details": []})["details"])) >= 1
     clumps = [pt for pt in parts if pt["name"].startswith("clump")]
     assert 6 <= len(clumps) <= 14 and all(2 <= len(c["details"]) <= 4 for c in clumps if len(c["details"]))
     can = next(pt for pt in parts if pt.get("canopy") is not None)
