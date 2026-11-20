@@ -1730,16 +1730,17 @@ def view_check(res: dict, cam: Camera) -> List[str]:
     """Limbs pointing at the camera lose their shape: one line per limb shortened under a third."""
     out = []
     J = res["J"]
-    for limb, (a, b) in (("arm", ("shoulder", "wrist")), ("leg", ("hip", "ankle"))):
+    for limb, (a, m, b) in (("arm", ("shoulder", "elbow", "wrist")), ("leg", ("hip", "knee", "ankle"))):
         for s in "rl":
-            A, B = J[f"{a}-{s}"], J[f"{b}-{s}"]
-            L = float(np.linalg.norm(B - A))
-            if L < 0.15:
-                continue                     # folded tight: no long shape to lose
-            P, z = cam.project(np.array([A, B]))
-            full = cam.f * L / max(float(z.mean()), 0.1)
-            r = float(np.linalg.norm(P[1] - P[0])) / max(full, 1e-6)
-            if r < 0.33:
+            pts = np.array([J[f"{a}-{s}"], J[f"{m}-{s}"], J[f"{b}-{s}"]])
+            P, z = cam.project(pts)
+            seen = full = 0.0
+            for i in range(2):              # each bone's drawn length against its length across the view
+                L = float(np.linalg.norm(pts[i + 1] - pts[i]))
+                full += cam.f * L / max(float(z[i:i + 2].mean()), 0.1)
+                seen += float(np.linalg.norm(P[i + 1] - P[i]))
+            r = seen / max(full, 1e-6)
+            if r < 0.25:
                 out.append(f"{limb}-{s} points at the camera (seen at {r:.0%} of its length): turn --yaw 20 or "
                            f"swing it aside for a readable shape")
     return out
@@ -1807,6 +1808,19 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
     for k in J:
         J[k] = J[k] + [dx, 0, dz]
     ik_lines: List[str] = []
+    # seated on a block: slide forward until the knees clear its front edge (the thighs rest on the seat)
+    if rest == "seat" and stand_blk is not None:
+        fw = np.array([F["pelvis"][0, 2], 0.0, F["pelvis"][2, 2]])
+        fw = unit(fw) if np.linalg.norm(fw) > 1e-6 else fw
+        for _ in range(8):
+            kn = [J[f"knee-{s}"] for s in "rl" if float(np.dot(J[f"knee-{s}"] - J["pelvis"], fw)) > 0.05]
+            if not kn or not any(stand_blk.contains(k[0], k[2], 0.03) for k in kn):
+                break
+            nxt = J["pelvis"] + fw * 0.04
+            if not stand_blk.contains(nxt[0], nxt[2], -0.04):
+                break                       # the seat would leave the block
+            for k in J:
+                J[k] = J[k] + fw * 0.04
     # seated with feet on a floor: the feet go down to what is below them
     if rest == "seat" and stand_blk is not None and pre.get("plant"):
         for s in "rl":
