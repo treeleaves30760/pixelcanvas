@@ -240,9 +240,9 @@ def _hanging_lamp(k: Kit, x: float, top: float, z: float, drop: float, r: float 
 
 def kit_room(k: Kit, classroom: bool = False) -> None:
     o = k.o
-    W = float(o.get("width") or 8.0)
+    W = float(o.get("width") or (6.4 if classroom else 8.0))
     Hc = float(o.get("height") or 3.0)
-    D = float(o.get("depth") or 7.0)
+    D = float(o.get("depth") or (9.0 if classroom else 7.0))
     sx = float(o.get("shift") or 0.0)
     xl, xr = sx - W / 2, sx + W / 2
     z0 = 0.3
@@ -1011,7 +1011,12 @@ def floor_mask(p):
     paper = p.layer("paper")
 
     def colour(x, y):
-        x = int(np.clip(x, 0, p.W - 1))
-        y = int(np.clip(y, 0, p.H - 1))
-        return tuple(int(round(v * 255)) for v in paper[y, x, :3])
+        """The floor's colour round (x, y): the median over a box (a lane mark or a board line does not count)."""
+        r = max(4, int(0.04 * max(p.W, p.H)))
+        x0, x1 = int(np.clip(x - r, 0, p.W - 1)), int(np.clip(x + r + 1, 1, p.W))
+        y0, y1 = int(np.clip(y - r, 0, p.H - 1)), int(np.clip(y + r + 1, 1, p.H))
+        sub = paper[y0:y1, x0:x1, :3][m[y0:y1, x0:x1]]
+        if len(sub) == 0:
+            sub = paper[int(np.clip(y, 0, p.H - 1)), int(np.clip(x, 0, p.W - 1)), :3][None]
+        return tuple(int(round(v * 255)) for v in np.median(sub, 0))
     return m, colour
