@@ -306,6 +306,19 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
     thr = 0.6 * FINGER_R[1] * L
     edges = _edges(zb, lb, covm > 0, thr, max_sep=True, margin=int(max(2, round(0.05 * gL))))
     lines = _trace(edges, 0.16 * GRID / (ext / L))
+    if name in ("fist", "point", "peace", "grip") and len(lines) < 2:
+        # the curled fingers' fold: a curve through the middle knuckles (the line every drawn fist has)
+        curled = [i for i in range(4) if SHAPES[name]["curl"][i][0] > 45 or name == "grip"]
+        pk = [pc["b"] for pc in pieces if pc["kind"] == "cap" and pc["label"] >= 20 and (pc["label"] - 20) % 4 == 0
+              and (pc["label"] - 20) // 4 in curled]
+        if len(pk) >= 2:
+            g, _ = pl.xy(np.array(pk))
+            g = (g - lo) * px
+            inner = cv2.erode(covm, np.ones((5, 5), np.uint8)) > 0
+            ok = [q for q in g if 0 <= int(q[1]) < inner.shape[0] and 0 <= int(q[0]) < inner.shape[1]
+                  and inner[int(q[1]), int(q[0])]]
+            if len(ok) >= 2 and np.linalg.norm(ok[-1] - ok[0]) > 0.12 * gL:
+                lines.insert(0, np.array(ok))
     lines = lines[:1] if small else lines[:4]
 
     def outline(m):
