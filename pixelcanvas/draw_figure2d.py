@@ -436,7 +436,8 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
             continue
         block = pt["kind"] == "plane" or pt.get("block")
         for st in S2.outline_strokes(o["poly"], k, R, _keep_fn(sc, k, R), step, min_len * 1.5,
-                                     sigma=0.6 if block else 2.5, bridge=int(round(0.006 * S / step))):
+                                     sigma=0.6 if block else (4.0 if pt["name"] == "head" else 2.5),
+                                     bridge=int(round(0.006 * S / step))):
             c = st["cls"]
             if block:
                 w = W_BLOCK
@@ -446,6 +447,8 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
                 w = W_HAIR
             else:
                 w = W_IN
+            if pt["name"] == "head" and pt["mat"] == "skin":
+                w = max(w, 0.9 * W_SIL)         # the jaw and cheek at the body's contour weight
             rgb = _inner_rgb(p, pt, rgb_cache) if c == 2 and not block else None
             if rgb is not None:
                 w = max(w, 1.0)                 # a near dark limb over a far one: a clear separation line
@@ -1141,7 +1144,7 @@ def do_cel_shade(ctx, who: str = "all"):
                 hm_ = np.isin(lab, hk_)
                 if hm_.any():
                     ys_ = np.nonzero(hm_)[0]
-                    dpx = max(1, int(0.13 * (ys_.max() - ys_.min())))
+                    dpx = max(1, int(0.07 * (ys_.max() - ys_.min())))
                     under = np.zeros_like(hm_)
                     for k_ in range(1, dpx + 1):
                         under[k_:] |= hm_[:-k_]

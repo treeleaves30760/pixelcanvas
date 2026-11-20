@@ -314,7 +314,9 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
             parts.append(_solid(pr["piece"], "skin", subj, "head", [pr], {"ear": None}, rad=0.08 * h, bias=0.09 * h))
     parts.append(_tube("neck", "skin", subj, "head", [J["neck"] - F["neck"][:, 1] * 0.02 * h,
                                                       J["neck-top"] + F["neck"][:, 1] * 0.1 * h],
-                       [NECK * h * k, NECK * h * k * 0.95], {"neck": J["neck"], "neck-top": J["neck-top"]},
+                       # an anime neck: about 0.35-0.4 of the head's width, a little slimmer for a girl
+                       [tpl["neck"] * 1.4 * h * k, tpl["neck"] * 1.3 * h * k],
+                       {"neck": J["neck"], "neck-top": J["neck-top"]},
                        round_start=False, round_end=False, n_rings=6, bias=0.1 * h))
 
     # ---- trunk
