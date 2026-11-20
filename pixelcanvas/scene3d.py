@@ -29,7 +29,7 @@ from . import draw_core as dc
 from .coords import UsageError
 
 KITS = ("corridor", "room", "classroom", "bedroom", "street", "platform", "outdoor", "field", "beach", "rooftop",
-        "stairs", "park", "track", "studio", "sky")
+        "stairs", "park", "track", "studio", "sky", "underwater", "kitchen", "cliff")
 KIT_LINES = {
     "corridor": "walls, wainscot, boards, doors, windows, arch, hanging lamps  [--doors --windows --arch "
                 "--lamp-every m --no-polish]",
@@ -47,6 +47,9 @@ KIT_LINES = {
     "track": "a running track with white lanes across the picture, infield, far stands  [--track]",
     "studio": "a plain backdrop curving into the floor, one soft gradient (character-only pictures)  [--wall]",
     "sky": "only sky and clouds (a jump seen from below)",
+    "underwater": "deep blue to the light surface, soft light shafts, bubbles  [--sea]",
+    "kitchen": "back wall with tiles, a counter with cupboards and a sink, a window, a fridge  [--counter --tile]",
+    "cliff": "a grey rock face on one side, a ledge, sky and far hills  [--side left|right --rock]",
 }
 USAGE = {"scene": "pixelcanvas scene corridor --time day --wall #e6dcc4 --trim #7a4e30 --floor #b07a4a --arch"}
 SS = 2                                # supersampling: polygons and lines are drawn at 2x and reduced (clean edges)
@@ -59,7 +62,8 @@ DEFAULTS = {
     "edge": "#e6c23a", "rail": "#7a7068", "sand": "#ecd9a8", "sea": "#4f9ed0", "hill": "#7fa860",
     "tree": "#4f8a4a", "trunk": "#7a5a40", "fence": "#9aa4ac", "board": "#3e5a48", "desk": "#c89a64",
     "stairs": "#cfc4b0", "cloud": "#ffffff", "bench": "#8a6040", "line": "#3a2c26", "concrete": "#b8b4ac",
-    "bed": "#9ab8d8", "curtain": "#e8d6b0", "track": "#b8523c",
+    "bed": "#9ab8d8", "curtain": "#e8d6b0", "track": "#b8523c", "counter": "#e8e4dc", "tile": "#f2f0ea",
+    "cupboard": "#a8c4b8", "rock": "#8c8a88", "fridge": "#dfe2e6",
 }
 TIMES = {
     # sky top, sky at the horizon, multiplier on surface colours, haze colour weight, lamp strength
@@ -94,6 +98,7 @@ class Kit:
         self.clouds: List[Tuple[float, float, float]] = []    # (x, y, size) in 0-1000 units, above the horizon
         self.far: List[dict] = []                             # far silhouettes (hills, skyline, trees) in 2D units
         self.floor_y: Optional[float] = None                  # a floor that mirrors the lamps (polished)
+        self.underwater = False
 
     def col(self, key: str) -> np.ndarray:
         return _rgb(self.o.get(key) or DEFAULTS[key])
@@ -156,8 +161,9 @@ def kit_corridor(k: Kit) -> None:
         k.face([[x, 0, z0], [x, wh, z0], [x, wh, D], [x, 0, D]], trim, "wainscot", 0, outline=False)["normal"] = \
             np.array([nx, 0, 0.0])
         # the dado rail, the skirting and the wall's corners as lines
-        k.line([x, wh, z0], [x, wh, D], 1, 1.0)
-        k.line([x, wh + 0.05, z0], [x, wh + 0.05, D], 1, 0.6)
+        # the dado rail: a darker moulding along the top of the wainscot
+        k.face([[x + 0.004 * nx, wh, z0], [x + 0.004 * nx, wh + 0.07, z0], [x + 0.004 * nx, wh + 0.07, D],
+                [x + 0.004 * nx, wh, D]], _mix(trim, (0, 0, 0), 0.25), "wainscot", 1, lw=0.8)["normal"] =             np.array([nx, 0, 0.0])
         k.line([x, 0, z0], [x, 0, D], 1, 1.1)
         k.line([x, Hc, z0], [x, Hc, D], 1, 1.1)
         # wainscot panels: vertical joints every 0.9 m
@@ -213,19 +219,36 @@ def kit_corridor(k: Kit) -> None:
                 for za, zb in ((z - fr, z), (z + dw, z + dw + fr)):       # the side posts of the frame
                     k.face([[x + 2 * e, 0, za], [x + 2 * e, dh, za], [x + 2 * e, dh, zb], [x + 2 * e, 0, zb]],
                            _mix(trim, (0, 0, 0), 0.1), "door", 1)["normal"] = np.array([nx, 0, 0.0])
-                k.line([x + 2 * e, 0.06, z + 0.12], [x + 2 * e, dh - 0.12, z + 0.12], 2, 0.4)
-                k.line([x + 2 * e, 0.06, z + dw - 0.12], [x + 2 * e, dh - 0.12, z + dw - 0.12], 2, 0.4)
-                k.line([x + 2 * e, 1.0, z + dw - 0.14], [x + 2 * e, 1.0, z + dw - 0.22], 2, 1.6,
-                       rgb=(200, 170, 90))
+                # two recessed panels and a handle
+                pc = _mix(k.col("door"), (0, 0, 0), 0.12)
+                for ya, yb in ((0.18, 0.95), (1.1, dh - 0.16)):
+                    k.face([[x + 1.5 * e, ya, z + 0.14], [x + 1.5 * e, yb, z + 0.14], [x + 1.5 * e, yb, z + dw - 0.14],
+                            [x + 1.5 * e, ya, z + dw - 0.14]], pc, "door", 2, lw=0.6)["normal"] =                         np.array([nx, 0, 0.0])
+                hz_ = z + dw - 0.1 if nx < 0 else z + 0.1
+                k.face([[x + 2.5 * e, 0.98, hz_ - 0.025], [x + 2.5 * e, 1.06, hz_ - 0.025],
+                        [x + 2.5 * e, 1.06, hz_ + 0.025], [x + 2.5 * e, 0.98, hz_ + 0.025]], (214, 178, 92),
+                       "door", 3, lw=0.6)["normal"] = np.array([nx, 0, 0.0])
         if on_w:
             for z in np.arange(2.0 + (0.0 if nx > 0 else 1.0), D - 1.5, 4.0):
                 ww, y0, y1 = 2.0, wh + 0.35, min(Hc - 0.35, 2.5)
+                frc = _mix(k.col("ceiling"), (255, 255, 255), 0.3)
+                fw = 0.08
+                k.face([[x + 0.5 * e, y0 - fw, z - fw], [x + 0.5 * e, y1 + fw, z - fw],
+                        [x + 0.5 * e, y1 + fw, z + ww + fw], [x + 0.5 * e, y0 - fw, z + ww + fw]], frc, "window", 1,
+                       lw=0.8)["normal"] = np.array([nx, 0, 0.0])
                 f = k.face([[x + e, y0, z], [x + e, y1, z], [x + e, y1, z + ww], [x + e, y0, z + ww]],
-                           k.col("window"), "window", 1, emit=str(o.get("time")) != "night")
+                           k.col("window"), "window", 1, emit=str(o.get("time")) != "night", lw=0.7)
                 f["normal"] = np.array([nx, 0, 0.0])
                 f["sheen"] = True
-                k.line([x + 2 * e, y0, z + ww / 2], [x + 2 * e, y1, z + ww / 2], 2, 0.8)
-                k.line([x + 2 * e, (y0 + y1) / 2, z], [x + 2 * e, (y0 + y1) / 2, z + ww], 2, 0.6)
+                # the mullion, the transom and a sill, as bars of the frame's colour
+                m_ = 0.035
+                for q in ([[x + 2 * e, y0, z + ww / 2 - m_], [x + 2 * e, y1, z + ww / 2 - m_],
+                           [x + 2 * e, y1, z + ww / 2 + m_], [x + 2 * e, y0, z + ww / 2 + m_]],
+                          [[x + 2 * e, y1 - 0.45 - m_, z], [x + 2 * e, y1 - 0.45 + m_, z],
+                           [x + 2 * e, y1 - 0.45 + m_, z + ww], [x + 2 * e, y1 - 0.45 - m_, z + ww]]):
+                    k.face(q, frc, "window", 2, lw=0.5)["normal"] = np.array([nx, 0, 0.0])
+                k.box(min(x, x + nx * 0.1), y0 - fw - 0.05, z - fw - 0.05, max(x, x + nx * 0.1), y0 - fw,
+                      z + ww + fw + 0.05, frc, "window", 2, 0.6)
     # hanging lamps on the ceiling's middle line
     # evenly spaced from 4 m: the first one inside the picture, the rest shrinking toward the far end
     every = float(o.get("lamp_every") or 4.0)
@@ -396,6 +419,76 @@ def kit_studio(k: Kit) -> None:
     k.face([[-W, 0, 0.3], [W, 0, 0.3], [W, 0, D - rad], [-W, 0, D - rad]], floor, "floor", 0, outline=False)
     k.face([[-W, rad, D], [W, rad, D], [W, 40, D], [-W, 40, D]], wall, "backdrop", 0, outline=False)
     k.o.setdefault("haze_m", 400.0)
+
+
+def kit_kitchen(k: Kit) -> None:
+    """A kitchen seen from its middle: a tiled back wall, a counter with cupboards and a sink, a window above it,
+    a fridge at the right, wall cupboards."""
+    o = k.o
+    W = float(o.get("width") or 5.0)
+    Hc = float(o.get("height") or 2.7)
+    D = float(o.get("depth") or 4.5)
+    sx = float(o.get("shift") or 0.0)
+    xl, xr = sx - W / 2, sx + W / 2
+    z0 = 0.3
+    wall, tile = k.col("wall"), k.col("tile")
+    k.face([[xl, 0, z0], [xr, 0, z0], [xr, 0, D], [xl, 0, D]], k.col("floor"), "floor", 0)
+    k.face([[xl, Hc, z0], [xl, Hc, D], [xr, Hc, D], [xr, Hc, z0]], k.col("ceiling"), "ceiling", 0)
+    for x, nx in ((xl, 1), (xr, -1)):
+        k.face([[x, 0, z0], [x, Hc, z0], [x, Hc, D], [x, 0, D]], wall, "wall", 0)["normal"] = np.array([nx, 0, 0.0])
+    k.face([[xl, 0, D], [xr, 0, D], [xr, Hc, D], [xl, Hc, D]], wall, "back-wall", 0)
+    for x in np.arange(xl + 0.3, xr, 0.3):
+        k.line([x, 0, z0], [x, 0, D], 1, 0.4)
+    # the tiled splashback between counter and wall cupboards
+    k.face([[xl, 0.9, D - 0.01], [xr, 0.9, D - 0.01], [xr, 1.5, D - 0.01], [xl, 1.5, D - 0.01]], tile, "tiles", 1)
+    for y in np.arange(1.05, 1.5, 0.15):
+        k.line([xl, y, D - 0.012], [xr, y, D - 0.012], 1, 0.3)
+    for x in np.arange(xl + 0.15, xr, 0.15):
+        k.line([x, 0.9, D - 0.012], [x, 1.5, D - 0.012], 1, 0.3)
+    cnt, cup = k.col("counter"), k.col("cupboard")
+    dz = 0.62
+    k.box(xl, 0.1, D - dz + 0.04, xr - 0.9, 0.86, D, cup, "cupboard", 2, 0.8)
+    k.box(xl, 0.86, D - dz, xr - 0.9, 0.9, D, cnt, "counter", 2, 0.8)
+    for x in np.arange(xl + 0.6, xr - 0.9, 0.6):
+        k.line([x, 0.12, D - dz + 0.035], [x, 0.84, D - dz + 0.035], 3, 0.5)
+    k.face([[sx - 0.45, 0.901, D - 0.52], [sx + 0.15, 0.901, D - 0.52], [sx + 0.15, 0.901, D - 0.12],
+            [sx - 0.45, 0.901, D - 0.12]], _mix(cnt, (90, 100, 110), 0.35), "sink", 3, lw=0.7)
+    k.box(xl, 1.55, D - 0.35, sx - 0.5, 2.2, D, cup, "cupboard", 2, 0.8)
+    f = k.face([[sx - 0.3, 1.6, D - 0.01], [sx + 0.9, 1.6, D - 0.01], [sx + 0.9, 2.3, D - 0.01],
+                [sx - 0.3, 2.3, D - 0.01]], k.col("window"), "window", 1, emit=True)
+    f["sheen"] = True
+    k.line([sx + 0.3, 1.6, D - 0.02], [sx + 0.3, 2.3, D - 0.02], 2, 0.7)
+    k.box(xr - 0.85, 0, D - 0.7, xr - 0.05, 1.85, D, k.col("fridge"), "fridge", 2, 0.9)
+    k.line([xr - 0.85, 1.25, D - 0.705], [xr - 0.05, 1.25, D - 0.705], 3, 0.6)
+    k.lamps.append((np.array([sx, Hc - 0.1, D * 0.5]), 3.0))
+
+
+def kit_cliff(k: Kit) -> None:
+    """A grey rock face rising on one side close to the camera, a ledge to stand on, sky and far hills beyond."""
+    o = k.o
+    _sky_ground(k, "ground")
+    k.ground = None
+    k.far.append({"kind": str(o.get("far") or "hills")})
+    k.far.append({"kind": "valley"})
+    left = str(o.get("side") or "left").lower().startswith("l")
+    sg = -1 if left else 1
+    rock = k.col("rock")
+    rng = np.random.default_rng(17)
+    # the face: a jagged wall from near to far on one side, lit and shadowed facets
+    zs = np.linspace(0.3, 30, 14)
+    xs = [sg * (2.4 + rng.uniform(-0.3, 0.3)) for _ in zs]
+    for i in range(len(zs) - 1):
+        x0, x1 = xs[i], xs[i + 1]
+        h0, h1 = 14 + rng.uniform(-2, 2), 14 + rng.uniform(-2, 2)
+        c = rock * (1.0 if i % 2 else 0.86)
+        k.face([[x0, -8, zs[i]], [x0, h0, zs[i]], [x1, h1, zs[i + 1]], [x1, -8, zs[i + 1]]], c, "rock", 1, lw=0.9)
+    for i in range(1, len(zs) - 1, 2):                       # cracks
+        k.line([xs[i], 0.4, zs[i]], [xs[i] - sg * 0.05, 4 + 3 * rng.random(), zs[i] + 0.3], 2, 0.5)
+    # the ledge: a strip of rock along the face, falling away beyond its edge
+    ex = -sg * 1.2
+    k.face([[xs[0], 0, 0.3], [ex, 0, 0.3], [ex, 0, 30], [xs[-1], 0, 30]], _mix(rock, (255, 255, 255), 0.15), "ledge", 1)
+    k.face([[ex, 0, 0.3], [ex, -6, 0.3], [ex, -6, 30], [ex, 0, 30]], rock * 0.7, "rock", 1)
+    k.clouds = [(300, 0.4, 1.0), (760, 0.55, 1.3)]
 
 
 def _desk(k: Kit, x: float, z: float, rgb) -> None:
@@ -638,6 +731,12 @@ def _build_kit(kit: str, opts: dict) -> Kit:
         kit_track(k)
     elif kit == "studio":
         kit_studio(k)
+    elif kit == "underwater":
+        k.underwater = True
+    elif kit == "kitchen":
+        kit_kitchen(k)
+    elif kit == "cliff":
+        kit_cliff(k)
     elif kit == "sky":
         k.sky = True
         k.clouds = [(150, 0.35, 1.3), (480, 0.6, 1.0), (820, 0.3, 1.5), (650, 0.85, 0.9)]
@@ -736,6 +835,35 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
                 cv2.circle(img, (x, y), max(1, int(S * 0.0009)), (230, 230, 210), -1, cv2.LINE_AA)
         _clouds(kit, img, rid, reg("cloud"), cs, hz, sky_hor, night)
         _far(kit, img, rid, reg, cs, hz, haze, tint)
+    if kit.underwater:
+        sea = np.asarray(kit.col("sea"), np.float32)
+        top = _mix(sea, (220, 250, 250), 0.55)
+        deep = _mix(sea, (10, 30, 70), 0.6)
+        t = (ys / float(Hs))[..., None]
+        img[:] = np.broadcast_to(top[None, None, :] * (1 - t) + deep[None, None, :] * t, img.shape)
+        rid[:] = reg("water")
+        rng = np.random.default_rng(13)
+        shaft = np.zeros((Hs, Ws), np.float32)
+        for _ in range(6):                               # light shafts fanning down from the surface
+            x0 = rng.uniform(0.1, 0.9) * Ws
+            w0 = rng.uniform(0.02, 0.05) * S
+            poly = np.array([[x0 - w0, 0], [x0 + w0, 0], [x0 + 3 * w0 + 0.15 * S, Hs], [x0 - w0 + 0.15 * S, Hs]],
+                            np.int32)
+            cv2.fillPoly(shaft, [poly], float(rng.uniform(0.12, 0.22)))
+        shaft = cv2.GaussianBlur(shaft, (0, 0), 0.01 * S) * (1 - t[..., 0] * 0.8)
+        img[:] = img * (1 - shaft[..., None]) + 255 * shaft[..., None]
+        # the surface: a lighter wavy band at the top
+        xs_ = np.arange(Ws)
+        yb = (0.05 * Hs + 0.01 * S * np.sin(xs_ / Ws * 25)).astype(np.int32)
+        for x_ in range(0, Ws, 1):
+            img[: yb[x_], x_] = _mix(top, (255, 255, 255), 0.35)
+        for _ in range(int(40 * Ws * Hs / 1e6) + 25):     # bubbles: a ring with a glint
+            x, y = rng.uniform(0, Ws), rng.uniform(0.1 * Hs, Hs)
+            r = rng.uniform(0.004, 0.014) * S
+            col = tuple(float(v) for v in _mix(top, (255, 255, 255), 0.6))
+            cv2.circle(img, (int(x), int(y)), int(r), col, max(1, int(0.12 * r)), cv2.LINE_AA)
+            cv2.circle(img, (int(x - 0.35 * r), int(y - 0.35 * r)), max(1, int(0.22 * r)), (255, 255, 255), -1,
+                       cv2.LINE_AA)
     if kit.ground is not None:
         below = (vv > hz + 0.5)
         dy = rays[..., 1]
@@ -864,9 +992,13 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         if f.get("sheen"):
             # a glass pane: a lighter diagonal band
             yy, xx = np.nonzero(mb)
-            ph = ((xx + yy) / (0.06 * S)) % 1.0
-            c = c.copy()
-            c[ph < 0.18] = _mix(col, (255, 255, 255), 0.45)
+            # the sky in the glass: lighter at the top, a soft gradient, and one lighter diagonal band
+            ty = ((yy - yy.min()) / max(1.0, float(np.ptp(yy))))[:, None].astype(np.float32)
+            c = (np.asarray(_mix(col, (255, 255, 255), 0.4), np.float32)[None, :] * (1 - ty) +
+                 np.asarray(_mix(col, (90, 140, 200), 0.15), np.float32)[None, :] * ty)
+            ph = ((xx + yy) / (0.09 * S)) % 1.0
+            band = (ph > 0.15) & (ph < 0.27)
+            c[band] = c[band] * 0.6 + 255 * 0.4
         img[mb] = c
         depth[mb] = t
         rid[mb] = reg(f["region"])
@@ -924,6 +1056,7 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         far_ids = [regions.index(r) for r in ("sky", "cloud", "skyline", "hill", "tree", "sea") if r in regions]
         fm = np.isin(rid, far_ids)
         img[fm] = img[fm] / np.maximum(tint.astype(np.float32), 0.05)[None, :]
+    kit.depth_out = cv2.resize(np.minimum(depth, 1e3), (W, H), interpolation=cv2.INTER_NEAREST)
     out = cv2.resize(np.clip(img, 0, 255), (W, H), interpolation=cv2.INTER_AREA).astype(np.uint8)
     rsmall = cv2.resize(rid, (W, H), interpolation=cv2.INTER_NEAREST)
     masks = {name: rsmall == i for i, name in enumerate(regions)}
@@ -1014,6 +1147,11 @@ def _far(kit: Kit, img, rid, reg, cs, hz: float, haze, mult) -> None:
                 m = (np.arange(Hs)[:, None] >= y[None, :]) & (np.arange(Hs)[:, None] <= hz + 1)
                 img[m] = col
                 rid[m] = reg("hill")
+        elif kind == "valley":
+            # the land far below a cliff: one hazy colour under the horizon
+            m = np.arange(Hs)[:, None] > np.full((1, Ws), hz)
+            img[m] = _mix(kit.col("hill") * mult, haze, 0.45)
+            rid[m] = reg("valley")
         elif kind == "mountains":
             for layer, (amp, k_h) in enumerate(((0.16, 0.6), (0.1, 0.4))):
                 pk = np.zeros(Ws, np.float32)
@@ -1081,7 +1219,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
             "shift", "light", "side", "far", "sky", "ground", "road", "building", "door", "window", "lamp",
             "line", "steps", "at", "platform", "roof", "sea", "sand", "hill", "tree", "fence", "concrete",
             "pavement", "board", "desk", "stairs", "haze", "lamp-every", "shore", "bed", "curtain", "track",
-            "weather", "flowers"]
+            "weather", "flowers", "level", "counter", "tile", "cupboard", "rock", "fridge"]
     spec = {v: "value" for v in vals}
     spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag", "blossom": "flag", "slope": "flag", "water": "flag"})
     a = parse(args, Spec(USAGE["scene"], ["kit"], spec, alias={"colour": "color", "tod": "time"}, min_pos=0))
@@ -1090,7 +1228,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
     for v in vals:
         if a.get(v) is not None:
             o[v] = str(a[v])
-    for v in ("depth", "width", "height", "shift", "lamps", "steps", "at", "shore"):
+    for v in ("depth", "width", "height", "shift", "lamps", "steps", "at", "shore", "level"):
         if v in o:
             o[v] = float(coords.parse_float(o[v], v, -100, 1000, notes))
     if "lamps" in o:
@@ -1247,7 +1385,11 @@ def _figure_light(p, la: np.ndarray) -> np.ndarray:
 
 
 def relight(p) -> None:
-    """After ``draw``: the light layer again from the kept scene light, with the figures where they are now."""
+    """After ``draw``: the light layer again from the kept scene light, with the figures where they are now (and
+    the water line on figures standing in water)."""
+    rec = scene_rec(p)
+    if rec is not None and rec["opts"].get("water"):
+        _weather_front(p, rec["opts"])
     f = p.root / LIGHT_NPZ
     if scene_rec(p) is None or not f.exists():
         return
@@ -1265,7 +1407,7 @@ def _weather_front(p, o: dict) -> None:
     """Rain or snow in front of everything: a sparse layer above the line art (a few streaks or flakes)."""
     w = str(o.get("weather") or "clear")
     names = [e["name"] for e in p.state["layers"]]
-    if w not in ("rain", "snow"):
+    if w not in ("rain", "snow") and not o.get("water"):
         if "weather" in names:
             p._write_layer_file("weather", None)
         return
@@ -1283,12 +1425,57 @@ def _weather_front(p, o: dict) -> None:
             L = rng.uniform(0.04, 0.08) * S
             cv2.line(a, (int(x), int(y)), (int(x + 0.18 * L), int(y + L)), (0.86, 0.9, 0.96, 0.55),
                      max(1, int(0.0015 * S)), cv2.LINE_AA)
-    else:
+    elif w == "snow":
         for _ in range(int(0.00002 * W * H * (1000.0 / S) ** 2 * 5)):
             x, y = rng.uniform(0, W), rng.uniform(0, H)
             cv2.circle(a, (int(x), int(y)), max(1, int(rng.uniform(0.004, 0.008) * S)), (1.0, 1.0, 1.0, 0.9), -1,
                        cv2.LINE_AA)
+    if o.get("water"):
+        _waterline(p, a, o)
     p._write_layer_file("weather", a)
+
+
+def _waterline(p, a: np.ndarray, o: dict) -> None:
+    """Figures standing in shallow water: below the water level (``--level`` m, default 0.3) the figure is covered by
+    the water's tint, a light line and a ripple ring round the legs mark the surface."""
+    from . import draw_pose as DP
+    from .draw_figure2d import load_maps
+    mp = load_maps(p)
+    if mp is None:
+        return
+    level = float(o.get("level") or 0.3)
+    lab, tb, zl, s = mp["lab"], mp["table"], mp["z"], mp["s"]
+    Hl, Wl = lab.shape
+    cam = DP.camera_of(p).resized(Wl, Hl)
+    vv, uu = np.mgrid[0:Hl, 0:Wl].astype(np.float32)
+    Y = cam.C[1] + cam.rays(uu + 0.5, vv + 0.5)[..., 1] * zl
+    sea = np.asarray(_rgb(o.get("sea") or DEFAULTS["sea"]), np.float32) / 255.0
+    tint = np.clip(sea * 0.8 + 0.2, 0, 1)
+    S = float(max(p.W, p.H))
+    for el in DP.figures(p):
+        ids = [k for k, t in enumerate(tb) if t["subj"] == el["subject"]]
+        fm = np.isin(lab, ids) & (zl < 1e3)
+        under = fm & (Y < level)
+        if not under.any():
+            continue
+        ub = cv2.resize(under.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
+        ub = cv2.GaussianBlur(ub.astype(np.float32), (0, 0), 0.0015 * S)
+        a[..., :3] = a[..., :3] * (1 - ub[..., None]) + tint[None, None, :] * ub[..., None]
+        a[..., 3] = np.maximum(a[..., 3], ub * 0.75)
+        # the ripple ring round the figure at the water level
+        J = {k: np.asarray(v, float) for k, v in el["j3d"].items()}
+        feet = [J[f"ankle-{q}"] for q in "rl"]
+        c = np.mean(feet, 0)
+        rr = 0.25 + 0.5 * float(np.linalg.norm((feet[0] - feet[1])[[0, 2]]))
+        cam2 = DP.camera_of(p)
+        for k_, (rad, wgt) in enumerate(((rr, 1.0), (rr * 1.6, 0.6))):
+            ang = np.linspace(math.pi, 2 * math.pi, 40)            # the near half: the far half is behind the legs
+            ring = np.stack([c[0] + rad * np.cos(ang), np.full_like(ang, level), c[2] + 0.55 * rad * np.sin(ang)], 1)
+            q, zz = cam2.project(ring)
+            if (zz <= 0.1).any():
+                continue
+            pts = np.round(q * 16).astype(np.int32)
+            cv2.polylines(a, [pts], False, (1.0, 1.0, 1.0, 0.85 * wgt), max(1, int(0.0025 * S * wgt)), cv2.LINE_AA, 4)
 
 
 def _light_layer(p) -> None:
@@ -1383,8 +1570,8 @@ FLOORS = ("floor", "ground", "road", "pavement", "platform", "sand", "concrete",
 
 def floor_mask(p):
     """(mask of the scene's floor regions [H,W], colour at a pixel (x, y) -> rgb) or None without a scene."""
-    if scene_rec(p) is None:
-        return None
+    if scene_rec(p) is None or scene_rec(p)["opts"].get("water"):
+        return None                         # standing in water: the ripple ring stands for the contact shadow
     m = np.zeros((p.H, p.W), bool)
     for n in FLOORS:
         if n in p.state.get("regions", {}) and p.state["regions"][n].get("how") == "scene":
@@ -1406,3 +1593,27 @@ def floor_mask(p):
             sub = paper[int(np.clip(y, 0, p.H - 1)), int(np.clip(x, 0, p.W - 1)), :3][None]
         return tuple(int(round(v * 255)) for v in np.median(sub, 0))
     return m, colour
+
+
+_DEPTH_CACHE: Dict[str, np.ndarray] = {}
+
+
+def depth_map(p, shape, far: float = 60.0) -> Optional[np.ndarray]:
+    """Camera distance (m) of every pixel of the scene kit at ``shape`` (H, W): its walls, floor, ceiling, furniture
+    and far shapes; the sky and anything beyond ``far`` is ``far``. None without a scene."""
+    rec = scene_rec(p)
+    if rec is None:
+        return None
+    import hashlib
+    import json
+    from . import draw_pose as DP
+    H, W = int(shape[0]), int(shape[1])
+    cam = DP.camera_of(p)
+    key = hashlib.sha1(json.dumps([rec, H, W, cam.horizon, cam.eye, cam.fov, cam.tilt], sort_keys=True,
+                                  default=str).encode()).hexdigest()
+    if key not in _DEPTH_CACHE:
+        kit = build_kit(rec["kit"], dict(rec["opts"]))
+        render(kit, cam.resized(W, H), W, H)
+        _DEPTH_CACHE.clear()
+        _DEPTH_CACHE[key] = np.minimum(kit.depth_out, far).astype(np.float32)
+    return _DEPTH_CACHE[key].copy()
