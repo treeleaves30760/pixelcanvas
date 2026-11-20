@@ -432,7 +432,17 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     iris = _col(p, fc.get("eyes"), "#4a78c0")
     lash = dc.shadow_of(_col(p, (lk.get("hair") or {}).get("color"), HAIR), 1.6)
     lash = tuple(int(v * 0.55) for v in lash)
-    specs = FC.project(rig, cam, FC.features(fc.get("expression", "neutral"), iris, lash))
+    gz = FC.gaze_key(fc.get("gaze")) if fc.get("gaze") else (0.0, 0.0)
+    specs = FC.project(rig, cam, FC.features(fc.get("expression", "neutral"), iris, lash, gz or (0.0, 0.0)))
+    # the face's line weights follow the head's size on the canvas: a small face keeps thin, readable lines
+    from .draw_line import base_width
+    hc = rig.J["head"]
+    hp = max(float(np.linalg.norm(np.subtract(*cam.project(np.array([hc, hc + rig.Hd[:, a] * rig.h]))[0])))
+             for a in (0, 1))
+    unit = max(0.55, hp / 110.0)                          # px per weight unit; a 220 px head: 2 px
+    wk = unit / base_width(p)
+    from .draw_render import material_colours
+    skin = tuple(int(v) for v in material_colours(p, el).get("skin", (253, 227, 208)))
     # where the head shows (not under the bangs): full-res mask of the head's label
     lab = R.lab == hk
     head_m = cv2.resize(lab.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
@@ -442,7 +452,7 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         P = sp["px"]
         vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")))
         sp["vis2"] = vis
-        if sp.get("fill") is None:
+        if sp.get("fill") is None and sp["kind"] != "skin":
             continue
         if vis.mean() < (0.25 if sp["kind"] == "tear" else 0.5):
             continue
@@ -457,14 +467,9 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         clips[sp["name"]] = m
         if m.sum() < 3:
             continue
-        col = tuple(int(c) for c in sp["fill"])
-        if sp["kind"] == "iris":
-            # two flat tones (a darker top under the lid), not a gradient
-            y0, y1 = float(P[:, 1].min()), float(P[:, 1].max())
-            fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.6))
-            top = m.copy()
-            top[int(y0 + 0.45 * (y1 - y0)):] = False
-            fills.append(Fill(mask_rle=mask_to_rle(top), color=dc.shadow_of(col, 1.3), feather=0.6))
+        col = tuple(int(c) for c in (sp["fill"] if sp.get("fill") is not None else skin))
+        if sp["kind"] in ("iris", "pupil", "shine", "white", "skin", "teeth", "tongue"):
+            fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.5))
         elif sp["kind"] == "blush":
             fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.003 * max(p.W, p.H),
                               opacity=float(sp.get("alpha", 0.4))))
@@ -478,7 +483,8 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         for run in S2.runs(vis, False):
             if len(run) >= 2:
                 lines.append({"name": sp["name"], "px": P[run], "closed": bool(sp["closed"] and vis.all()),
-                              "weight": sp["weight"], "taper": sp["taper"], "rgb": sp.get("rgb")})
+                              "weight": round(sp["weight"] * wk, 3), "taper": sp["taper"], "rgb": sp.get("rgb"),
+                              "wprof": sp.get("wprof") if len(run) == len(P) else None})
     return fills, lines
 
 
@@ -657,6 +663,8 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
                                         color="line", closed=fl["closed"], src=f"face {fl['name']}")
             rec["d2d"], rec["d2d_group"], rec["d2d_part"] = subj, "face", fl["name"]
             rec["even"] = True
+            if fl.get("wprof"):
+                rec["wprof"] = fl["wprof"]
             if fl.get("rgb"):
                 rec["auto_rgb"] = [int(v) for v in fl["rgb"]]
                 rec["rgb_fixed"] = True

@@ -701,7 +701,7 @@ def wrap_face(orig):
         rest = args[1:] if first in figs or (first and not first.startswith("--")) else args
         a = parse(rest, Spec("pixelcanvas face girl --expression smile", [], {"expression": "value", "eyes": "value",
                                                                              "kind": "value", "weight": "value",
-                                                                             "keep-eyes": "flag"},
+                                                                             "keep-eyes": "flag", "gaze": "value"},
                              alias={"expr": "expression", "mood": "expression", "iris": "eyes", "eye": "eyes"}))
         e = FC.expression_key(a.get("expression") or (look_of(target).get("face") or {}).get("expression") or
                               "neutral")
@@ -714,6 +714,11 @@ def wrap_face(orig):
             from .draw_plan import swatch
             swatch(p, a["eyes"], "pixelcanvas face girl --eyes blue")
             fc["eyes"] = str(a["eyes"])
+        if a.get("gaze"):
+            if FC.gaze_key(a["gaze"]) is None:
+                raise UsageError(f"unknown gaze {a['gaze']!r}: {', '.join(FC.GAZES)} or x,y in -1..1",
+                                 "pixelcanvas face girl --gaze left")
+            fc["gaze"] = str(a["gaze"])
 
         def mutate():
             look_of(target)["face"] = fc
