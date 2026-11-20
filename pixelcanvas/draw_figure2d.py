@@ -1154,7 +1154,7 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
         if lift > 0.05:
             fc = np.array([J["pelvis"][0] if "pelvis" in J else fc[0], 0.0, J["pelvis"][2] if "pelvis" in J
                            else fc[2]]) * 0.5 + fc * 0.5
-        c = fc + off * 0.25 * rx
+        c = fc + off * 0.12 * rx
         ang = np.linspace(0, 2 * math.pi, 48, endpoint=False)
         ring = np.stack([c[0] + rx * np.cos(ang), np.zeros_like(ang), c[2] + rz * np.sin(ang)], 1)
         q, z = cam.project(ring)
@@ -1185,14 +1185,8 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
             col = _ground_shadow_colour(base)
         ry_px = max(2.0, float(np.ptp(q[:, 1])) / 2.0)
         op = float(np.clip(1.0 - 0.45 * lift, 0.45, 1.0))
-        # a soft outer shadow and a darker, crisp core where the feet touch
-        out.append(Fill(mask_rle=mask_to_rle(sh), color=col, feather=max(1.2, 0.15 * ry_px), opacity=0.4 * op))
-        core = np.zeros((p.H, p.W), np.uint8)
-        qc = (q - q.mean(0)) * 0.62 + q.mean(0)
-        cv2.fillPoly(core, [np.round(qc).astype(np.int32)], 1)
-        core = (core > 0) & ground
-        if core.sum() >= 6:
-            out.append(Fill(mask_rle=mask_to_rle(core), color=col, feather=max(0.8, 0.08 * ry_px), opacity=0.75 * op))
+        # one calm flat shape, a little soft at its rim (the anime contact shadow)
+        out.append(Fill(mask_rle=mask_to_rle(sh), color=col, feather=max(1.2, 0.12 * ry_px), opacity=0.6 * op))
     return out
 
 

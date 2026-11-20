@@ -368,13 +368,13 @@ def depth_of_field(p, img: np.ndarray, fm: dict, focus: str, amount: float) -> T
     # the empty ground and backdrop carry the figures' contact shadows: they stay as they are; drawn blocks and the
     # other figures blur by their distance from the focus
     rel = np.where(drawn_px, np.abs(z - zf) / max(zf, 1e-3), 0.0)
-    coc = np.clip(rel / 0.5, 0.0, 1.0)
+    coc = np.clip(rel / 1.0, 0.0, 1.0)
     # the figure with its outline (the line art runs half outside the shape): sharp, and lends no colour
     fmask = cv2.dilate(fmask.astype(np.uint8), dc.disk(max(1.5, 0.006 * S))) > 0
     coc[fmask] = 0.0
     if not (coc > 0.05).any():
         return img, 0.0
-    sig_max = max(1.0, amount * 0.007 * S)
+    sig_max = max(1.0, amount * 0.0035 * S)
     out = img.copy()
     src = ~fmask
     prev = 0.0
@@ -443,7 +443,7 @@ def motion_blur(p, img: np.ndarray, fm: dict, subj: str, d: np.ndarray, amount: 
     trail_a = cv2.filter2D(a, -1, k, borderType=cv2.BORDER_CONSTANT)
     trail_c = cv2.filter2D(img * a[..., None], -1, k, borderType=cv2.BORDER_CONSTANT)
     trail_c = trail_c / np.maximum(trail_a[..., None], 1e-4)
-    w = np.clip(trail_a * 1.4 * amount, 0, 0.55)
+    w = np.clip(trail_a * 1.0 * amount, 0, 0.35)
     w[fmask] = 0.0
     out = img * (1 - w[..., None]) + trail_c * w[..., None]
     # the background pans along the motion (everything but the figure)
