@@ -595,14 +595,19 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
     prims = F3.hair_prims(rig, "x", hair, motion, floating)
     out: List[dict] = []
     locks: Dict[str, list] = {}
+    acc: Dict[str, list] = {}
     for pr in prims:
         if pr["piece"] == "hair-cap":
             out.append(_solid("hair-cap", "hair", subj, "hair", [pr], {"scalp": None}, rad=0.45 * h,
                               bias=-0.004 * h))
         elif pr["t"] == "rcone" and pr["mat"] == "hair":
             locks.setdefault(pr["piece"], []).append(pr)
+        elif pr["piece"] in ("hairband", "hairpin"):
+            acc.setdefault(pr["piece"], []).append(pr)      # one solid: a band, not a row of beads
         elif pr["t"] in ("ell", "rcone", "cyl"):
             out.append(_solid(pr["piece"], pr["mat"], subj, "hair", [pr], rad=0.05 * h, bias=-0.006 * h))
+    for name, prs in acc.items():
+        out.append(_solid(name, prs[0]["mat"], subj, "hair", prs, rad=0.04 * h, bias=-0.03 * h))
     style = str(hair.get("style") or "medium")
     clumps = _clumps(rig, locks, style, h)
     for ci, (pts, rr) in enumerate(clumps):

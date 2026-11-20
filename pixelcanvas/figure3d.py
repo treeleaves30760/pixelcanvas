@@ -708,6 +708,37 @@ def _lock(rig: Rig, owner: str, k: int, root, d0, length: float, r0: float, grav
     return out
 
 
+HAIR_ACCESSORIES = ("hairband", "hairpin", "bow", "ribbon")
+
+
+def _hair_accessories(rig: Rig, owner: str, hair: dict) -> List[dict]:
+    """Hairband over the crown from ear to ear, a crossed hairpin above the temple, a bow (or ribbon) on the side of
+    the head; all in the ``bow`` material (``--bows`` colours them)."""
+    acc = hair.get("accessories") or []
+    h, Hd = rig.h, rig.Hd
+    out: List[dict] = []
+    A = rig.cr_A * 1.2
+    for a in acc:
+        if a == "hairband":
+            ts = np.linspace(-1.5, 1.5, 13)
+            P = [rig.cr_c + A @ unit(np.array([math.sin(t), math.cos(t), 0.2])) for t in ts]
+            for p0, p1 in zip(P[:-1], P[1:]):
+                out.append(_P(rcone(p0, p1, 0.045 * h, 0.045 * h), owner, "hairband", "bow", group="hair"))
+        elif a == "hairpin":
+            root, nrm = _cap_point(rig, 0.8, 0.55, 1.22)
+            for sg in (1.0, -1.0):
+                d = unit(Hd[:, 1] * 0.6 + Hd[:, 2] * 0.6 * sg)
+                out.append(_P(rcone(root - d * 0.1 * h, root + d * 0.1 * h, 0.014 * h, 0.014 * h), owner,
+                              "hairpin", "bow", group="hair"))
+        elif a in ("bow", "ribbon"):
+            root, nrm = _cap_point(rig, 1.05, 0.72, 1.12)
+            up = unit(Hd[:, 1] - nrm * float(Hd[:, 1] @ nrm))
+            x = unit(np.cross(up, nrm))
+            out += _bow(owner, root + nrm * 0.02 * h, np.stack([x, up, nrm], 1), 0.16 * h, "bow", "hair-bow",
+                        tails=a == "ribbon")
+    return out
+
+
 def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: bool) -> List[dict]:
     J, F, h = rig.J, rig.F, rig.h
     Hd = rig.Hd
@@ -859,6 +890,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             root, nrm = _cap_point(rig, math.pi * 0.95, 0.72, 1.1)
             out.append(_P(ell_prim(root + nrm * 0.08 * h, np.eye(3), (0.19 * h,) * 3), owner, "bun", "hair",
                           seam="always", group="hair"))
+    out += _hair_accessories(rig, owner, hair)
     if hair.get("ahoge", False) and style not in ("spiky",):
         root, nrm = _cap_point(rig, 0.25, 0.97, 1.08)
 
