@@ -740,7 +740,7 @@ BLOCK_WORDS = {"wall": ("box", (4.0, 0.3, 1.0)), "bench": ("bench", (1.5, 0.45, 
                "cylinder": ("cylinder", (0.3, 0.3, 1.0)), "pole": ("cylinder", (0.1, 0.1, 3.0)),
                "post": ("cylinder", (0.12, 0.12, 1.2)), "lamp": ("lamppost", (0.14, 0.14, 4.0)),
                "lamppost": ("lamppost", (0.14, 0.14, 4.0)), "streetlight": ("lamppost", (0.14, 0.14, 4.0)),
-               "tree": ("tree", (0.4, 0.4, 5.0)),
+               "tree": ("tree", (0.24, 0.24, 5.0)),
                "trunk": ("cylinder", (0.4, 0.4, 4.0)), "column": ("cylinder", (0.6, 0.6, 4.0)),
                "pillar": ("cylinder", (0.6, 0.6, 4.0)),
                "plane": ("plane", (4.0, 4.0, 0.0)), "floor": ("plane", (6.0, 6.0, 0.0)),
@@ -850,7 +850,7 @@ class Block:
             th = 0.45 * h
             out.append({"t": "cyl", "c": self.world([0, th / 2, 0]), "A": R @ np.diag([r, th / 2, r]),
                         "part": f"{self.name} trunk", "group": self.name})
-            cr = max(0.35 * h, 2.5 * r)
+            cr = max(0.26 * h, 3.0 * r)
             out.append({"t": "ell", "c": self.world([0, h - 0.55 * cr, 0]), "A": R @ np.diag([cr, 0.62 * cr, cr]),
                         "part": f"{self.name} crown", "group": self.name})
         elif self.kind == "railing":

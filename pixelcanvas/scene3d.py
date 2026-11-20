@@ -28,7 +28,26 @@ from . import coords
 from . import draw_core as dc
 from .coords import UsageError
 
-KITS = ("corridor", "room", "classroom", "street", "platform", "outdoor", "field", "beach", "rooftop", "stairs")
+KITS = ("corridor", "room", "classroom", "bedroom", "street", "platform", "outdoor", "field", "beach", "rooftop",
+        "stairs", "park", "track", "studio", "sky")
+KIT_LINES = {
+    "corridor": "walls, wainscot, boards, doors, windows, arch, hanging lamps  [--doors --windows --arch "
+                "--lamp-every m --no-polish]",
+    "room": "four walls, boards, a door, ceiling lights  [--windows --width --depth]",
+    "classroom": "blackboard, desks in rows, windows on the left  [--windows --board --desk]",
+    "bedroom": "a bed against the right wall, a curtained window, boards  [--bed --curtain]",
+    "street": "road, pavements, building fronts with window rows, lamp poles  [--time night lights the windows]",
+    "platform": "station platform, safety line, rails, roof on pillars, lamps  [--side left|right]",
+    "outdoor": "ground, sky, clouds, far hills  [--far hills|trees|skyline]",
+    "field": "grass rows to the horizon, far trees  [--far]",
+    "beach": "sand, wet sand, foam, sea  [--shore m]",
+    "rooftop": "concrete floor, parapet, wire fence, far skyline",
+    "stairs": "a flight of steps between walls, handrails, a lamp  [--steps n]",
+    "park": "a paved path between slim trees, grass, far trees  [--blossom for pink cherry trees]",
+    "track": "a running track with white lanes across the picture, infield, far stands  [--track]",
+    "studio": "a plain backdrop curving into the floor, one soft gradient (character-only pictures)  [--wall]",
+    "sky": "only sky and clouds (a jump seen from below)",
+}
 USAGE = {"scene": "pixelcanvas scene corridor --time day --wall #e6dcc4 --trim #7a4e30 --floor #b07a4a --arch"}
 SS = 2                                # supersampling: polygons and lines are drawn at 2x and reduced (clean edges)
 
@@ -40,6 +59,7 @@ DEFAULTS = {
     "edge": "#e6c23a", "rail": "#7a7068", "sand": "#ecd9a8", "sea": "#4f9ed0", "hill": "#7fa860",
     "tree": "#4f8a4a", "trunk": "#7a5a40", "fence": "#9aa4ac", "board": "#3e5a48", "desk": "#c89a64",
     "stairs": "#cfc4b0", "cloud": "#ffffff", "bench": "#8a6040", "line": "#3a2c26", "concrete": "#b8b4ac",
+    "bed": "#9ab8d8", "curtain": "#e8d6b0", "track": "#b8523c",
 }
 TIMES = {
     # sky top, sky at the horizon, multiplier on surface colours, haze colour weight, lamp strength
@@ -238,9 +258,9 @@ def _hanging_lamp(k: Kit, x: float, top: float, z: float, drop: float, r: float 
         g["glow"] = 0.3
 
 
-def kit_room(k: Kit, classroom: bool = False) -> None:
+def kit_room(k: Kit, classroom: bool = False, bedroom: bool = False) -> None:
     o = k.o
-    W = float(o.get("width") or (6.4 if classroom else 8.0))
+    W = float(o.get("width") or (6.4 if classroom else 5.0 if bedroom else 8.0))
     Hc = float(o.get("height") or 3.0)
     D = float(o.get("depth") or (9.0 if classroom else 7.0))
     sx = float(o.get("shift") or 0.0)
@@ -267,6 +287,23 @@ def kit_room(k: Kit, classroom: bool = False) -> None:
             f["normal"] = np.array([nx, 0, 0.0])
             f["sheen"] = True
             k.line([x + 2 * e, y0, z + 0.9], [x + 2 * e, y1, z + 0.9], 2, 0.8)
+    if bedroom:
+        # a bed with its side against the right wall, a curtained window in the back wall
+        bx = xr - 0.02
+        z_b = max(2.5, D * 0.45)
+        wood = _mix(k.col("desk"), (0, 0, 0), 0.2)
+        k.box(bx - 2.0, 0, z_b, bx, 0.42, z_b + 1.5, wood, "bed", 2, 0.9)
+        k.box(bx - 1.95, 0.42, z_b + 0.05, bx - 0.05, 0.6, z_b + 1.45, (248, 248, 252), "bed", 2, 0.8)
+        k.box(bx - 1.45, 0.6, z_b + 0.03, bx - 0.03, 0.68, z_b + 1.47, k.col("bed"), "blanket", 2, 0.8)
+        k.box(bx - 1.92, 0.6, z_b + 0.25, bx - 1.55, 0.76, z_b + 1.25, (240, 240, 246), "pillow", 2, 0.7)
+        y0, y1 = 0.9, 2.3
+        f = k.face([[sx - 1.0, y0, D - 0.01], [sx + 1.0, y0, D - 0.01], [sx + 1.0, y1, D - 0.01],
+                    [sx - 1.0, y1, D - 0.01]], k.col("window"), "window", 1, emit=True)
+        f["sheen"] = True
+        k.line([sx, y0, D - 0.02], [sx, y1, D - 0.02], 2, 0.8)
+        for cx_ in (sx - 1.2, sx + 1.2):
+            k.face([[cx_ - 0.3, 0.6, D - 0.03], [cx_ + 0.3, 0.6, D - 0.03], [cx_ + 0.3, 2.45, D - 0.03],
+                    [cx_ - 0.3, 2.45, D - 0.03]], k.col("curtain"), "curtain", 2)
     if classroom:
         bw = min(4.0, 0.55 * W)
         k.face([[sx - bw / 2, 0.9, D - 0.02], [sx + bw / 2, 0.9, D - 0.02], [sx + bw / 2, 2.2, D - 0.02],
@@ -290,6 +327,75 @@ def kit_room(k: Kit, classroom: bool = False) -> None:
         k.face([[sx - 0.6, Hc - 0.01, z - 0.12], [sx + 0.6, Hc - 0.01, z - 0.12], [sx + 0.6, Hc - 0.01, z + 0.12],
                 [sx - 0.6, Hc - 0.01, z + 0.12]], k.col("lamp"), "lamp", 2, emit=True)
         k.lamps.append((np.array([sx, Hc - 0.1, z]), 3.0))
+
+
+def _tree(k: Kit, x: float, z: float, h: float, crown) -> None:
+    """A slim trunk and a round lumpy crown facing the camera."""
+    r = 0.1
+    k.box(x - r, 0, z - r, x + r, 0.55 * h, z + r, k.col("trunk"), "trunk", 3, 0.7)
+    R = 0.26 * h
+    cy = 0.66 * h
+    pts = []
+    for t in np.linspace(0, 2 * math.pi, 48)[:-1]:
+        rr = R * (1.0 + 0.07 * math.sin(7 * t + x))
+        pts.append([x + rr * math.cos(t), cy + 0.85 * rr * math.sin(t), z - 0.15])
+    f = k.face(pts, crown, "tree", 3, lw=0.8)
+    f["normal"] = np.array([0, 0, -1.0])
+    f["billboard"] = True
+
+
+def kit_park(k: Kit) -> None:
+    o = k.o
+    _sky_ground(k, "ground")
+    k.far.append({"kind": "trees"})
+    sx = float(o.get("shift") or 0.0)
+    D = float(o.get("depth") or 60.0)
+    pw = float(o.get("width") or 2.6)
+    k.face([[sx - pw / 2, 0.003, 0.3], [sx + pw / 2, 0.003, 0.3], [sx + pw / 2, 0.003, D], [sx - pw / 2, 0.003, D]],
+           k.col("pavement"), "path", 1)
+    for z in np.arange(0.9, D, 0.6):
+        k.line([sx - pw / 2, 0.004, z], [sx + pw / 2, 0.004, z], 1, 0.3)
+    crown = _rgb("#f4b6c8") if o.get("blossom") else k.col("tree")
+    for side in (-1, 1):
+        for z in np.arange(3.0 + (2.5 if side > 0 else 0), D * 0.7, 5.0):
+            _tree(k, sx + side * (pw / 2 + 1.6), z, 4.5, crown)
+    k.clouds = [(200, 0.4, 1.0), (760, 0.3, 1.2)]
+
+
+def kit_track(k: Kit) -> None:
+    o = k.o
+    _sky_ground(k, "ground")
+    z0 = float(o.get("at") or 4.0)
+    lanes, lw, W = 6, 1.22, 300.0
+    k.face([[-W, 0.002, z0], [W, 0.002, z0], [W, 0.002, z0 + lanes * lw], [-W, 0.002, z0 + lanes * lw]],
+           k.col("track"), "track", 1, outline=False)
+    for i in range(lanes + 1):
+        z = z0 + i * lw
+        k.line([-W, 0.003, z], [W, 0.003, z], 1, 0.9, rgb=(250, 250, 250))
+    zf = z0 + lanes * lw + 30.0
+    k.box(-W, 0, zf, W, 5.0, zf + 6, k.col("concrete"), "stands", 2, 0.8)
+    for y in np.arange(1.0, 5.0, 1.0):
+        k.line([-W, y, zf - 0.01], [W, y, zf - 0.01], 2, 0.4)
+    k.clouds = [(250, 0.4, 1.0), (700, 0.55, 1.3)]
+
+
+def kit_studio(k: Kit) -> None:
+    """A cyclorama: the floor curves up into the backdrop, no edges, one soft gradient."""
+    o = k.o
+    D = float(o.get("depth") or 7.0)
+    wall = k.col("wall") if o.get("wall") else _rgb("#eceaf0")
+    floor = k.col("floor") if o.get("floor") else _mix(wall, (120, 120, 140), 0.12)
+    W, n, rad = 60.0, 14, 1.5
+    prev = (0.0, D - rad)
+    for i in range(1, n + 1):
+        a = i / n * math.pi / 2
+        y, z = rad * (1 - math.cos(a)), D - rad + rad * math.sin(a)
+        k.face([[-W, prev[0], prev[1]], [W, prev[0], prev[1]], [W, y, z], [-W, y, z]], _mix(floor, wall, i / n),
+               "backdrop", 0, outline=False)
+        prev = (y, z)
+    k.face([[-W, 0, 0.3], [W, 0, 0.3], [W, 0, D - rad], [-W, 0, D - rad]], floor, "floor", 0, outline=False)
+    k.face([[-W, rad, D], [W, rad, D], [W, 40, D], [-W, 40, D]], wall, "backdrop", 0, outline=False)
+    k.o.setdefault("haze_m", 400.0)
 
 
 def _desk(k: Kit, x: float, z: float, rgb) -> None:
@@ -475,11 +581,27 @@ def kit_stairs(k: Kit) -> None:
 
 
 def build_kit(kit: str, opts: dict) -> Kit:
+    k = _build_kit(kit, opts)
+    if str(opts.get("weather") or "") in ("cloudy", "rain") and k.sky:
+        k.clouds = list(k.clouds) + [(330, 0.5, 1.4), (900, 0.7, 1.1), (60, 0.75, 1.2)]
+    return k
+
+
+def _build_kit(kit: str, opts: dict) -> Kit:
     k = Kit(opts)
     if kit == "corridor":
         kit_corridor(k)
-    elif kit in ("room", "classroom"):
-        kit_room(k, classroom=kit == "classroom")
+    elif kit in ("room", "classroom", "bedroom"):
+        kit_room(k, classroom=kit == "classroom", bedroom=kit == "bedroom")
+    elif kit == "park":
+        kit_park(k)
+    elif kit == "track":
+        kit_track(k)
+    elif kit == "studio":
+        kit_studio(k)
+    elif kit == "sky":
+        k.sky = True
+        k.clouds = [(150, 0.35, 1.3), (480, 0.6, 1.0), (820, 0.3, 1.5), (650, 0.85, 0.9)]
     elif kit in ("outdoor", "field", "beach"):
         kit_outdoor(k, kit)
     elif kit == "street":
@@ -746,6 +868,7 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         img = img + halo[..., None] * np.array([255, 200, 120], np.float32)[None, None, :] * 0.35
     else:
         halo = None
+    _weather(kit, img, rid, regions, S, hz)
     if split:
         # the sky and far things are drawn in the time's own colours: the paper holds them divided by the tint,
         # so the light layer (the tint everywhere) gives them back and darkens a figure in front of them alike
@@ -769,6 +892,34 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
     lt[keep] = 1.0
     light = cv2.resize(lt, (W, H), interpolation=cv2.INTER_AREA)
     return out, masks, np.clip(light, 0, 1)
+
+
+def _weather(kit: Kit, img, rid, regions, S: float, hz: float) -> None:
+    """Cloudy: a grey veil on the sky; rain: thin slanted streaks and a grey veil; snow: round flakes."""
+    w = str(kit.o.get("weather") or "clear")
+    if w == "clear":
+        return
+    Hs, Ws = img.shape[:2]
+    rng = np.random.default_rng(21)
+    if w in ("cloudy", "rain") and "sky" in regions:
+        sk = rid == regions.index("sky")
+        img[sk] = img[sk] * 0.55 + np.array([170, 176, 186], np.float32) * 0.45
+    if w == "rain":
+        col = (205, 212, 225)
+        for _ in range(int(0.00012 * Ws * Hs / max(1.0, S / 1000))):
+            x, y = rng.uniform(-0.1 * Ws, Ws), rng.uniform(0, Hs)
+            L = rng.uniform(0.02, 0.05) * S
+            cv2.line(img, (int(x), int(y)), (int(x + 0.18 * L), int(y + L)), col, max(1, int(0.0012 * S)),
+                     cv2.LINE_AA)
+    elif w == "snow":
+        for _ in range(int(0.00008 * Ws * Hs / max(1.0, S / 1000))):
+            x, y = rng.uniform(0, Ws), rng.uniform(0, Hs)
+            r = rng.uniform(0.002, 0.005) * S
+            cv2.circle(img, (int(x), int(y)), max(1, int(r)), (250, 250, 255), -1, cv2.LINE_AA)
+        if kit.ground is not None:
+            gi = [regions.index(n) for n in ("ground", "road", "pavement", "path") if n in regions]
+            g = np.isin(rid, gi)
+            img[g] = img[g] * 0.25 + np.array([240, 242, 248], np.float32) * 0.75
 
 
 def _clouds(kit: Kit, img, rid, rk: int, cs, hz: float, sky_hor, night: bool) -> None:
@@ -856,9 +1007,10 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
     vals = ["time", "depth", "width", "height", "wall", "trim", "floor", "ceiling", "doors", "windows", "lamps",
             "shift", "light", "side", "far", "sky", "ground", "road", "building", "door", "window", "lamp",
             "line", "steps", "at", "platform", "roof", "sea", "sand", "hill", "tree", "fence", "concrete",
-            "pavement", "board", "desk", "stairs", "haze", "lamp-every", "shore"]
+            "pavement", "board", "desk", "stairs", "haze", "lamp-every", "shore", "bed", "curtain", "track",
+            "weather"]
     spec = {v: "value" for v in vals}
-    spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag"})
+    spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag", "blossom": "flag"})
     a = parse(args, Spec(USAGE["scene"], ["kit"], spec, alias={"colour": "color", "tod": "time"}, min_pos=0))
     kit = str(a.get("kit") or "").lower()
     o = {}
@@ -883,6 +1035,10 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
         o["arch"] = False
     elif a.get("arch"):
         o["arch"] = True
+    if a.get("blossom"):
+        o["blossom"] = True
+    if "weather" in o and o["weather"] not in ("clear", "cloudy", "rain", "snow"):
+        raise UsageError("--weather is clear, cloudy, rain or snow", USAGE["scene"])
     if a.get("no-polish"):
         o["polish"] = False
     elif a.get("polish"):
@@ -1038,6 +1194,14 @@ def cmd_scene(ctx, args):
     from . import cli_draw
     p = ctx.project
     d = dc.dstate(p)
+    if args and args[0].lower() in ("list", "kits"):
+        rep = cli_draw.DReport()
+        for k_ in KITS:
+            rep.add(f"  {k_}: {KIT_LINES.get(k_, '')}")
+        rep.add("all kits: --time day|sunset|night --weather clear|cloudy|rain|snow --light left|right --depth m "
+                "--shift m and a colour per surface (--wall #hex --floor #hex ...)")
+        rep.next = "pixelcanvas scene corridor --time day"
+        return rep
     kit, o = _parse(args, ctx.notes)
     old = d.get("scene3d")
     if not kit:

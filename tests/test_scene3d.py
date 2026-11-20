@@ -74,3 +74,14 @@ def test_scene_command_paints_paper_and_survives_draw(draw):
     flat = np.asarray(Image.open("w.pixelcanvas/layers/flat.png"))
     # flat auto fills the figure, not the whole background over the scene
     assert (flat[..., 3] > 128).mean() < 0.6
+
+
+def test_weather_and_scene_list(draw):
+    cam = P3.Camera(200, 150, horizon=450, eye=1.4)
+    clear, _ = S3.render(S3.build_kit("street", {}), cam, 200, 150)
+    rain, _ = S3.render(S3.build_kit("street", {"weather": "rain"}), cam, 200, 150)
+    assert np.abs(clear.astype(int) - rain.astype(int)).mean() > 1
+    _scene(draw)
+    out = ok(draw("scene", "list"))
+    for k in S3.KITS:
+        assert f"  {k}:" in out
