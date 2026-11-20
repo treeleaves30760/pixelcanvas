@@ -972,10 +972,9 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         # an arc on the lit side of the crown, its lower edge in points
         side = 1.0 if lv[0] > 0 else -1.0
         th = np.linspace(-0.5, 0.5, 40) * math.pi + side * 0.35
-        teeth = np.abs(np.sin(th * 9.0))
-        gaps = np.abs(np.sin(th * 3.0 + 0.4)) < 0.28           # breaks: pieces of shine, not a ring
+        teeth = np.abs(np.sin(th * 6.0)) ** 2
         up = [c + Hd @ np.array([R0 * math.sin(t), y0, R0 * math.cos(t)]) for t in th]
-        dn = [c + Hd @ np.array([R0 * 0.99 * math.sin(t), y0 - (0.05 + 0.06 * tt) * h, R0 * 0.99 * math.cos(t)])
+        dn = [c + Hd @ np.array([R0 * 0.99 * math.sin(t), y0 - (0.03 + 0.1 * tt) * h, R0 * 0.99 * math.cos(t)])
               for t, tt in zip(th, teeth)]
         P3 = np.array(up + dn[::-1])
         nrm = (P3 - c)
@@ -995,16 +994,16 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         bang_ids = [k for k in hair_ids if str(tb[k]["name"]).startswith("bangs")]
         if bang_ids:
             band &= ~_smooth_up(np.isin(lab, bang_ids), p)
-        bu = band.astype(np.uint8)
-        for i in np.nonzero(gaps)[0]:
-            qa, qb = q[i], q[len(th) * 2 - 1 - i]
-            cv2.line(bu, tuple(int(v) for v in np.round(qa)), tuple(int(v) for v in np.round(qb)), 0,
-                     max(2, int(0.006 * max(p.W, p.H))))
-        band = bu > 0
+        # one clean zig-zag band: no cuts, no crumbs
+        nlab, cl, st, _ = cv2.connectedComponentsWithStats(band.astype(np.uint8), 8)
+        band = np.isin(cl, [i for i in range(1, nlab) if st[i, cv2.CC_STAT_AREA] >= (0.01 * max(p.W, p.H)) ** 2])
         if band.sum() < 10:
             continue
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
-        out.append(Fill(mask_rle=mask_to_rle(band), color=dc.light_of(hairc, 0.8), feather=0.6))
+        ring = dc.light_of(hairc, 0.8)
+        if dc.lum(hairc) < 30:          # dark hair: a cool tinted shine, not grey
+            ring = tuple(int(min(255, c * 0.6 + t_ * 0.4)) for c, t_ in zip(dc.light_of(hairc, 2.2), (70, 90, 140)))
+        out.append(Fill(mask_rle=mask_to_rle(band), color=ring, feather=0.6))
     return out
 
 
