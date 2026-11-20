@@ -160,16 +160,22 @@ def kit_corridor(k: Kit) -> None:
         pts = [[sx - r, 0, D - 0.01], [sx - r, ah - r, D - 0.01]]
         pts += [[sx + r * math.cos(t), ah - r + r * math.sin(t), D - 0.01] for t in np.linspace(math.pi, 0, 24)]
         pts += [[sx + r, 0, D - 0.01]]
-        beyond = _mix(_mix(wall, (255, 248, 230), 0.4), (255, 255, 255), 0.2)
+        beyond = _mix(_mix(wall, (255, 248, 230), 0.5), (255, 255, 255), 0.25)
+        # the moulding: a band of the trim colour round the opening
+        R2 = r + 0.14
+        outer = [[sx - R2, 0, D - 0.004], [sx - R2, ah - r, D - 0.004]]
+        outer += [[sx + R2 * math.cos(t), ah - r + R2 * math.sin(t), D - 0.004] for t in np.linspace(math.pi, 0, 28)]
+        outer += [[sx + R2, 0, D - 0.004]]
+        k.face(outer, trim, "arch-frame", 1)["normal"] = np.array([0, 0, -1.0])
         f = k.face(pts, beyond, "arch", 1, emit=str(o.get("time")) == "night")
         f["normal"] = np.array([0, 0, -1.0])
-        # the frame of the arch
-        R2 = r + 0.12
-        fr = [[sx + R2 * math.cos(t), ah - r + R2 * math.sin(t), D - 0.005] for t in np.linspace(math.pi, 0, 24)]
-        for a, b in zip(fr[:-1], fr[1:]):
-            k.line(a, b, 2, 0.9)
-        k.line([sx - R2, 0, D - 0.005], fr[0], 2, 0.9)
-        k.line([sx + R2, 0, D - 0.005], fr[-1], 2, 0.9)
+        # the floor going on beyond the arch: a lighter trapezoid at the opening's foot
+        fl2 = _mix(floor, (255, 240, 210), 0.35)
+        g = k.face([[sx - r, 0, D - 0.012], [sx + r, 0, D - 0.012], [sx + 0.45 * r, 0.32 * ah, D - 0.012],
+                    [sx - 0.45 * r, 0.32 * ah, D - 0.012]], fl2, "arch", 1, outline=False)
+        g["normal"] = np.array([0, 0, -1.0])
+        g["emit"] = f["emit"]
+        k.line([sx - 0.45 * r, 0.32 * ah, D - 0.013], [sx + 0.45 * r, 0.32 * ah, D - 0.013], 2, 0.5)
     # doors on the side walls
     dl, dr = _side(o, "doors", "right")
     wl, wr = _side(o, "windows", "left")
@@ -198,10 +204,13 @@ def kit_corridor(k: Kit) -> None:
                 k.line([x + 2 * e, y0, z + ww / 2], [x + 2 * e, y1, z + ww / 2], 2, 0.8)
                 k.line([x + 2 * e, (y0 + y1) / 2, z], [x + 2 * e, (y0 + y1) / 2, z + ww], 2, 0.6)
     # hanging lamps on the ceiling's middle line
-    n = int(o.get("lamps") if o.get("lamps") is not None else 5)
-    if n > 0:
-        for z in np.linspace(3.0, D - 2.0, n):
-            _hanging_lamp(k, sx, Hc, z, 0.75)
+    # evenly spaced from 4 m: the first one inside the picture, the rest shrinking toward the far end
+    every = float(o.get("lamp_every") or 4.0)
+    zs = np.arange(4.0, 0.8 * D, every)
+    if o.get("lamps") is not None:
+        zs = np.linspace(4.0, D - 2.0, int(o["lamps"])) if int(o["lamps"]) > 1 else zs[:int(o["lamps"])]
+    for z in zs:
+        _hanging_lamp(k, sx, Hc, z, 0.7)
 
 
 def _hanging_lamp(k: Kit, x: float, top: float, z: float, drop: float, r: float = 0.22) -> None:
@@ -836,7 +845,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
     vals = ["time", "depth", "width", "height", "wall", "trim", "floor", "ceiling", "doors", "windows", "lamps",
             "shift", "light", "side", "far", "sky", "ground", "road", "building", "door", "window", "lamp",
             "line", "steps", "at", "platform", "roof", "sea", "sand", "hill", "tree", "fence", "concrete",
-            "pavement", "board", "desk", "stairs", "haze"]
+            "pavement", "board", "desk", "stairs", "haze", "lamp-every"]
     spec = {v: "value" for v in vals}
     spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag"})
     a = parse(args, Spec(USAGE["scene"], ["kit"], spec, alias={"colour": "color", "tod": "time"}, min_pos=0))
@@ -850,6 +859,8 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
             o[v] = float(coords.parse_float(o[v], v, -100, 1000, notes))
     if "lamps" in o:
         o["lamps"] = int(o["lamps"])
+    if "lamp-every" in o:
+        o["lamp_every"] = float(coords.parse_float(o.pop("lamp-every"), "lamp-every", 1, 50, notes))
     if "haze" in o:
         o["haze_m"] = float(o.pop("haze"))
     for v in DEFAULTS:
