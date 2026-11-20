@@ -39,7 +39,7 @@ KINDS_3D = ("block", "prop")
 
 USAGE = {
     "camera": "pixelcanvas camera --horizon 700 --eye-height 0.9 --fov 50",
-    "pose": "pixelcanvas pose girl --preset run --at 520,900 --yaw 30 [--hand-shape-r fist|open|relaxed|point|grip|peace|cup]",
+    "pose": "pixelcanvas pose girl --preset run --at 520,900 --yaw 30 [--lean 15 --twist 20 --bend 10 --look camera|left|right|up|down|back|at:x,y --energy 0..1 --mirror --arm-r raised|forward|back|down|bent|out|hip|behind|crossed|face|chin|hair --leg-l forward|back|bent|raised|kick|out|tucked --hand-r fist|open|relaxed|point|grip|peace|cup --hand-l-to hip|chest|x,y|<block> --foot-r-to x,y --on <block> --check]",
     "block": "pixelcanvas block wall box --at 300,820 --size 4,0.3,1.0",
     "prop": "pixelcanvas prop sword --kind sword --hand r",
     "form": "pixelcanvas form girl",
@@ -620,12 +620,19 @@ def cmd_pose(ctx, args):
                          {"preset": "value", "at": "value", "height": "value", "heads": "value", "chibi": "flag",
                           "yaw": "value", "set": "value", "mirror": "flag", "on": "value", "hand-r": "value",
                           "hand-l": "value", "foot-r": "value", "foot-l": "value", "show": "value", "lift": "value",
-                          "reset": "flag", "hand-shape-r": "value", "hand-shape-l": "value"},
+                          "reset": "flag", "hand-shape-r": "value", "hand-shape-l": "value",
+                          "lean": "value", "twist": "value", "bend": "value", "look": "value", "energy": "value",
+                          "arm-r": "value", "arm-l": "value", "leg-r": "value", "leg-l": "value", "check": "flag",
+                          "no-gesture": "flag", "no-balance": "flag"},
                          alias={"pose": "preset", "facing": "yaw", "face": "yaw", "turn": "yaw", "edit": "set",
                                 "joints": "set", "joint": "set", "sit-on": "on", "stand-on": "on", "size": "height",
                                 "right-hand": "hand-r", "left-hand": "hand-l", "right-foot": "foot-r",
                                 "left-foot": "foot-l", "hr": "hand-r", "hl": "hand-l", "flip": "mirror",
-                                "hand-r-shape": "hand-shape-r", "hand-l-shape": "hand-shape-l"},
+                                "hand-r-shape": "hand-shape-r", "hand-l-shape": "hand-shape-l",
+                                "hand-r-to": "hand-r", "hand-l-to": "hand-l", "foot-r-to": "foot-r",
+                                "foot-l-to": "foot-l", "right-arm": "arm-r", "left-arm": "arm-l",
+                                "right-leg": "leg-r", "left-leg": "leg-l", "look-at": "look", "gaze": "look",
+                                "exaggerate": "energy"},
                          min_pos=1))
     subj = str(a["subject"]).lower()
     if subj in P3.PRESETS:
@@ -640,6 +647,33 @@ def cmd_pose(ctx, args):
     spec.setdefault("preset", "stand")
     if a.get("set"):
         spec["edits"] = P3.merge_edits(spec.get("edits") or {}, P3.parse_edits(a["set"]))
+    mods = {} if a.get("preset") else dict(spec.get("mods") or {})
+    for k in ("lean", "twist", "bend"):
+        if a.get(k) is not None:
+            mods[k] = coords.parse_float(a[k], k, -90, 90, ctx.notes, USAGE["pose"])
+    if a.get("energy") is not None:
+        mods["energy"] = coords.parse_float(a["energy"], "energy", 0, 1, ctx.notes, USAGE["pose"])
+    if a.get("look"):
+        lk = P3.parse_look(a["look"])
+        if lk == "ahead":
+            mods.pop("look", None)
+        else:
+            mods["look"] = lk
+    for k in ("arm-r", "arm-l"):
+        if a.get(k):
+            mods[k] = P3.arm_word(a[k])
+    for k in ("leg-r", "leg-l"):
+        if a.get(k):
+            mods[k] = P3.leg_word(a[k])
+    spec["mods"] = mods
+    if a.get("no-gesture"):
+        spec["gesture"] = False
+    elif a.get("preset"):
+        spec.pop("gesture", None)
+    if a.get("no-balance"):
+        spec["balance"] = False
+    elif a.get("preset"):
+        spec.pop("balance", None)
     if a.get("chibi"):
         spec["heads"] = 2.5
     if a.get("heads"):
@@ -663,6 +697,12 @@ def cmd_pose(ctx, args):
         on = str(a["on"]).lower()
         spec["on"] = None if on in ("ground", "floor", "none") else on
     targets = dict(spec.get("targets") or {})
+    from .figure3d import HAND_SHAPES
+    for s in "rl":                          # --hand-r fist: a hand shape; --hand-r hip / x,y / <block>: a target
+        v = str(a.get(f"hand-{s}") or "").lower()
+        if v in HAND_SHAPES and not a.get(f"hand-shape-{s}"):
+            a[f"hand-shape-{s}"] = v
+            a[f"hand-{s}"] = None
     for k in ("hand-r", "hand-l", "foot-r", "foot-l"):
         if a.get(k):
             v = str(a[k]).lower()
@@ -671,10 +711,11 @@ def cmd_pose(ctx, args):
             else:
                 targets[k] = _target(ctx, a[k])
     spec["targets"] = targets
-    from .figure3d import HAND_SHAPES
     hands = dict(spec.get("hands") or {})
     if a.get("preset"):
-        hands = {}
+        hands = dict(P3.PRESETS[spec["preset"]].get("hands") or {})
+        if spec.get("mirror"):
+            hands = {("l" if s == "r" else "r"): v for s, v in hands.items()}
     for s in "rl":
         v = a.get(f"hand-shape-{s}")
         if v:
@@ -694,7 +735,21 @@ def cmd_pose(ctx, args):
         spec["at"] = [round((box[0] + box[2]) / 2, 1), round(box[3] - 0.015 * (box[3] - box[1]), 1)] if box \
             else [500.0, 950.0]
     show = str(a.get("show") or "").lower()
-    changes = [k for k, v in a.items() if v not in (None, False, "") and k not in ("subject", "show")]
+    changes = [k for k, v in a.items() if v not in (None, False, "") and k not in ("subject", "show", "check")]
+    if a.get("check") and not changes and old is not None and old.get("rig"):
+        # a check, not a change: the pose's problems in words; no picture, no step
+        from . import cli_draw
+        solved, _ = solve_scene(p)
+        res = solved.get(subj)
+        rep = cli_draw.DReport()
+        probs = res["check"] if res else ["not posed"]
+        rep.add(f"check {subj} ({old['rig'].get('preset')}): " + ("ok, no problems" if not probs else
+                                                                 f"{len(probs)} problem(s)"))
+        for line in probs:
+            rep.add("  " + line)
+        rep.add(f"balance: {res['balance']}" if res else "")
+        rep.next = cli._finish_next(ctx)
+        return rep
     if show and old is not None and old.get("j2d") and not changes:
         # a look, not a change: the posed figure with its joints named; no step, no history, the state untouched
         from . import cli_draw
@@ -765,7 +820,13 @@ def _pose_report(p, el, res) -> List[str]:
                    f"{'right' if el.get('picture_left') == 'r' else 'left'} ones (lsh, lwr ... in the 2D joints)")
     cts = res["contacts"]
     out.append("touching: " + (", ".join(f"{n} on the {s}" for n, s, _ in cts) if cts else "nothing") +
-               f"; balance: {res['balance']}")
+               f"; balance: {res['balance']}" + ("; check: ok" if not res.get("check") else ""))
+    for line in res.get("check") or []:
+        out.append(f"check: {line}")
+    mods = rig.get("mods") or {}
+    if mods:
+        out.append("modifiers: " + ", ".join(f"--{k} {v[0]:g},{v[1]:g}" if isinstance(v, list) else f"--{k} {v}"
+                                            for k, v in mods.items()))
     if res["support"] == "ground" and P3.PRESETS[res["preset"]]["rest"] == "seat" and \
             not any(n == "seat" for n, _, _ in cts):
         out.append(f"the seat is in the air: give her something to sit on (pixelcanvas block bench box --at x,y, then "
