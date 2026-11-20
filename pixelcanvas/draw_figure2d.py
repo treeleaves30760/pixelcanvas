@@ -896,8 +896,7 @@ def do_cel_shade(ctx, who: str = "all"):
             continue
         thr = -0.05 if t["mat"] == "skin" else 0.12
         if t["mat"] == "hair":
-            sm |= m & ((lam_hair < thr) | near)     # the hair: one mass, short cast shadows (bangs on the cap)
-            dm |= m & (lam_hair < thr - 0.45)
+            sm |= m & near      # the hair: short cast shadows; its cel band and under-layer come from _hair_bands
         elif t["group"] == "head":
             sm |= m & ((lam < -0.35) | near)        # the face stays lit: its far side, the shadow under bangs and chin
         else:
@@ -921,6 +920,7 @@ def do_cel_shade(ctx, who: str = "all"):
                 col = _block_shadow(rgb) if rn in {t["region"] for t in tb if t.get("block")} else \
                     dc.shadow_of(rgb, depth)
                 ops.append(Fill(mask_rle=mask_to_rle(big), color=tuple(int(c) for c in col), feather=0.6))
+        ops += _hair_underlayer(p, mp, subjects)
         ops += _hair_bands(p, mp, subjects, lv)
         ops += _figure_shadows(p, mp, subjects)
         arr = p.layer("shade").copy()
@@ -988,14 +988,13 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
             continue                    # seen from below, the crown is out of sight: no band on the forehead
         band = dc.poly_mask(p.H, p.W, q)
         hair_ids = [k for k, t in enumerate(tb) if t["subj"] == el["subject"] and t["mat"] == "hair"]
-        hm = cv2.resize(np.isin(lab, hair_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
+        hm = _smooth_up(np.isin(lab, hair_ids), p)
         # only where the band faces the camera: the head's front half in the picture
         band &= hm
         # on the top mass (cap and back locks), never across the bangs, where a band reads as a headband
         bang_ids = [k for k in hair_ids if str(tb[k]["name"]).startswith("bangs")]
         if bang_ids:
-            band &= ~(cv2.resize(np.isin(lab, bang_ids).astype(np.uint8), (p.W, p.H),
-                                 interpolation=cv2.INTER_NEAREST) > 0)
+            band &= ~_smooth_up(np.isin(lab, bang_ids), p)
         bu = band.astype(np.uint8)
         for i in np.nonzero(gaps)[0]:
             qa, qb = q[i], q[len(th) * 2 - 1 - i]
@@ -1005,7 +1004,46 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         if band.sum() < 10:
             continue
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
-        out.append(Fill(mask_rle=mask_to_rle(band), color=dc.light_of(hairc, 1.2), feather=0.6))
+        out.append(Fill(mask_rle=mask_to_rle(band), color=dc.light_of(hairc, 0.8), feather=0.6))
+    return out
+
+
+def _smooth_up(m_low: np.ndarray, p) -> np.ndarray:
+    """A label-map mask at canvas size with smooth edges (no stair steps of the low-res map)."""
+    f = cv2.resize(m_low.astype(np.float32), (p.W, p.H), interpolation=cv2.INTER_LINEAR)
+    k = max(1, int(round(0.002 * max(p.W, p.H)))) * 2 + 1
+    return cv2.GaussianBlur(f, (k, k), 0) > 0.5
+
+
+def _hair_underlayer(p, mp: dict, subjects: List[str]) -> list:
+    """The hair's cel shadow as flat shapes: the under-layer (hair behind the head, neck and shoulders) in the shadow
+    tone, the bangs and the top mass left lit; drawn before the crown highlight."""
+    from .draw_render import look_of
+    from .ops import Fill, mask_to_rle
+    out = []
+    cam = DP.camera_of(p)
+    lab, tb, zmap = mp["lab"], mp["table"], mp.get("z")
+    if zmap is None:
+        return out
+    for el in DP.figures(p):
+        if el["subject"] not in subjects or not (look_of(el).get("hair") or {}):
+            continue
+        body, J, F = DP._fig_state(el)
+        rig = F3.Rig(body, J, F)
+        _, zc = cam.project(rig.cr_c[None])
+        hair_ids = [k for k, t in enumerate(tb) if t["subj"] == el["subject"] and t["mat"] == "hair"
+                    and not str(t["name"]).startswith("bangs")]
+        if not hair_ids:
+            continue
+        under = np.isin(lab, hair_ids) & (zmap > float(zc[0]) + 0.12 * rig.h)
+        if under.sum() < 4:
+            continue
+        m = _smooth_up(under, p) & _smooth_up(np.isin(lab, hair_ids), p)
+        m = S2.clean_shape(m, 0.004 * max(p.W, p.H), (0.01 * max(p.W, p.H)) ** 2)
+        if m.sum() < 10:
+            continue
+        hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
+        out.append(Fill(mask_rle=mask_to_rle(m), color=tuple(int(c) for c in dc.shadow_of(hairc, 1.0)), feather=0.6))
     return out
 
 

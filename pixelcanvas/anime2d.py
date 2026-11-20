@@ -613,8 +613,11 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
     for ci, cl in enumerate(clumps):
         pts, rr = cl[0], cl[1]
         # bangs are named apart: the crown highlight and the shading leave them out
-        part = _tube(f"{'bangs' if len(cl) > 2 and cl[2] else 'clump'}{ci}", "hair", subj, "hair", pts, rr, {"scalp": pts[0]}, point_end=True,
-                     n_rings=max(10, 3 * len(pts)), n_pts=14, bias=-0.002 * h)
+        bang = len(cl) > 2 and bool(cl[2])
+        frames, dr = _lock_frames(rig, pts, bang)
+        part = _tube(f"{'bangs' if bang else 'clump'}{ci}", "hair", subj, "hair", pts, rr, {"scalp": pts[0]},
+                     point_end=True, n_rings=max(10, 3 * len(pts)), n_pts=14, bias=-0.002 * h, frames=frames,
+                     depth_ratio=dr)
         # inner strand lines: one or two confident lines per clump, from near its root toward the tip
         P = np.asarray(pts)
         L = float(np.sum(np.linalg.norm(np.diff(P, axis=0), axis=1)))
@@ -630,6 +633,25 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
             part["details"].append({"pts": base + X[None] * (rad * off)[:, None], "w": 0.38})
         out.append(part)
     return out
+
+
+def _lock_frames(rig, pts, bang: bool):
+    """A drawn lock is a flat ribbon lying on the head and back, not a round tube: wide across the hair surface,
+    thin along its outward normal (bangs thinnest, so from the side they are an edge on the brow, not a visor)."""
+    P = np.asarray(pts, float)
+    T = np.gradient(P, axis=0)
+    up = rig.Hd[:, 1]
+    frames = []
+    for i in range(len(P)):
+        d = P[i] - rig.cr_c
+        n = d - 0.7 * up * float(d @ up)
+        if np.linalg.norm(n) < 1e-6:
+            n = d
+        X = np.cross(T[i], n)
+        if np.linalg.norm(X) < 1e-9:
+            X = perp_basis(T[i])[0]
+        frames.append((unit(X), unit(n)))
+    return frames, np.full(len(P), 0.45 if bang else 0.5)
 
 
 CLUMPS = {"long": 9, "medium": 8, "bob": 7, "short": 11, "ponytail": 7, "twintails": 10, "braid": 6, "bun": 6,
@@ -709,6 +731,10 @@ def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.
             if style == "short":
                 r_root = min(r_root, 0.12 * h)       # a short cut hugs the skull: no puffs
             rr = r_root * big * _taper(t, grp)
+            # the root sinks under the cap: the crown outline stays one smooth curve, the tips carry the rhythm
+            Pm = Pm.copy()
+            if not grp:
+                Pm[0] = Pm[0] + unit(rig.cr_c - Pm[0]) * 0.7 * float(rr[0])
             # an S-curve across the clump
             X3, _ = perp_basis(Pm[-1] - Pm[0])
             sgn = 1.0 if c % 2 == 0 else -1.0

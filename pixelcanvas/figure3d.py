@@ -776,20 +776,24 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             ph = -0.95 + 1.9 * i / (n - 1)
             if bangs == "side":
                 ph = -0.75 + 1.6 * i / (n - 1)
-            root, nrm = _cap_point(rig, ph, 0.72, 1.06)
+            # roots on the front of the crown, the locks lying down the forehead curve (no visor from the side)
+            root, nrm = _cap_point(rig, ph * 0.9, 0.62, 1.02)
             sweep = 0.0
             if bangs == "side":
                 sweep = -0.45
             elif bangs == "parted":
                 sweep = 0.5 if ph > 0 else -0.5
             down = -Hd[:, 1]
-            d0 = unit(Hd[:, 2] * 0.9 + down * 0.4 + Hd[:, 0] * sweep)
+            d0 = unit(Hd[:, 2] * 0.3 + down * 0.9 + Hd[:, 0] * sweep)
             # blunt bangs end at the brows; side and parted bangs reach a little lower on one side
             length = 0.4 * h * (1.0 if bangs == "blunt" else (0.85 + 0.4 * (i / (n - 1))))
             if style == "spiky":
                 length *= 0.85
+            def hug(i_):
+                return -Hd[:, 2] * 0.12 if i_ >= 2 else 0      # the tips turn in toward the brow, not out
+
             out += _lock(rig, owner, k, root, d0, length, r0 * 1.2, gvec * 0.6 + Hd[:, 0] * sweep * 0.5, col,
-                         nseg=5, stiff=0.55, tip=0.14)
+                         nseg=5, stiff=0.75, tip=0.14, curl=hug)
             k += 1
     # side locks in front of the ears
     if style not in ("spiky",):
