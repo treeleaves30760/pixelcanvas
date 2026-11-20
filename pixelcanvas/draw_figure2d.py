@@ -958,7 +958,7 @@ def do_cel_shade(ctx, who: str = "all"):
                 if big.sum() < 6:
                     continue
                 col = _block_shadow(rgb) if rn in {t["region"] for t in tb if t.get("block")} else \
-                    dc.shadow_of(rgb, depth)
+                    _cel_shadow(rgb, depth)
                 ops.append(Fill(mask_rle=mask_to_rle(big), color=tuple(int(c) for c in col), feather=0.6))
         ops += _hair_bands(p, mp, subjects, lv)
         ops += _figure_shadows(p, mp, subjects)
@@ -987,6 +987,17 @@ def do_cel_shade(ctx, who: str = "all"):
     cli_draw._tail(ctx, rep)
     rep.summary = f"shade {len(ops)} shapes"
     return rep
+
+
+def _cel_shadow(rgb, depth: float = 1.0) -> Tuple[int, int, int]:
+    """The cel shadow tone: the painter's shadow (hue-shifted, darker); on dark cloth (navy, black) a guaranteed
+    visible step: much darker and a little toward blue-violet, so the form reads on a dark uniform."""
+    L, C, h = dc.rgb_to_lch(tuple(int(v) for v in rgb))
+    if L >= 38.0:
+        return dc.shadow_of(rgb, depth)
+    from .draw_scene import _toward
+    L2 = max(3.0, L * (0.5 if depth <= 1.0 else 0.35))
+    return dc.lch_to_rgb(L2, C * 1.15 + 5.0, _toward(h, 285.0, 0.3) if C > 4 else 285.0)
 
 
 def _part_smoothed(val: np.ndarray, lab: np.ndarray, ks: List[int], sig: float) -> np.ndarray:
