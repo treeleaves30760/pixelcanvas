@@ -246,7 +246,7 @@ pixelcanvas new pic --mode free --size 1000x1400 --request "a schoolgirl runs do
 pixelcanvas do @steps.txt          # camera, scene corridor ..., figure girl --pose run --at 420,900 --wear ... --hair ... --face ...
 pixelcanvas render                 # the guide; look
 pixelcanvas do "draw all; flat auto; shade all"     # look
-pixelcanvas polish --focus girl --motion boy:left   # look
+pixelcanvas polish --focus girl   # look
 pixelcanvas export final.png --stages stages
 pixelcanvas stage done             # closes every stage: status FINISHED
 ```

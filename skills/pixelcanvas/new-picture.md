@@ -34,7 +34,7 @@ pixelcanvas new pic --mode free --size 1000x1400 --request "<request>"
 pixelcanvas do @steps.txt              # a file of commands, one per line, run as one batch
 pixelcanvas render
 pixelcanvas do "draw all; flat auto; shade all"
-pixelcanvas polish --focus girl --motion boy:left
+pixelcanvas polish --focus girl
 pixelcanvas export final.png --stages stages
 pixelcanvas stage done                 # status FINISHED
 pixelcanvas help pose,figure,scene     # options and values of several commands in one call

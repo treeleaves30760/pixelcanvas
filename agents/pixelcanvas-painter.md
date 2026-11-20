@@ -12,7 +12,7 @@ The run, two looks in all:
 
 ```bash
 pixelcanvas do "draw all; flat auto; shade all"         # look at VIEW
-pixelcanvas polish --focus girl --motion boy:left        # look at VIEW
+pixelcanvas polish --focus girl                          # look at VIEW
 pixelcanvas export final.png --stages stages
 pixelcanvas stage done                                   # closes every stage; status FINISHED
 ```
@@ -23,7 +23,7 @@ pixelcanvas stage done                                   # closes every stage; s
 - `polish` is the whole finish in one call: strays, clean, coloured lines, depth, grade, soften, rim light, depth
   of field, motion trail, lamp glow, vignette, grain. `--focus <figure>` keeps that figure sharp, `--motion
   <figure>[:left|right|up|down|<deg>]` trails a moving figure, `--dof 0-1 --rim 0-1 --glow 0-1 --vignette 0-1
-  --grain 0-1` set a part's amount, `--no-<part>` leaves it out. Take the focus and the motion from the brief.
+  --grain 0-1` set a part's amount, `--no-<part>` leaves it out. Take the focus from the brief; `--motion` only for a figure that runs, jumps or falls.
 - A part that reads wrong after the first look: `draw <who> --part hair|face|head|torso|arm-r|arm-l|leg-r|leg-l|
   hand-r|hand-l` draws it again, then `flat auto; shade all` in the same `do`. A face: `face <who> --expression
   <e> --gaze <g>`. A wrong pose is the blocker's: say so in your answer.
