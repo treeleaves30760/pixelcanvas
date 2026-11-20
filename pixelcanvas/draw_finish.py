@@ -376,6 +376,13 @@ def background_depth(p, shape) -> np.ndarray:
         np.minimum(best, np.where(ok_, t, far).astype(np.float32), out=best)
     plane(1, 0.0)
     try:
+        from .scene3d import depth_map         # any scene kit: its own surfaces' depth
+        zk = depth_map(p, shape, far)
+        if zk is not None:
+            return zk
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         from .scene3d import scene_rec
         rec = scene_rec(p) or {}
     except Exception:  # noqa: BLE001

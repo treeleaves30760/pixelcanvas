@@ -106,3 +106,13 @@ def test_slope_mountains_water_and_front_rain(draw):
     ok(draw("scene", "street", "--weather", "rain"))
     names = [e["name"] for e in state()["layers"]]
     assert names.index("weather") > names.index("line")
+
+
+def test_depth_map_for_any_kit(draw):
+    _scene(draw)
+    ok(draw("camera", "--horizon", "450", "--eye-height", "1.4"))
+    ok(draw("scene", "street"))
+    from pixelcanvas.project import Project
+    p = Project.find("w.pixelcanvas")
+    z = S3.depth_map(p, (100, 75))
+    assert z.shape == (100, 75) and z.max() <= 60.0 and z[-1].mean() < z[10].mean()

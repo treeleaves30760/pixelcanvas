@@ -924,6 +924,7 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         far_ids = [regions.index(r) for r in ("sky", "cloud", "skyline", "hill", "tree", "sea") if r in regions]
         fm = np.isin(rid, far_ids)
         img[fm] = img[fm] / np.maximum(tint.astype(np.float32), 0.05)[None, :]
+    kit.depth_out = cv2.resize(np.minimum(depth, 1e3), (W, H), interpolation=cv2.INTER_NEAREST)
     out = cv2.resize(np.clip(img, 0, 255), (W, H), interpolation=cv2.INTER_AREA).astype(np.uint8)
     rsmall = cv2.resize(rid, (W, H), interpolation=cv2.INTER_NEAREST)
     masks = {name: rsmall == i for i, name in enumerate(regions)}
@@ -1406,3 +1407,27 @@ def floor_mask(p):
             sub = paper[int(np.clip(y, 0, p.H - 1)), int(np.clip(x, 0, p.W - 1)), :3][None]
         return tuple(int(round(v * 255)) for v in np.median(sub, 0))
     return m, colour
+
+
+_DEPTH_CACHE: Dict[str, np.ndarray] = {}
+
+
+def depth_map(p, shape, far: float = 60.0) -> Optional[np.ndarray]:
+    """Camera distance (m) of every pixel of the scene kit at ``shape`` (H, W): its walls, floor, ceiling, furniture
+    and far shapes; the sky and anything beyond ``far`` is ``far``. None without a scene."""
+    rec = scene_rec(p)
+    if rec is None:
+        return None
+    import hashlib
+    import json
+    from . import draw_pose as DP
+    H, W = int(shape[0]), int(shape[1])
+    cam = DP.camera_of(p)
+    key = hashlib.sha1(json.dumps([rec, H, W, cam.horizon, cam.eye, cam.fov, cam.tilt], sort_keys=True,
+                                  default=str).encode()).hexdigest()
+    if key not in _DEPTH_CACHE:
+        kit = build_kit(rec["kit"], dict(rec["opts"]))
+        render(kit, cam.resized(W, H), W, H)
+        _DEPTH_CACHE.clear()
+        _DEPTH_CACHE[key] = np.minimum(kit.depth_out, far).astype(np.float32)
+    return _DEPTH_CACHE[key].copy()
