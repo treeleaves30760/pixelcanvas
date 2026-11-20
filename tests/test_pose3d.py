@@ -453,3 +453,24 @@ def test_pose_cli_modifiers_and_check(draw):
     ok(draw("pose", "girl", "--hand-l-to", "hip"))
     rig = next(e for e in state()["draw"]["sketch"] if e["kind"] == "figure")["rig"]
     assert rig["targets"]["hand-l"] == "hip"
+
+
+@pytest.mark.parametrize("name", list(P3.PRESETS))
+def test_every_preset_reads_as_a_silhouette_at_its_default_yaw(name):
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    pre = P3.PRESETS[name]
+    blocks, spec = {}, {"preset": name, "at": [500, 900]}
+    if pre["rest"] == "seat":
+        blocks = {"s": P3.Block("s", "box", cam.ground_point(500, 900) - [0, 0, 0.2], (1.0, 0.45, 0.45))}
+        spec = {"preset": name, "on": "s"}
+    res = P3.solve_figure(spec, cam, blocks, {})
+    assert not P3.silhouette_lines(res, cam), name
+
+
+def test_moving_presets_keep_four_separate_limbs_round_the_figure():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    for name in ("run", "sprint", "run-toward", "sprint-side", "walk", "jump", "jump-toward", "leap", "kick",
+                 "land", "dance-twirl", "dance-step"):
+        for yaw in (0, 35, -35, 90):
+            res = P3.solve_figure({"preset": name, "at": [500, 900], "yaw": yaw}, cam, {}, {})
+            assert not P3.silhouette_lines(res, cam), (name, yaw)

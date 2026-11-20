@@ -353,21 +353,21 @@ PRESETS: Dict[str, dict] = {
         "arm-r": {"raise": 12}, "arm-l": {"raise": 8, "forward": 8}, "elbow-r": {"bend": 15}, "elbow-l": {"bend": 25}}, plant=True),
     "walk": _P("mid-stride: right leg ahead, left arm ahead", {
         "body": {"lean": 3}, "pelvis": {"twist": 6}, "chest": {"twist": -6},
-        "leg-r": {"forward": 24}, "knee-r": {"bend": 8}, "leg-l": {"forward": -16}, "knee-l": {"bend": 22},
-        "foot-l": {"point": 18}, "arm-r": {"forward": -22, "raise": 6}, "arm-l": {"forward": 24, "raise": 6},
-        "elbow-r": {"bend": 15}, "elbow-l": {"bend": 30}}),
+        "leg-r": {"forward": 28, "raise": 6}, "knee-r": {"bend": 8}, "leg-l": {"forward": -26, "raise": 6},
+        "knee-l": {"bend": 45}, "foot-l": {"point": 30}, "arm-r": {"forward": -24, "raise": 26},
+        "arm-l": {"forward": 26, "raise": 26}, "elbow-r": {"bend": 18}, "elbow-l": {"bend": 34}}),
     "run": _P("running: leaning forward, right knee up, left leg pushing off on its toes, arms pumping", {
         "body": {"lean": 21}, "pelvis": {"twist": 10}, "chest": {"twist": -12}, "head": {"nod": -18},
-        "leg-r": {"forward": 100, "raise": 4}, "knee-r": {"bend": 115}, "foot-r": {"point": 25},
-        "leg-l": {"forward": 6, "raise": 3}, "knee-l": {"bend": 16}, "foot-l": {"point": 42},
-        "arm-l": {"forward": 65, "raise": 8}, "elbow-l": {"bend": 95},
-        "arm-r": {"forward": -50, "raise": 12}, "elbow-r": {"bend": 95}}),
+        "leg-r": {"forward": 98, "raise": 12}, "knee-r": {"bend": 128}, "foot-r": {"point": 25},
+        "leg-l": {"forward": -14, "raise": 6}, "knee-l": {"bend": 8}, "foot-l": {"point": 50},
+        "arm-l": {"forward": 45, "raise": 50}, "elbow-l": {"bend": 70},
+        "arm-r": {"forward": -50, "raise": 32}, "elbow-r": {"bend": 90}}),
     "sprint": _P("flat-out sprint: deep forward lean, high knee, long push-off", {
         "body": {"lean": 30}, "pelvis": {"twist": 14}, "chest": {"twist": -16}, "head": {"nod": -28},
-        "leg-r": {"forward": 110, "raise": 4}, "knee-r": {"bend": 125}, "foot-r": {"point": 30},
-        "leg-l": {"forward": 8, "raise": 3}, "knee-l": {"bend": 12}, "foot-l": {"point": 48},
-        "arm-l": {"forward": 85, "raise": 8}, "elbow-l": {"bend": 100},
-        "arm-r": {"forward": -60, "raise": 14}, "elbow-r": {"bend": 100}}),
+        "leg-r": {"forward": 100, "raise": 12}, "knee-r": {"bend": 125}, "foot-r": {"point": 30},
+        "leg-l": {"forward": -16, "raise": 6}, "knee-l": {"bend": 8}, "foot-l": {"point": 55},
+        "arm-l": {"forward": 55, "raise": 52}, "elbow-l": {"bend": 75},
+        "arm-r": {"forward": -60, "raise": 34}, "elbow-r": {"bend": 95}}),
     "jump": _P("jumping for joy: in the air, arms up, one knee tucked", {
         "body": {"lean": -4}, "head": {"nod": -18}, "spine": {"bend": -8},
         "arm-r": {"raise": 150, "forward": 20}, "arm-l": {"raise": 145, "forward": 25},
@@ -433,10 +433,10 @@ PRESETS: Dict[str, dict] = {
         "arm-l": {"raise": 15}, "elbow-l": {"bend": 15}, "foot-r": {"point": 28}, "foot-l": {"point": 28}}),
     "reach-viewer": _P("reaching toward the viewer with the right hand, stepping in", {
         "body": {"lean": 10}, "chest": {"twist": 18}, "head": {"nod": -6},
-        "arm-r": {"forward": 85, "raise": 6}, "elbow-r": {"bend": 6}, "hand-r": {"bend": -15},
-        "arm-l": {"forward": -15, "raise": 18}, "elbow-l": {"bend": 25},
-        "leg-r": {"forward": 18}, "knee-r": {"bend": 25}, "leg-l": {"forward": -18}, "knee-l": {"bend": 10},
-        "foot-l": {"point": 25}}),
+        "arm-r": {"forward": 72, "raise": 36}, "elbow-r": {"bend": 8}, "hand-r": {"bend": -15},
+        "arm-l": {"forward": -15, "raise": 22}, "elbow-l": {"bend": 25},
+        "leg-r": {"forward": 18, "raise": 8}, "knee-r": {"bend": 25}, "leg-l": {"forward": -18, "raise": 8},
+        "knee-l": {"bend": 10}, "foot-l": {"point": 25}}, yaw=25),
     "point": _P("pointing ahead to her right with a straight arm, looking there", {
         "arm-r": {"forward": 70, "raise": 40}, "elbow-r": {"bend": 3}, "chest": {"twist": -10}, "head": {"turn": -25},
         "arm-l": {"raise": 10}, "elbow-l": {"bend": 15}, "leg-l": {"forward": 8}, "knee-l": {"bend": 10}}, plant=True),
@@ -466,21 +466,21 @@ PRESETS: Dict[str, dict] = {
         "leg-r": {"forward": 100, "raise": 6}, "knee-r": {"bend": 15}, "foot-r": {"point": 20},
         "leg-l": {"raise": 4}, "knee-l": {"bend": 15},
         "arm-r": {"forward": 20, "raise": 45}, "elbow-r": {"bend": 70},
-        "arm-l": {"forward": 40, "raise": 30, "twist": -20}, "elbow-l": {"bend": 100}}, yaw=-35),
+        "arm-l": {"forward": 30, "raise": 55, "twist": -20}, "elbow-l": {"bend": 95}}, yaw=-35),
     "punch": _P("a straight right punch, left fist guarding the chin, front foot forward", {
         "body": {"lean": 8}, "chest": {"twist": 25},
         "arm-r": {"forward": 88, "raise": 6, "twist": -10}, "elbow-r": {"bend": 4},
         "arm-l": {"forward": 45, "raise": 22, "twist": -30}, "elbow-l": {"bend": 125},
-        "leg-l": {"forward": 25, "raise": 8}, "knee-l": {"bend": 28},
-        "leg-r": {"forward": -22, "raise": 6}, "knee-r": {"bend": 12}, "foot-r": {"point": 20}}, yaw=-25, plant=True),
+        "leg-l": {"forward": 25, "raise": 20}, "knee-l": {"bend": 28},
+        "leg-r": {"forward": -22, "raise": 20}, "knee-r": {"bend": 12}, "foot-r": {"point": 20}}, yaw=-40, plant=True),
     "swing": _P("swinging a sword with both hands in a lunge (prop sword --hand both)", {
         "body": {"lean": 14}, "chest": {"twist": 20}, "spine": {"bend": 6},
         "arm-r": {"forward": 70, "raise": 25, "twist": -25}, "elbow-r": {"bend": 25},
-        "arm-l": {"forward": 75, "raise": 20, "twist": -35}, "elbow-l": {"bend": 35},
-        "leg-l": {"forward": 60, "raise": 8}, "knee-l": {"bend": 75},
-        "leg-r": {"forward": -30, "raise": 6}, "knee-r": {"bend": 8}, "foot-r": {"point": 30}}, yaw=-30, plant=True),
+        "arm-l": {"forward": 70, "raise": 36, "twist": -35}, "elbow-l": {"bend": 35},
+        "leg-l": {"forward": 60, "raise": 18}, "knee-l": {"bend": 75},
+        "leg-r": {"forward": -30, "raise": 22}, "knee-r": {"bend": 8}, "foot-r": {"point": 30}}, yaw=-55, plant=True),
     "dance-twirl": _P("twirling on the right toes, left foot at the right knee, arms open", {
-        "foot-r": {"point": 35}, "leg-l": {"forward": 40, "raise": 30, "twist": 50}, "knee-l": {"bend": 120},
+        "foot-r": {"point": 35}, "leg-l": {"forward": 75, "raise": 42, "twist": 30}, "knee-l": {"bend": 120},
         "arm-r": {"raise": 160, "forward": 20}, "elbow-r": {"bend": 25},
         "arm-l": {"raise": 95, "forward": 25}, "elbow-l": {"bend": 30},
         "head": {"tilt": 10, "turn": 15}, "chest": {"side": 6}}),
@@ -488,7 +488,7 @@ PRESETS: Dict[str, dict] = {
         "pelvis": {"twist": -8, "side": -5}, "spine": {"twist": -22, "side": 6}, "chest": {"twist": -28, "side": 4},
         "neck": {"turn": -38}, "head": {"turn": -40, "tilt": 8, "nod": -4},
         "leg-r": {"forward": 16}, "knee-r": {"bend": 10}, "leg-l": {"forward": -14}, "knee-l": {"bend": 26},
-        "foot-l": {"point": 28}, "arm-r": {"raise": 14, "forward": -24}, "arm-l": {"raise": 12, "forward": 22},
+        "foot-l": {"point": 28}, "arm-r": {"raise": 24, "forward": -42}, "arm-l": {"raise": 18, "forward": 36},
         "elbow-r": {"bend": 20}, "elbow-l": {"bend": 38}}, yaw=160),
     "lean-wall": _P("leaning back against a wall, arms crossed, left leg crossed in front", {
         "body": {"lean": -8}, "head": {"turn": 15, "tilt": 6},
@@ -516,8 +516,8 @@ PRESETS: Dict[str, dict] = {
         "leg-l": {"forward": 10, "raise": -5}, "knee-l": {"bend": 18}}, plant=True),
     "walk-together": _P("walking side by side, the left hand reaching out to a partner's hand (partner: --mirror)", {
         "body": {"lean": 3}, "pelvis": {"twist": 6}, "chest": {"twist": -6},
-        "leg-r": {"forward": 22}, "knee-r": {"bend": 8}, "leg-l": {"forward": -15}, "knee-l": {"bend": 22},
-        "foot-l": {"point": 16}, "arm-r": {"forward": -18, "raise": 6}, "elbow-r": {"bend": 15},
+        "leg-r": {"forward": 28, "raise": 6}, "knee-r": {"bend": 8}, "leg-l": {"forward": -26, "raise": 6},
+        "knee-l": {"bend": 45}, "foot-l": {"point": 30}, "arm-r": {"forward": -20, "raise": 18}, "elbow-r": {"bend": 18},
         "arm-l": {"raise": 28, "forward": 12}, "elbow-l": {"bend": 12}, "head": {"turn": 12}}),
 }
 
@@ -542,8 +542,8 @@ PRESETS.update({
         "body": {"lean": 14}, "pelvis": {"twist": 14}, "chest": {"twist": -18}, "head": {"nod": -12, "tilt": 5},
         "leg-r": {"forward": 95, "raise": 8}, "knee-r": {"bend": 110}, "foot-r": {"point": 25},
         "leg-l": {"forward": -25, "raise": 4}, "knee-l": {"bend": 45}, "foot-l": {"point": 45},
-        "arm-l": {"forward": 60, "raise": 28}, "elbow-l": {"bend": 95},
-        "arm-r": {"forward": -45, "raise": 32}, "elbow-r": {"bend": 90}}, yaw=22, dynamic=True,
+        "arm-l": {"forward": 40, "raise": 55}, "elbow-l": {"bend": 70},
+        "arm-r": {"forward": -45, "raise": 40}, "elbow-r": {"bend": 90}}, yaw=22, dynamic=True,
         hands={"r": "fist", "l": "fist"}),
     "sprint-side": _X("flat-out sprint seen side-on (the sprint preset in profile)",
                       dict(PRESETS["sprint"]["edits"]), yaw=90, dynamic=True, hands={"r": "fist", "l": "fist"}),
@@ -552,7 +552,7 @@ PRESETS.update({
         "arm-r": {"raise": 62, "forward": 20}, "elbow-r": {"bend": 35}, "hand-r": {"bend": -20},
         "arm-l": {"raise": 42, "forward": -12}, "elbow-l": {"bend": 55},
         "leg-r": {"forward": 18, "raise": 4}, "knee-r": {"bend": 35}, "foot-r": {"point": 50},
-        "leg-l": {"forward": -12, "raise": 6}, "knee-l": {"bend": 75}, "foot-l": {"point": 55}},
+        "leg-l": {"forward": -12, "raise": 14}, "knee-l": {"bend": 75}, "foot-l": {"point": 55}},
         rest="air", lift=0.5, dynamic=True, hands={"r": "open", "l": "open"}),
     "jump-toward": _X("leaping toward the viewer: arms flung up and out, back arched, legs kicked back", {
         "body": {"lean": 10}, "spine": {"bend": -16}, "head": {"nod": -16, "tilt": -6},
@@ -570,7 +570,7 @@ PRESETS.update({
     "jump-tuck": _X("a tuck jump: both knees pulled high, arms thrown out and up", {
         "body": {"lean": 6}, "head": {"nod": -10}, "spine": {"bend": 8},
         "leg-r": {"forward": 105, "raise": 10}, "knee-r": {"bend": 130}, "foot-r": {"point": 35},
-        "leg-l": {"forward": 92, "raise": 12}, "knee-l": {"bend": 120}, "foot-l": {"point": 40},
+        "leg-l": {"forward": 68, "raise": 14}, "knee-l": {"bend": 95}, "foot-l": {"point": 40},
         "arm-r": {"raise": 120, "forward": 10}, "elbow-r": {"bend": 25},
         "arm-l": {"raise": 100, "forward": 35}, "elbow-l": {"bend": 40}}, rest="air", lift=0.55, dynamic=True),
     "fall": _X("falling backward: body tipped back, arms flung up, legs trailing above", {
@@ -683,7 +683,7 @@ PRESETS.update({
         "arm-r": {"raise": 110, "forward": 30}, "elbow-r": {"bend": 30},
         "arm-l": {"raise": 60, "forward": 55}, "elbow-l": {"bend": 70},
         "leg-r": {"raise": 8}, "knee-r": {"bend": 10},
-        "leg-l": {"forward": 18, "raise": -14}, "knee-l": {"bend": 30}, "foot-l": {"point": 40}},
+        "leg-l": {"forward": 26, "raise": -6}, "knee-l": {"bend": 34}, "foot-l": {"point": 40}},
         dynamic=True, hands={"r": "open", "l": "open"}),
     "sword-high": _X("high guard: a sword held overhead in both hands, front foot forward, glaring", {
         "chest": {"twist": 14}, "spine": {"bend": -6}, "head": {"nod": 6, "turn": -12},
@@ -710,9 +710,9 @@ PRESETS.update({
         reach={"r": "chest", "l": "chest"}, plant=True),
     "offer": _X("holding out an open palm toward the viewer, leaning in, the other hand at the chest", {
         "body": {"lean": 8}, "chest": {"twist": 16}, "head": {"tilt": 10, "nod": -4},
-        "arm-r": {"forward": 75, "raise": 14}, "elbow-r": {"bend": 18}, "hand-r": {"bend": -40, "twist": 60},
-        "leg-r": {"forward": 16}, "knee-r": {"bend": 18}, "leg-l": {"forward": -14}, "knee-l": {"bend": 12},
-        "foot-l": {"point": 22}}, reach={"l": "chest"}, hands={"r": "open"}, dynamic=True, yaw=20),
+        "arm-r": {"forward": 66, "raise": 42}, "elbow-r": {"bend": 18}, "hand-r": {"bend": -40, "twist": 60},
+        "leg-r": {"forward": 16, "raise": 8}, "knee-r": {"bend": 18}, "leg-l": {"forward": -14, "raise": 8},
+        "knee-l": {"bend": 12}, "foot-l": {"point": 22}}, reach={"l": "chest"}, hands={"r": "open"}, dynamic=True, yaw=30),
     "stance-wide": _X("a wide confident stance, a long weapon across the shoulders, wrists hooked over it", {
         "body": {"lean": 6}, "pelvis": {"side": -4}, "spine": {"side": 4}, "head": {"tilt": 8, "nod": -10},
         "leg-r": {"raise": 18, "forward": 6}, "knee-r": {"bend": 12}, "leg-l": {"raise": 16, "forward": -4},
@@ -1722,7 +1722,7 @@ def solve_figure(spec: dict, cam: Camera, blocks: Dict[str, Block], others: Dict
         E1, clamps = clamp_edits(_look_edits(E, look, res["J"], res["F"], cam))
         res = _place(spec, pk, pre, E1, reach, cam, blocks, others)
     res["clamps"] = clamps
-    res["check"] = check_pose(res, blocks) + view_check(res, cam)
+    res["check"] = check_pose(res, blocks) + view_check(res, cam) + silhouette_lines(res, cam)
     return res
 
 
@@ -1743,6 +1743,92 @@ def view_check(res: dict, cam: Camera) -> List[str]:
             if r < 0.25:
                 out.append(f"{limb}-{s} points at the camera (seen at {r:.0%} of its length): turn --yaw 20 or "
                            f"swing it aside for a readable shape")
+    return out
+
+
+def silhouette(res: dict, cam: Camera, size: int = 160) -> Dict[str, float]:
+    """How much of each limb's drawn shape is covered by the other limb of the pair or by the torso: {'leg-r':
+    0.4, ...} (0 = clear, 1 = hidden in the other shape). Measured on a small raster of the projected bones drawn
+    at their thickness."""
+    import cv2
+    J, body = res["J"], res["body"]
+    names = list(J)
+    P, _ = cam.project(np.array([J[k] for k in names]))
+    U = {k: P[i] for i, k in enumerate(names)}
+    lo, hi = P.min(0), P.max(0)
+    sc = (size - 8) / max(float((hi - lo).max()), 1e-6)
+
+    def px(k):
+        return tuple(int(round(v)) for v in (U[k] - lo) * sc + 4)
+    z = float(cam.to_cam(J["pelvis"])[0, 2])
+    w = lambda r: max(1, int(round(2 * r * cam.f / max(z, 0.1) * sc)))      # noqa: E731
+    H = W = size
+
+    def chain(js, rads):
+        m = np.zeros((H, W), np.uint8)
+        for (a, b), r in zip(zip(js[:-1], js[1:]), rads):
+            cv2.line(m, px(a), px(b), 1, w(r))
+        return m > 0
+    R = body.r
+    torso = np.zeros((H, W), np.uint8)
+    hw = body.shw * 0.85
+    ch = J["neck"] - J["pelvis"]
+    pts = [J["shoulder-r"], J["shoulder-l"], J["hip-l"] + (J["hip-l"] - J["pelvis"]) * 0.6,
+           J["hip-r"] + (J["hip-r"] - J["pelvis"]) * 0.6]
+    pp, _ = cam.project(np.array(pts))
+    cv2.fillConvexPoly(torso, np.round((pp - lo) * sc + 4).astype(np.int32), 1)
+    torso = torso > 0
+    del hw, ch
+    limbs = {}
+    for s in "rl":
+        limbs[f"arm-{s}"] = chain([f"shoulder-{s}", f"elbow-{s}", f"wrist-{s}"], [R["upperarm"], R["forearm"]])
+        limbs[f"leg-{s}"] = chain([f"hip-{s}", f"knee-{s}", f"ankle-{s}"], [R["thigh"] * 0.8, R["shin"]])
+    out = {}
+    for k, m in limbs.items():
+        n = int(m.sum())
+        if n == 0:
+            continue
+        kind, s = k.split("-")
+        o = "l" if s == "r" else "r"
+        other = limbs[f"{kind}-{o}"]
+        if kind == "arm":
+            near = J[f"shoulder-{s}"]                         # the part of the arm beside the shoulder is always in
+            m = m.copy()
+            cv2.circle(m.view(np.uint8), px(f"shoulder-{s}"), w(R["upperarm"]) * 2, 0, -1)
+            m = m > 0
+            n = max(int(m.sum()), 1)
+            cover = (m & torso).sum() / n
+            del near
+        else:
+            m2 = m.copy().view(np.uint8)
+            cv2.circle(m2, px(f"hip-{s}"), w(R["thigh"]) * 2, 0, -1)    # the legs always meet at the crotch
+            m = m2 > 0
+            n = max(int(m.sum()), 1)
+            cover = (m & other).sum() / n
+        out[k] = float(cover)
+    return out
+
+
+SIL_LIMIT = {"leg": 0.5, "arm": 0.8}
+
+
+def silhouette_lines(res: dict, cam: Camera) -> List[str]:
+    """Limbs lost in the silhouette: a leg over the other leg (moving and airborne figures; legs standing together
+    are meant to touch), an arm inside the torso's outline (not one placed on the body on purpose)."""
+    cov = silhouette(res, cam)
+    pre = PRESETS[res["preset"]]
+    anchored = set((res.get("reach") or {}).keys()) | {k.split("-")[1] for k in (res.get("targets") or {})}
+    out = []
+    for k, v in cov.items():
+        kind, s = k.split("-")
+        if kind == "leg" and not (pre.get("dynamic") or pre["rest"] == "air"):
+            continue
+        if kind == "arm" and s in anchored:
+            continue
+        if v > SIL_LIMIT[kind]:
+            what = "the other leg" if kind == "leg" else "the torso"
+            out.append(f"{k} merges with {what} ({v:.0%} overlapped): turn --yaw 35 / -35, or --{k} "
+                       f"{'forward' if kind == 'leg' else 'out'}")
     return out
 
 
@@ -1910,7 +1996,7 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
         bal += f" (hips moved {shifted:.2f} m over the feet)"
     return {"J": J, "F": F, "body": body, "prims": prims, "preset": pk, "edits": E, "clamps": [], "notes": notes,
             "ik": ik_lines, "contacts": cts, "balance": bal, "yaw": yaw, "support": on if blk is not None else "ground",
-            "sup_y": sup_y, "lift": lift, "targets": dict(spec.get("targets") or {})}
+            "sup_y": sup_y, "lift": lift, "targets": dict(spec.get("targets") or {}), "reach": dict(reach)}
 
 
 def check_pose(res: dict, blocks: Dict[str, Block]) -> List[str]:
