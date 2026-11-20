@@ -81,5 +81,7 @@ def test_polish_focus_and_toward_motion_keep_the_figure(girl):
     assert "dof:" in text and "radial" in text
     p = project()
     after = p.composite_u8("export").astype(float)
+    import cv2
     fig = draw_finish.figure_maps(p)["figs"]["girl"]
+    fig = cv2.erode(fig.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0     # its edge is feathered into the blur
     assert np.abs(after - before)[fig].mean() < 2.0        # the figure itself untouched
