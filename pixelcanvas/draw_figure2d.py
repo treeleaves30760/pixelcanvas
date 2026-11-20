@@ -910,6 +910,17 @@ def do_cel_shade(ctx, who: str = "all"):
         elif t["group"] == "head":
             # the face stays lit: a thin edge on its far side, the shadow under the bangs and the chin
             sm |= m & ((lam < (-0.35 if t["name"] != "head" else -0.72)) | near)
+            if t["name"] == "neck":
+                # the chin's shadow on the neck: a band under the jaw line, as cel faces draw it
+                hk_ = [j for j, u in enumerate(tb) if u["subj"] == t["subj"] and u["name"] == "head"]
+                hm_ = np.isin(lab, hk_)
+                if hm_.any():
+                    ys_ = np.nonzero(hm_)[0]
+                    dpx = max(1, int(0.13 * (ys_.max() - ys_.min())))
+                    under = np.zeros_like(hm_)
+                    for k_ in range(1, dpx + 1):
+                        under[k_:] |= hm_[:-k_]
+                    sm |= m & under
         else:
             sm |= m & ((lam < thr) | cast | near)
     files = ["layers/shade.png", "draw/r3d/shade2d.npz"]
