@@ -632,7 +632,8 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
     return out
 
 
-CLUMPS = {"long": 9, "medium": 8, "bob": 7, "short": 11, "ponytail": 7, "twintails": 10, "braid": 6, "bun": 6}
+CLUMPS = {"long": 9, "medium": 8, "bob": 7, "short": 11, "ponytail": 7, "twintails": 10, "braid": 6, "bun": 6,
+          "buns": 6}
 
 
 def _resample_chain(P: np.ndarray, r: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:

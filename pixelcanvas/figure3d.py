@@ -59,7 +59,7 @@ LAYER = {"socks": 0, "thigh-highs": 0, "gloves": 0, "shirt": 1, "blouse": 1, "pa
          "skirt": 2, "tie": 3, "ribbon": 3, "shoes": 3, "boots": 3, "blazer": 4, "jacket": 4, "hoodie": 4,
          "coat": 5, "scarf": 6}
 HAND_SHAPES = ("relaxed", "fist", "open", "point", "grip", "peace", "cup")
-HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "bun")
+HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "bun", "buns")
 BANGS = ("blunt", "side", "parted", "none")
 
 # hand shapes a preset implies (her right, her left)
@@ -767,7 +767,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     r0 = 0.1 * h
     k = 0
     lens = {"long": 3.3, "medium": 1.75, "bob": 1.0, "short": 0.55, "spiky": 0.5, "ponytail": 0.5,
-            "twintails": 0.62, "braid": 0.55, "bun": 0.45}
+            "twintails": 0.62, "braid": 0.55, "bun": 0.45, "buns": 0.45}
     Lb = lens.get(style, 1.5) * h
     # bangs: a row of locks over the forehead
     if bangs != "none":
@@ -890,6 +890,12 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             root, nrm = _cap_point(rig, math.pi * 0.95, 0.72, 1.1)
             out.append(_P(ell_prim(root + nrm * 0.08 * h, np.eye(3), (0.19 * h,) * 3), owner, "bun", "hair",
                           seam="always", group="hair"))
+        elif style == "buns":
+            # two buns high on the sides of the crown (odango)
+            for sg in (1.0, -1.0):
+                root, nrm = _cap_point(rig, sg * 1.6, 0.78, 1.08)
+                out.append(_P(ell_prim(root + nrm * 0.08 * h, np.eye(3), (0.17 * h,) * 3), owner, "bun", "hair",
+                              seam="always", group="hair"))
     out += _hair_accessories(rig, owner, hair)
     if hair.get("ahoge", False) and style not in ("spiky",):
         root, nrm = _cap_point(rig, 0.25, 0.97, 1.08)

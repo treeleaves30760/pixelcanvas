@@ -613,7 +613,8 @@ def cmd_hair3d(ctx, args):
     lk = look_of(el)
     hair = dict(lk.get("hair") or {})
     if a.get("style"):
-        st = str(a["style"]).lower().replace("twin-tails", "twintails").replace("pigtails", "twintails")
+        st = str(a["style"]).lower().replace("twin-tails", "twintails").replace("pigtails", "twintails").replace(
+            "odango", "buns").replace("double-bun", "buns")
         if st not in F3.HAIR_STYLES:
             raise UsageError(f"--style is one of {', '.join(F3.HAIR_STYLES)}", USAGE["hair3d"])
         hair["style"] = st
