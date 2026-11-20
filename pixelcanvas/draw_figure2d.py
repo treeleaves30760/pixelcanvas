@@ -450,7 +450,8 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     clips: Dict[str, np.ndarray] = {}
     for sp in specs:
         P = sp["px"]
-        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")))
+        # brows show through the bangs (as anime draws them); everything else only where the face shows
+        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")) | (sp["kind"] == "brow"))
         sp["vis2"] = vis
         if sp.get("fill") is None and sp["kind"] != "skin":
             continue
@@ -907,7 +908,8 @@ def do_cel_shade(ctx, who: str = "all"):
             sm |= m & ((lam_hair < thr) | near)     # the hair: one mass, short cast shadows (bangs on the cap)
             dm |= m & (lam_hair < thr - 0.45)
         elif t["group"] == "head":
-            sm |= m & ((lam < -0.35) | near)        # the face stays lit: its far side, the shadow under bangs and chin
+            # the face stays lit: a thin edge on its far side, the shadow under the bangs and the chin
+            sm |= m & ((lam < (-0.35 if t["name"] != "head" else -0.72)) | near)
         else:
             sm |= m & ((lam < thr) | cast | near)
     files = ["layers/shade.png", "draw/r3d/shade2d.npz"]
