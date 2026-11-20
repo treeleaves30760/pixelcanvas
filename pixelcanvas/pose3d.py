@@ -1934,6 +1934,8 @@ def check_pose(res: dict, blocks: Dict[str, Block]) -> List[str]:
             continue
         y, pt = lowest(pr)
         sup, name = _support_at(blocks, pt[0], pt[2], y + 0.3)
+        if name != "ground" and not blocks[name].contains(pt[0], pt[2], -0.04):
+            continue                        # at the block's edge, hanging over it: not inside
         if y < sup - 0.03 and y > sup - 0.6:
             out.append(f"{pr['part']} is {sup - y:.2f} m into the {name}")
             break
