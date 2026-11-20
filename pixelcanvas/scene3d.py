@@ -1152,7 +1152,7 @@ def _figure_light(p, la: np.ndarray) -> np.ndarray:
     ys, xs = np.nonzero(figl)
     S = float(max(Hl, Wl))
     # the figure's normals smoothed over the whole figure: one broad lit side, not a patch per lock or fold
-    sig = 0.02 * S
+    sig = 0.007 * S
     w = cv2.GaussianBlur(figl.astype(np.float32), (0, 0), sig)
     nrm = np.stack([cv2.GaussianBlur((nrm[..., c] * figl).astype(np.float32), (0, 0), sig) for c in range(3)], -1)
     nrm = nrm / np.maximum(w[..., None], 1e-4)
@@ -1174,16 +1174,19 @@ def _figure_light(p, la: np.ndarray) -> np.ndarray:
                 continue
             u = v / dist
             # the lit side: the part of the figure toward the lamp, bent a little by the figure's own normals
+            # the planes facing the lamp (the top of the head and shoulders under a lamp overhead), fading
+            # away from the lamp's side of the figure: never a straight cut across it
             proj = ((xs - cx) * u[0] + (ys - cy) * u[1]) / ext
-            lam = nrm[ys, xs, 0] * u[0] + nrm[ys, xs, 1] * u[1]
-            on = proj + 0.25 * lam > 0.12
+            lam = nrm[ys, xs, 0] * u[0] - nrm[ys, xs, 1] * u[1]       # the maps' normals point up for +y
+            on = (lam > 0.3) & (proj > -0.15)
             lit[ys[on], xs[on]] = True
     if lit.any():
         k = max(1, int(0.008 * S))
         lit = cv2.morphologyEx(lit.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2 * k + 1, 2 * k + 1), np.uint8)) > 0
         lit = cv2.morphologyEx(lit.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((2 * k + 1, 2 * k + 1), np.uint8)) > 0
         lit &= figl
-        out[lit] = warm
+        a = cv2.GaussianBlur(lit.astype(np.float32), (0, 0), 0.006 * S)[..., None] * figl[..., None]
+        out = out * (1 - a) + warm[None, None, :] * a
     big = cv2.resize(out, (p.W, p.H), interpolation=cv2.INTER_LINEAR)
     mask = cv2.resize(figl.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
     la = la.copy()
