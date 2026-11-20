@@ -1078,6 +1078,14 @@ def cmd_stage(ctx: Ctx, args: List[str]) -> Report:
             return rep
         step = p.begin_step(["layers/sketch.png"])
         new = workflow.advance(st)
+        from .workflow_draw import guide_route
+        if guide_route(st):
+            closed = [stage]
+            while new is not None and workflow.check_gate(p, new)[0]:   # a guide picture closes in one call
+                closed.append(new)
+                new = workflow.advance(st)
+            if len(closed) > 1:
+                stage = ", ".join(closed)
         if because:
             st.setdefault("overrides", []).append({"stage": stage, "because": because})
         p.end_step(step, {"cmd": ctx.cmdline, "stage": [stage, new], "because": because})
@@ -1093,12 +1101,14 @@ def cmd_stage(ctx: Ctx, args: List[str]) -> Report:
                 rep.add("the sketch layer is now hidden (it stays in the project)")
         plan = workflow.plan_of(st)
         k = plan.index(stage) + 1 if stage in plan else 0
-        if stage == "plan":
+        if guide_route(st):
+            pass
+        elif stage == "plan":
             rep.add("your todo tool: now run  pixelcanvas todo --all  and copy its lines into your todo tool")
         elif k:
             rep.add(f"your todo tool: mark line {k} ({stage}) completed"
                     + (f" and line {k + 1} ({new}) in progress" if new else ""))
-        rep.next = "pixelcanvas todo --all" if stage == "plan" else _finish_next(ctx)
+        rep.next = "pixelcanvas todo --all" if stage == "plan" and not guide_route(st) else _finish_next(ctx)
         return rep
     if action in ("back", "reopen"):
         name = a.get("name")
@@ -1851,6 +1861,8 @@ def retouch_mask(p: Project) -> np.ndarray:
 def fingerprint_line(p: Project) -> str:
     """Levels per region, share of the canvas retouched (level 0), working scale: what the picture is made of."""
     st = p.state
+    if p.ref is None:
+        return None          # a drawn picture has no levels against a reference
     lv = st.get("levels") or {}
     parts = []
     for name in st.get("regions", {}) or []:

@@ -709,7 +709,7 @@ def cmd_pose(ctx, args):
         rep.next = cli._finish_next(ctx)
         return rep
     lines: List[str] = []
-    if subj not in d["subjects"]:
+    if subj not in d["subjects"] and False:   # a 3D figure needs no plan box
         ctx.notes.append(f"{subj} is not a planned subject (pixelcanvas plan subject {subj} --box ... gives it a box)")
 
     def mutate():

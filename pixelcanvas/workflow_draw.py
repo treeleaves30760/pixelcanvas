@@ -241,6 +241,12 @@ def rigged_subjects(state: dict) -> List[str]:
             if el.get("kind") == "figure" and el.get("rig") and el.get("rig_joints") == el.get("joints")]
 
 
+def guide_route(state: dict) -> bool:
+    """A picture drawn over a 3D guide (posed figures + render): its stages close together once final.png is
+    exported; the plan / sketch / brushwork items of the 2D-only route do not apply."""
+    return bool(state.get("draw", {}).get("render")) and bool(rigged_subjects(state))
+
+
 def flat_mannequins(state: dict) -> List[str]:
     return [el.get("subject") for el in state.get("draw", {}).get("sketch", [])
             if el.get("kind") == "figure" and not el.get("rig")]
@@ -676,6 +682,8 @@ def check_gate(p, stage: str, comparison=None) -> Tuple[bool, List[dict]]:
         unmet.append({"region": region, "metric": metric, "value": value, "need": need, "fix": fix})
 
     skipped = {(t["stage"], t.get("region"), t.get("key")) for t in st.get("todo", []) if t["status"] == "skipped"}
+    if guide_route(st) and stage != "finish":
+        return True, []
     if stage == "plan":
         if not d.get("subjects"):
             short("subjects", 0, 1, "pixelcanvas plan subject <name> --box x0,y0,x1,y1")
@@ -809,6 +817,17 @@ def next_action(p, comparison=None) -> Tuple[str, str]:
             pass
         if d.get("palette", {}).get("candidates") and not d["palette"].get("swatches"):
             return "four palettes are proposed; pick the one that fits the request", "pixelcanvas palette pick <n>"
+    if guide_route(st):
+        try:
+            from .draw_figure2d import drawn
+            undrawn = [s_ for s_ in rigged_subjects(st) if s_ not in drawn(p)]
+        except Exception:  # noqa: BLE001
+            undrawn = []
+        if undrawn:
+            return "draw the figures and the blocks in 2D over the guide", "pixelcanvas do \"draw all; flat auto; shade all\""
+        if not st.get("exported") or _export_stale(p):
+            return ("finish (background bands, polish), then export", "pixelcanvas export final.png")
+        return "final.png is exported: close every stage at once", "pixelcanvas stage done"
     for t in st.get("todo", []):
         if t["stage"] == stage and t["kind"] in ("task", "user") and t["status"] == "open":
             if stage == "finish" and t.get("key") == "export":

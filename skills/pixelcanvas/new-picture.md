@@ -1,51 +1,65 @@
 # A new picture, coarse to fine
 
-You direct; subagents draw. A new picture (no reference to trace) is built from the biggest decision to the
-smallest mark. The figures are posed, dressed and given hair on a 3D skeleton; `render` turns that into a faded
-guide that is never exported. The picture itself is drawn in 2D over the guide: line art, flat colour, cel
-shadows, faces. Fix every problem at the coarsest level that causes it: a wrong pose is fixed by posing again and
-drawing that figure again, never by painting over it.
+You direct; subagents draw. The figures are posed, dressed and given hair on a 3D skeleton; `render` turns that into
+a faded guide that is never exported. The picture itself is drawn in 2D over the guide: line art, flat colour, cel
+shadows, faces. A problem is fixed at the level that causes it: a wrong pose is posed again, never painted over.
 
-| level | what is decided | tools | owner |
+| level | what is decided | owner | shell calls |
 |---|---|---|---|
-| 1 brief | shot, camera, who does what where, clothes, hair, light, palette | text only: `brief.md` | `pixelcanvas-director` |
-| 2 pose + guide | camera, blocks, 3D poses, props, clothes, hair, hand shapes; the guide | `camera`, `block`, `pose`, `prop`, `dress`, `hair3d`, `render` | `pixelcanvas-blocker` |
-| 3 drawing | 2D line art over the guide, flats, cel shadows, faces | `draw`, `flat auto`, `shade`, `face`, `line redo` | `pixelcanvas-painter` |
-| 4 finish | background, eyes, blush, folds, props' details, polish, export | `band`, `eye`, `blush`, `fold`, `polish`, `export` | `pixelcanvas-painter` |
+| 1 brief | shot, camera, figures, scene, light, palette; `brief.md` + `steps.txt` | `pixelcanvas-director` | 1-2 |
+| 2 guide | camera, blocks, posed and dressed figures, the guide | `pixelcanvas-blocker` | 3-6 |
+| 3-4 picture | 2D drawing, background, finish, `final.png` | `pixelcanvas-painter` | 6-12 |
+| check | the finished picture against the brief | `pixelcanvas-critic` | 2-3 |
 
-`pixelcanvas-critic` checks the guide after level 2 and the finished picture. It never draws.
+## The run: four subagent calls
 
-## The run
+1. `pixelcanvas-director`: give it the request, the canvas size and the folder. It writes `brief.md` and
+   `steps.txt` (the level-2 commands) and answers in five lines.
+2. `pixelcanvas-blocker`: give it the folder. It runs `steps.txt`, renders the guide, checks it once against the
+   brief and answers with the guide path.
+3. `pixelcanvas-painter`: give it the folder. It draws, finishes, exports `final.png` and runs `stage done`.
+4. `pixelcanvas-critic`: give it the folder. It answers `verdict: pass` or up to five issues.
 
-1. Ask `pixelcanvas-director` for the brief. Give it the request and the canvas size. It writes `brief.md` next to
-   the project and answers in five lines. Read the summary, not the whole brief.
-2. Ask `pixelcanvas-blocker` for level 2 from `brief.md`. It answers with the guide picture path.
-3. Ask `pixelcanvas-critic` to check the guide against `brief.md` at level 2 (pose, gesture, contact, scale,
-   camera, clothes, hair). Send its issues to the blocker word for word. One round of fixes.
-4. Ask `pixelcanvas-painter` for levels 3 and 4 in one call. It draws, finishes, exports `final.png` and runs
-   `pixelcanvas stage done`.
-5. Critic on the finished picture. If it says `fix`, one round: pose, clothes and hair issues go to the blocker
-   first (then the painter runs `draw <who>` for that figure), drawing issues to the painter; then the painter
-   exports again.
+On `verdict: fix`: one round. Send pose, clothes and hair issues to the blocker, drawing issues to the painter, word
+for word, with `SendMessage` to the agent that already ran (it keeps its context); the painter then redraws what
+changed (`draw <who>`, `flat auto`, `shade all`) and exports again. No second critic round.
 
-Wait for every subagent's answer before you go on, and never end your turn while a subagent is still working:
-the picture is done only when `final.png` was exported after the last change and `pixelcanvas status` says
-FINISHED. Keep your own context small: you do not open views yourself except the final picture. Pass each subagent the
-project folder, the level it owns and the critic's issues for that level, word for word. Four to six subagent
-calls make a picture; do not add more.
+Stop when `final.png` was exported after the last change and `pixelcanvas status` says FINISHED. Wait for every
+subagent's answer before you end your turn. You open one picture yourself: `final.png`.
+
+## Commands a session needs
+
+```bash
+pixelcanvas new pic --mode free --size 1000x1400 --request "<request>"
+pixelcanvas do @steps.txt              # a file of commands, one per line, run as one batch
+pixelcanvas do "draw all; flat auto; shade all"
+pixelcanvas help pose,figure,band      # options and values of several commands in one call
+```
+
+`pixelcanvas figure` sets a whole figure in one line:
+
+```bash
+pixelcanvas figure girl --pose run --at 420,900 --heads 6.5 --yaw 30 --set "head: turn 20; arm-l: raise 40" \
+  --hand-shape-r fist --wear "blouse:white,skirt:#2c3460:pleated,thigh-highs:black,shoes:brown" \
+  --hair "twintails,blunt,#f09ac0,bows:black" --face "smile,#3a78c8"
+```
+
+- `--wear`: pieces separated by commas, each `piece[:colour][:style|length|sleeve|fit]`. Pieces: shirt blouse
+  blazer jacket hoodie coat skirt dress pants shorts socks thigh-highs shoes boots gloves tie ribbon scarf.
+- `--hair`: style (long medium bob short spiky ponytail twintails braid bun), bangs (blunt side parted none),
+  colour, `bows:<colour>`, `wind:left|right|dx,dy`.
+- `--face`: expression (neutral smile open grin angry sad crying surprised panicked sleepy), eye colour.
+- The pose options: `--pose <preset>` (`pixelcanvas pose list`), `--at x,y` (ground point, 0-1000), `--heads` or
+  `--height`, `--yaw`, `--set "<joint>: <motion> <deg>; ..."`, `--on <block>`, `--hand-r/-l <block|x,y>`,
+  `--foot-r/-l <block|x,y>`, `--hand-shape-r/-l relaxed|fist|open|point|grip|peace|cup`.
+- Joints: body pelvis spine chest neck head arm-r/-l elbow-r/-l hand-r/-l leg-r/-l knee-r/-l foot-r/-l. Motions:
+  arm raise|forward|twist, elbow bend, leg forward|raise|twist, knee bend, spine and chest bend|side|twist, head
+  turn|tilt|nod, body lean.
 
 ## What a good brief holds
 
-- **Shot**: framing (full body, knees up, bust), camera height and angle (eye level, low, high), horizon height on
-  the canvas, lens (wide 35 / normal 50 / long 85).
-- **Each figure**: the action in one verb phrase, the pose preset nearest to it and the joint edits that make it
-  this pose, facing (yaw), ground point (x, y on the canvas), height, contact with the scene, hand shapes, what it
-  holds, the garments by `dress list` names with colours, the `hair3d` style, the expression and eye colour.
-- **Scene**: the blocks a figure touches or stands behind, sizes in metres; the far shapes as bands back to front.
-- **Light**: direction, time of day, key and fill colours. **Palette**: 5-8 named colours. **Focus**: where the
-  eye goes first. **Style**: cel (anime pictures are cel).
-
-## Checks that need no eyes
-
-`pixelcanvas pose <who> --show joints` lists every joint; `pixelcanvas status` lists the open todo items; every
-command prints scores and `WARNING` lines. A subagent reads these before it opens a picture.
+- **Shot**: framing, camera height and angle, horizon height on the canvas, lens (wide 35 / normal 50 / long 85).
+- **Each figure**: the action in one verb phrase, the preset and the joint edits, yaw, ground point, height,
+  contact, hand shapes, clothes, hair, expression, eye colour: the `figure` line says all of it.
+- **Scene**: the blocks a figure touches or stands behind; the far shapes as bands back to front.
+- **Light** (direction, key and fill colours), **palette** (5-8 named colours), **focus**.
