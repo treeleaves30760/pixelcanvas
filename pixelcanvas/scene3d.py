@@ -580,13 +580,29 @@ def kit_stairs(k: Kit) -> None:
     for x, nx in ((xl, 1), (xr, -1)):
         k.face([[x, 0, 0.3], [x, Hc, 0.3], [x, Hc, D], [x, 0, D]], k.col("wall"), "wall", 0)["normal"] = \
             np.array([nx, 0, 0.0])
-        # the handrail rising with the steps
-        k.line([x - 0.08 * nx * -1, 0.9, z0 - 0.3], [x + 0.08 * nx, 0.9 + n * rise, z0 + n * run], 2, 1.0)
+        # the handrail rising with the steps: a band on the wall on brackets
+        xe = x + 0.07 * nx
+        zt = z0 + n * run
+        a0, a1 = [xe, 0.9, z0 - 0.2], [xe, 0.9 + n * rise, zt]
+        k.face([a0, [xe, 0.96, z0 - 0.2], [xe, 0.96 + n * rise, zt], a1], k.col("trim"), "handrail", 2,
+               lw=0.7)["normal"] = np.array([nx, 0, 0.0])
+        for i in range(0, n + 1, 3):
+            zz = z0 + i * run
+            yy = 0.9 + (zz - z0 + 0.2) / (zt - z0 + 0.2) * n * rise
+            k.line([x + 0.005 * nx, yy - 0.06, zz], [xe, yy, zz], 2, 0.6)
     for i in range(n):
         k.box(xl, 0, z0 + i * run, xr, (i + 1) * rise, z0 + n * run + 2, st, "stairs", 1, 0.8)
-    k.face([[xl, n * rise, z0 + n * run + 2], [xr, n * rise, z0 + n * run + 2], [xr, Hc, D], [xl, Hc, D]],
-           _mix(k.col("wall"), (0, 0, 0), 0.06), "end-wall", 0)
-    k.face([[xl, Hc, 0.3], [xl, Hc, D], [xr, Hc, D], [xr, Hc, 0.3]], k.col("ceiling"), "ceiling", 0)
+    top = n * rise
+    zl = z0 + n * run + 2
+    k.face([[xl, top, zl], [xr, top, zl], [xr, Hc, zl], [xl, Hc, zl]], _mix(k.col("wall"), (0, 0, 0), 0.04),
+           "end-wall", 0)
+    # the landing window
+    wy0, wy1 = top + 0.9, min(Hc - 0.3, top + 2.3)
+    f = k.face([[sx - 0.7, wy0, zl - 0.01], [sx + 0.7, wy0, zl - 0.01], [sx + 0.7, wy1, zl - 0.01],
+                [sx - 0.7, wy1, zl - 0.01]], k.col("window"), "window", 2, emit=True)
+    f["sheen"] = True
+    k.line([sx, wy0, zl - 0.02], [sx, wy1, zl - 0.02], 3, 0.7)
+    k.face([[xl, Hc, 0.3], [xl, Hc, zl], [xr, Hc, zl], [xr, Hc, 0.3]], k.col("ceiling"), "ceiling", 0)
     _hanging_lamp(k, sx, Hc, z0 + n * run * 0.6, 0.6)
 
 
