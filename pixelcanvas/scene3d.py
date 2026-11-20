@@ -856,7 +856,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
     vals = ["time", "depth", "width", "height", "wall", "trim", "floor", "ceiling", "doors", "windows", "lamps",
             "shift", "light", "side", "far", "sky", "ground", "road", "building", "door", "window", "lamp",
             "line", "steps", "at", "platform", "roof", "sea", "sand", "hill", "tree", "fence", "concrete",
-            "pavement", "board", "desk", "stairs", "haze", "lamp-every"]
+            "pavement", "board", "desk", "stairs", "haze", "lamp-every", "shore"]
     spec = {v: "value" for v in vals}
     spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag"})
     a = parse(args, Spec(USAGE["scene"], ["kit"], spec, alias={"colour": "color", "tod": "time"}, min_pos=0))
@@ -865,7 +865,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
     for v in vals:
         if a.get(v) is not None:
             o[v] = str(a[v])
-    for v in ("depth", "width", "height", "shift", "lamps", "steps", "at"):
+    for v in ("depth", "width", "height", "shift", "lamps", "steps", "at", "shore"):
         if v in o:
             o[v] = float(coords.parse_float(o[v], v, -100, 1000, notes))
     if "lamps" in o:
