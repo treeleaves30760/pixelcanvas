@@ -230,12 +230,12 @@ def _hanging_lamp(k: Kit, x: float, top: float, z: float, drop: float, r: float 
     if k.o.get("polish", True) and k.floor_y is not None:
         # a polished floor mirrors the lamp: the same shape upside down under the floor, faint, no outline
         fy = k.floor_y
-        ref = [[x + (px - x) * 0.8, fy - (py - fy - (y - fy)) * 0.0 - (y - fy) - (py - y) * 3.0, pz]
+        ref = [[x + (px - x) * 1.3, fy - (py - fy - (y - fy)) * 0.0 - (y - fy) - (py - y) * 3.0, pz]
                for px, py, pz in pts]
         g = k.face(ref, _mix(k.col("floor"), k.col("lamp"), 0.6), "floor", 1, outline=False)
         g["normal"] = np.array([0, 0, -1.0])
         g["billboard"] = True
-        g["glow"] = 0.45
+        g["glow"] = 0.3
 
 
 def kit_room(k: Kit, classroom: bool = False) -> None:
