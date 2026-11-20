@@ -330,7 +330,10 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
                 ctl = 2 * cm - 0.5 * (a0 + a1)
                 tt = np.linspace(0, 1, 9)[:, None]
                 arc = (1 - tt) ** 2 * a0 + 2 * (1 - tt) * tt * ctl + tt ** 2 * a1
-                lines = [arc] + lines[:1]
+                # with at most one other line, never a loop (a loop round the curled fingers reads as a box)
+                rest = [ln for ln in lines if np.linalg.norm(ln[-1] - ln[0]) >
+                        0.45 * float(np.sum(np.linalg.norm(np.diff(ln, axis=0), axis=1)))]
+                lines = [arc] + rest[:1]
     if not lines and name not in ("fist", "point", "grip"):
         # no edge to read (a hand seen from its side): the separation between the index and the middle finger
         def chain(i):
