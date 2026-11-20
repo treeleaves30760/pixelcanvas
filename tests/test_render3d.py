@@ -467,7 +467,7 @@ def test_floor_shadow_is_compact_and_blur_leaves_no_halo(draw):
     from pixelcanvas import draw_figure2d as DF
     mp = DF.load_maps(p)
     fills = DF._figure_shadows(p, mp, ["boy"])
-    assert len(fills) == 1
+    assert 1 <= len(fills) <= 2                                           # a soft shadow and its darker core
     from pixelcanvas.ops import rle_to_mask
     m = rle_to_mask(fills[0].mask_rle)
     xs = np.nonzero(m.any(0))[0]

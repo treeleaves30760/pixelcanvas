@@ -27,8 +27,12 @@ from .coords import UsageError
 
 WARM_WHITE = (255, 242, 222)
 PARTS = ("strays", "clean", "lines", "depth", "grade", "soften")
-USAGE = {"polish": "pixelcanvas polish   [--no-strays --no-clean --no-lines --no-depth --no-grade --no-soften]   "
-                   "[--clean 0-1 --grade 0-1 --depth 0-1 --soften 0-1]"}
+# the picture-level finish of figures drawn over the 3D guide (on by default there; elsewhere when asked)
+FX_PARTS = ("rim", "dof", "motion", "glow", "vignette", "grain")
+USAGE = {"polish": "pixelcanvas polish   [--no-strays --no-clean --no-lines --no-depth --no-grade --no-soften "
+                   "--no-rim --no-dof --no-glow --no-vignette]   [--clean 0-1 --grade 0-1 --depth 0-1 --soften 0-1 "
+                   "--rim 0-1 --dof 0-1 --glow 0-1 --vignette 0-1 --grain 0-1]   [--focus <figure>] "
+                   "[--motion <figure>[:left|right|up|down|<deg>|toward|away] --motion-amount 0-1]"}
 
 
 # ============================================================================================ colour helpers
@@ -300,6 +304,343 @@ def clean(p, img: np.ndarray, protect: np.ndarray, amount: float) -> Tuple[np.nd
     return out, n
 
 
+# ============================================================================================ figures drawn over the 3D guide
+
+def figure_maps(p) -> Optional[dict]:
+    """The drawn figures' maps at canvas size: part labels, depth, the table, a mask per figure and the face of
+    each figure (its head, widened a little): the face of the focus figure is never blurred or smeared."""
+    try:
+        from .draw_figure2d import drawn, load_maps
+    except Exception:  # noqa: BLE001
+        return None
+    if not drawn(p):
+        return None
+    mp = load_maps(p)
+    if mp is None:
+        return None
+    tb = mp["table"]
+    lab = cv2.resize(mp["lab"].astype(np.int32), (p.W, p.H), interpolation=cv2.INTER_NEAREST)
+    z = cv2.resize(mp["z"].astype(np.float32), (p.W, p.H), interpolation=cv2.INTER_NEAREST)
+    S = float(max(p.W, p.H))
+    subjects = sorted({t["subj"] for t in tb if not t.get("block") and not str(t["subj"]).startswith("@")})
+    figs: Dict[str, np.ndarray] = {}
+    faces: Dict[str, np.ndarray] = {}
+    for subj in subjects:
+        ks = [k for k, t in enumerate(tb) if t["subj"] == subj and not t.get("block")]
+        figs[subj] = np.isin(lab, ks)
+        fm = np.isin(lab, [k for k, t in enumerate(tb) if t["subj"] == subj and t["group"] == "head"])
+        if fm.any():
+            fm = cv2.dilate(fm.astype(np.uint8), dc.disk(max(2.0, 0.01 * S))) > 0
+        faces[subj] = fm
+    if not figs:
+        return None
+    return {"lab": lab, "z": z, "table": tb, "figs": figs, "faces": faces}
+
+
+def focus_figure(fm: Optional[dict], name: Optional[str]) -> Optional[str]:
+    """The named figure, else the largest one on the canvas."""
+    if not fm or not fm["figs"]:
+        return None
+    if name and name in fm["figs"]:
+        return name
+    return max(fm["figs"], key=lambda s_: int(fm["figs"][s_].sum()))
+
+
+def _masked_blur(img: np.ndarray, src: np.ndarray, sig: float) -> np.ndarray:
+    """``img`` blurred from the pixels in ``src`` only (no colour from outside ``src`` bleeds in)."""
+    sf = src.astype(np.float32)
+    w = cv2.GaussianBlur(sf, (0, 0), sig)
+    num = cv2.GaussianBlur(img * sf[..., None], (0, 0), sig)
+    return np.where(w[..., None] > 1e-3, num / np.maximum(w[..., None], 1e-3), img)
+
+
+def background_depth(p, shape) -> np.ndarray:
+    """Camera depth of every pixel of the background: the ground plane below the horizon, a scene kit's ceiling and
+    side walls where it has them, a far constant elsewhere (the sky, a plain backdrop)."""
+    from . import draw_pose as DP
+    H, W = shape
+    far = 60.0
+    try:
+        cam = DP.camera_of(p).resized(W, H)
+    except Exception:  # noqa: BLE001
+        return np.full(shape, far, np.float32)
+    vv, uu = np.mgrid[0:H, 0:W].astype(np.float32)
+    d = cam.rays(uu, vv)
+    best = np.full(shape, far, np.float32)
+
+    def plane(axis: int, val: float):
+        comp = d[..., axis]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = (val - cam.C[axis]) / comp
+        ok_ = np.isfinite(t) & (t > 0.05)
+        np.minimum(best, np.where(ok_, t, far).astype(np.float32), out=best)
+    plane(1, 0.0)
+    try:
+        from .scene3d import scene_rec
+        rec = scene_rec(p) or {}
+    except Exception:  # noqa: BLE001
+        rec = {}
+    kit = str(rec.get("kit") or "")
+    o = rec.get("opts") or {}
+    if kit in ("corridor", "room", "classroom"):
+        plane(1, float(o.get("height") or 3.0))
+        w = float(o.get("width") or (3.2 if kit == "corridor" else 8.0))
+        plane(0, -w / 2.0)
+        plane(0, w / 2.0)
+    return np.minimum(best, far)
+
+
+def _pm_blur(img: np.ndarray, m: np.ndarray, sig: float) -> Tuple[np.ndarray, np.ndarray]:
+    """Premultiplied blur of the pixels in ``m``: (colour, alpha); no colour from outside ``m`` enters."""
+    mf = m.astype(np.float32)
+    a = cv2.GaussianBlur(mf, (0, 0), sig)
+    c = cv2.GaussianBlur(img * mf[..., None], (0, 0), sig)
+    return c / np.maximum(a[..., None], 1e-4), a
+
+
+def depth_of_field(p, img: np.ndarray, fm: dict, focus: str, amount: float) -> Tuple[np.ndarray, float]:
+    """Shallow focus by camera distance, in layers: the background (scene kit or plain ground) blurs by its own
+    depth, each other figure blurs as one unit by its depth (premultiplied by its mask, so no background colour
+    bleeds into it), the focus figure and anything at its depth stay sharp."""
+    S = float(max(p.W, p.H))
+    fmask = fm["figs"][focus]
+    if not fmask.any():
+        return img, 0.0
+    zf = float(np.median(fm["z"][fmask]))
+    sig_max = max(1.0, amount * 0.006 * S)
+    lw = dc.disk(max(1.5, 0.006 * S))
+    figs_d = {k_: cv2.dilate(m.astype(np.uint8), lw) > 0 for k_, m in fm["figs"].items()}
+    anyfig = np.zeros_like(fmask)
+    for m in figs_d.values():
+        anyfig |= m
+    drawn_bg = (fm["lab"] >= 0) & ~anyfig
+    zb = background_depth(p, fmask.shape)
+    zb = np.where(drawn_bg & (fm["z"] < 1e3), fm["z"], zb)
+
+    def sig_of(z):
+        return np.clip(np.abs(z - zf) / max(z, 1e-3) / 0.6, 0.0, 1.0) * sig_max
+    bg = ~anyfig
+    sb = sig_of(zb)
+    out = img.copy()
+    prev = 0.0
+    for frac in (0.33, 0.66, 1.0):
+        sig = max(0.5, frac * sig_max)
+        c, a = _pm_blur(img, bg, sig)
+        t = np.clip((sb - prev) / max(frac * sig_max - prev, 1e-3), 0, 1) * bg
+        out = out * (1 - t[..., None]) + c * t[..., None]
+        prev = frac * sig_max
+    # background pixels hidden behind figures: filled from the blurred background so a blurred figure has no hole
+    fill, _ = _pm_blur(out, bg, max(2.0, sig_max))
+    base = np.where(anyfig[..., None], fill, out)
+    order = sorted(fm["figs"], key=lambda k_: -float(np.median(fm["z"][fm["figs"][k_]])) if fm["figs"][k_].any() else 0)
+    for k_ in order:
+        m = figs_d[k_]
+        if k_ == focus or not m.any():
+            continue
+        zk = float(np.median(fm["z"][fm["figs"][k_]]))
+        sk = float(sig_of(np.array(zk)))
+        if sk < 0.6:
+            base = np.where(m[..., None], img, base)
+            continue
+        c, a = _pm_blur(img, m, sk)
+        base = base * (1 - a[..., None]) + c * a[..., None]
+    fd = figs_d[focus]
+    base = np.where(fd[..., None], img, base)
+    return base, float((sb > 0.5).mean())
+
+
+def _dir_vec(spec: str, fallback: np.ndarray) -> np.ndarray:
+    s_ = (spec or "").strip().lower()
+    words = {"left": (-1.0, 0.0), "right": (1.0, 0.0), "up": (0.0, -1.0), "down": (0.0, 1.0)}
+    if s_ in words:
+        return np.array(words[s_])
+    try:
+        a = np.radians(float(s_))
+        return np.array([np.cos(a), -np.sin(a)])
+    except ValueError:
+        return fallback
+
+
+def motion_direction(p, subj: str):
+    """Which way a figure moves on the canvas: where its toes point (heel to toe, both feet); 'toward' when they
+    point at the viewer (little sideways component), else right."""
+    from . import draw_pose as DP
+    for el in DP.figures(p):
+        if el["subject"] != subj:
+            continue
+        try:
+            j = el["j2d"]
+            v = sum(np.asarray(j[f"foot-{s_}"], float) - np.asarray(j[f"heel-{s_}"], float) for s_ in "rl")
+            if abs(v[0]) < 0.6 * abs(v[1]):
+                return "toward"
+            v = np.array([v[0], 0.12 * v[1]])
+            if np.linalg.norm(v) > 1e-6:
+                return v / np.linalg.norm(v)
+        except Exception:  # noqa: BLE001
+            pass
+    return np.array([1.0, 0.0])
+
+
+def _wedge(canvas: np.ndarray, a, b, w: float) -> None:
+    """A tapered speed line from ``a`` (width ``w``) to a point at ``b``."""
+    a = np.asarray(a, float)
+    b = np.asarray(b, float)
+    d = b - a
+    n = np.linalg.norm(d)
+    if n < 2:
+        return
+    nn = np.array([-d[1], d[0]]) / n * (w / 2.0)
+    poly = np.array([a + nn, a - nn, b], np.float32)
+    cv2.fillPoly(canvas, [np.round(poly * 4).astype(np.int32)], 1.0, lineType=cv2.LINE_AA, shift=2)
+
+
+def _line_ink(img: np.ndarray, lines: np.ndarray, alpha: float) -> np.ndarray:
+    """Speed lines: light on a dark ground, a darker tone of the ground on a light one."""
+    lum = img[..., 0] * 0.2126 + img[..., 1] * 0.7152 + img[..., 2] * 0.0722
+    light = 1.0 - (1.0 - img) * 0.25
+    dark = img * 0.55
+    col = np.where((lum > 0.55)[..., None], dark, light)
+    w = np.clip(lines, 0, 1)[..., None] * alpha
+    return img * (1 - w) + col * w
+
+
+def motion_blur(p, img: np.ndarray, fm: dict, subj: str, d, amount: float) -> Tuple[np.ndarray, float, str]:
+    """Speed round one figure; the figure itself stays exactly as drawn. Toward or away from the viewer: a radial
+    zoom blur of the background centred on the figure plus a few radial speed lines at the frame's edges.
+    Sideways: a directional blur of the background and a few thin speed lines trailing behind the figure. The blur
+    fades to nothing at the figure's silhouette. Returns (picture, share changed, mode)."""
+    S = float(max(p.W, p.H))
+    H, W = img.shape[:2]
+    fmask = fm["figs"][subj]
+    if not fmask.any():
+        return img, 0.0, "none"
+    F = cv2.dilate(fmask.astype(np.uint8), dc.disk(max(1.5, 0.007 * S))) > 0
+    bg = ~F
+    dist = cv2.distanceTransform(bg.astype(np.uint8), cv2.DIST_L2, 5)
+    fade = np.clip(dist / (0.08 * S), 0, 1)
+    ys, xs = np.nonzero(fmask)
+    c = np.array([xs.mean(), ys.mean()])
+    lines = np.zeros((H, W), np.float32)
+    rng = np.random.default_rng(11)
+    radial = isinstance(d, str)
+    if radial:
+        n = 10
+        acc = np.zeros_like(img)
+        wacc = np.zeros((H, W), np.float32)
+        bf = bg.astype(np.float32)
+        for k in range(n):
+            sc = 1.0 + 0.06 * amount * k / (n - 1)
+            M = np.float32([[sc, 0, (1 - sc) * c[0]], [0, sc, (1 - sc) * c[1]]])
+            Mi = cv2.invertAffineTransform(M)
+            acc += cv2.warpAffine(img * bf[..., None], Mi, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+            wacc += cv2.warpAffine(bf, Mi, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+        zoom = acc / np.maximum(wacc[..., None], 1e-4)
+        w = fade * min(1.0, 1.2 * amount)
+        out = img * (1 - w[..., None]) + zoom * w[..., None]
+        # radial speed lines in the frame's outer band, pointing at the figure
+        R = float(np.hypot(W, H)) / 2.0
+        for ang in np.sort(rng.uniform(0, 2 * np.pi, 22)):
+            u = np.array([np.cos(ang), np.sin(ang)])
+            # from the frame edge inward
+            t_edge = min([t for t in ((W - c[0]) / u[0] if u[0] > 1e-6 else 1e9, -c[0] / u[0] if u[0] < -1e-6 else 1e9,
+                                      (H - c[1]) / u[1] if u[1] > 1e-6 else 1e9, -c[1] / u[1] if u[1] < -1e-6 else 1e9)])
+            a_ = c + u * t_edge
+            b_ = c + u * t_edge * rng.uniform(0.62, 0.8)
+            _wedge(lines, a_, b_, max(1.5, rng.uniform(0.003, 0.006) * S))
+        mode = "toward the viewer: radial zoom blur of the background, radial speed lines at the edges"
+    else:
+        d = np.asarray(d, float)
+        L = max(5, int(amount * 0.08 * S))
+        from_k = np.zeros((2 * L + 1, 2 * L + 1), np.float32)
+        for t in np.linspace(-L, L, 4 * L + 1):
+            from_k[int(round(L + d[1] * t)), int(round(L + d[0] * t))] = 1.0
+        from_k /= from_k.sum()
+        bf = bg.astype(np.float32)
+        cc = cv2.filter2D(img * bf[..., None], -1, from_k, borderType=cv2.BORDER_REFLECT)
+        aa = cv2.filter2D(bf, -1, from_k, borderType=cv2.BORDER_REFLECT)
+        pan = cc / np.maximum(aa[..., None], 1e-4)
+        w = fade * min(1.0, 1.2 * amount)
+        out = img * (1 - w[..., None]) + pan * w[..., None]
+        # thin lines trailing behind the figure, clear of its silhouette
+        back = -d
+        y0, y1 = ys.min(), ys.max()
+        gap = 0.02 * S
+        for yy in np.linspace(y0 + 0.15 * (y1 - y0), y1 - 0.1 * (y1 - y0), 6) + rng.uniform(-0.03, 0.03, 6) * S:
+            yy = int(np.clip(yy, 0, H - 1))
+            row = np.nonzero(fmask[yy])[0]
+            if len(row) == 0:
+                continue
+            x_edge = row.min() if back[0] < 0 else row.max()
+            st = np.array([x_edge, yy], float) + back * gap
+            ln = rng.uniform(0.12, 0.25) * S * (0.5 + amount)
+            _wedge(lines, st + back * ln, st, max(1.2, rng.uniform(0.0025, 0.004) * S))
+        mode = "sideways: background blurred along the motion, speed lines trailing behind"
+    lines *= ~(cv2.dilate(F.astype(np.uint8), dc.disk(0.01 * S)) > 0)
+    out = _line_ink(out, lines, 0.55 + 0.3 * amount)
+    out[F] = img[F]
+    return out, float((np.abs(out - img).sum(-1) > 0.03).mean()), mode
+
+
+def rim_light(p, img: np.ndarray, fm: dict, light_rgb, amount: float,
+              keep: Optional[np.ndarray] = None) -> Tuple[np.ndarray, float]:
+    """A thin bright rim inside each figure's outline on the side that faces the plan light (not on the face)."""
+    S = float(max(p.W, p.H))
+    lv = dc.light_vec(dc.dstate(p))
+    d2 = np.array([lv[0], lv[1]], float)
+    if np.linalg.norm(d2) < 1e-3:
+        return img, 0.0
+    d2 /= np.linalg.norm(d2)
+    w_px = max(2.0, 0.0065 * S)         # past the outline's own width: the rim lies just inside the line
+    tot = np.zeros(img.shape[:2], bool)
+    col = np.asarray(light_rgb, np.float32) / 255.0
+    for subj, m in fm["figs"].items():
+        if not m.any():
+            continue
+        M = np.float32([[1, 0, -d2[0] * w_px], [0, 1, -d2[1] * w_px]])
+        sh = cv2.warpAffine(m.astype(np.uint8), M, (p.W, p.H), flags=cv2.INTER_NEAREST, borderValue=0) > 0
+        rim = m & ~sh & ~fm["faces"].get(subj, np.zeros_like(m))
+        rim = cv2.morphologyEx(rim.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)) > 0
+        tot |= rim
+    if not tot.any():
+        return img, 0.0
+    if keep is not None:
+        tot &= ~keep                         # the line art keeps its colour
+    wmap = cv2.GaussianBlur(tot.astype(np.float32), (0, 0), 0.6) * 0.55 * amount
+    if keep is not None:
+        wmap[keep] = 0.0
+    scr = 1.0 - (1.0 - img) * (1.0 - col[None, None, :] * 0.8)
+    # on black hair and dark cloth: a thin cool blue-grey edge, not a grey halo
+    lum = img[..., 0] * 0.2126 + img[..., 1] * 0.7152 + img[..., 2] * 0.0722
+    cool = img + (np.array([0.42, 0.5, 0.66], np.float32) - img) * 0.45
+    dk = np.clip((0.3 - lum) / 0.2, 0, 1)[..., None]
+    scr = scr * (1 - dk) + cool * dk
+    return img * (1 - wmap[..., None]) + scr * wmap[..., None], float(tot.mean())
+
+
+GLOW_KEYS = ("lamp", "light", "sun", "moon", "window", "glow", "fire", "lantern", "neon", "candle")
+
+
+def lamp_glow(p, img: np.ndarray, amount: float) -> Tuple[np.ndarray, List[str]]:
+    """Bloom round lamps and light sources: the areas named lamp / light / sun / moon / window / glow / fire ..."""
+    src = np.zeros((p.H, p.W), bool)
+    names = []
+    for n in p.state.get("regions", {}):
+        if any(k in n for k in GLOW_KEYS) and not n.startswith("sky"):
+            try:
+                m = p.region_mask(n)
+            except Exception:  # noqa: BLE001
+                continue
+            if m.any() and m.mean() < 0.25:
+                src |= m
+                names.append(n)
+    if not src.any():
+        return img, []
+    S = float(max(p.W, p.H))
+    bright = img * src[..., None]
+    g = 0.6 * cv2.GaussianBlur(bright, (0, 0), 0.015 * S) + 0.4 * cv2.GaussianBlur(bright, (0, 0), 0.04 * S)
+    return 1.0 - (1.0 - img) * (1.0 - np.clip(g * 1.3 * amount, 0, 1)), names
+
+
 # ============================================================================================ command
 
 def soft_style(p) -> bool:
@@ -312,15 +653,17 @@ def cmd_polish(ctx, args: List[str]):
     from .cli import Spec, parse
     p = ctx.project
     u = USAGE["polish"]
-    flags = {f"no-{k}": "flag" for k in PARTS}
+    flags = {f"no-{k}": "flag" for k in PARTS + FX_PARTS}
     a = parse(args, Spec(u, [], dict(flags, grade="value", depth="value", soften="value", lines="value",
-                                     clean="value"),
+                                     clean="value", rim="value", dof="value", glow="value", vignette="value",
+                                     grain="value", focus="value", motion="value", **{"motion-amount": "value"}),
                          alias={"no-haze": "no-depth", "no-air": "no-depth", "no-colour": "no-lines",
                                 "no-color": "no-lines", "no-specks": "no-strays", "no-soft": "no-soften",
-                                "no-smooth": "no-clean",
+                                "no-smooth": "no-clean", "no-bloom": "no-glow", "no-focus": "no-dof",
+                                "bloom": "glow", "blur": "dof", "speed": "motion", "rim-light": "rim",
                                 "haze": "depth"}))
     on = {k: not a.get(f"no-{k}") for k in PARTS}
-    if not any(on.values()):
+    if not any(on.values()) and not any(a.get(k) for k in ("rim", "dof", "glow", "vignette", "grain", "motion")):
         raise UsageError("every part is off: leave at least one of " + ", ".join(PARTS), u)
     from . import draw_render
     # a rendered cel picture: its areas stay as rendered (no smoothing, no softening, its line colours kept),
@@ -333,6 +676,17 @@ def cmd_polish(ctx, args: List[str]):
     amt_clean = cli._num(a, "clean", 0.5, 0.0, 1.0, ctx.notes, u)
     soft_default = 0.6 if soft_style(p) else 0.0
     amt_soft = cli._num(a, "soften", soft_default, 0.0, 1.0, ctx.notes, u)
+    fm = figure_maps(p)
+    fig_default = 1.0 if fm is not None else 0.0
+    amt_rim = cli._num(a, "rim", 0.35 * fig_default, 0.0, 1.0, ctx.notes, u)
+    # shallow focus when asked for (--focus <figure> or --dof): a picture is sharp throughout by default
+    amt_dof = cli._num(a, "dof", 0.6 * fig_default if a.get("focus") else 0.0, 0.0, 1.0, ctx.notes, u)
+    amt_glow = cli._num(a, "glow", 0.5, 0.0, 1.0, ctx.notes, u)
+    amt_vig = cli._num(a, "vignette", 0.08 * fig_default, 0.0, 1.0, ctx.notes, u)
+    amt_grain = cli._num(a, "grain", 0.0, 0.0, 1.0, ctx.notes, u)
+    amt_motion = cli._num(a, "motion-amount", 0.45, 0.0, 1.0, ctx.notes, u)
+    for k in FX_PARTS:
+        on[k] = not a.get(f"no-{k}")
     below = p.composite("score", upto="fx")                     # the picture under the fx layer
     cur = np.array(p.composite("score", upto="text"), np.float32)
     img = cur[..., :3].copy()
@@ -407,6 +761,46 @@ def cmd_polish(ctx, args: List[str]):
                              f"(amount {amt_soft:g})")
         else:
             lines_out.append("soften: crisp edges kept (cel and ink style; --soften 0.4 to soften them)")
+    # ---- the picture-level finish
+    focus = focus_figure(fm, a.get("focus")) if fm is not None else None
+    if a.get("focus") and fm is not None and a["focus"] not in fm["figs"]:
+        ctx.notes.append(f"--focus {a['focus']}: no drawn figure of that name; focus on {focus}")
+    if on["rim"] and fm is not None and amt_rim > 0:
+        lc = light_colour(p, np.clip(np.rint(img * 255), 0, 255).astype(np.uint8))
+        img, share = rim_light(p, img, fm, lc, amt_rim, keep=line_a > 0.15 if line_a is not None else None)
+        lines_out.append(f"rim: a light rim on the lit side of {len(fm['figs'])} figure(s) ({share * 100:.2f}% of the "
+                         f"canvas, amount {amt_rim:g})")
+    if on["glow"] and amt_glow > 0:
+        img, names = lamp_glow(p, img, amt_glow)
+        if names:
+            lines_out.append(f"glow: bloom round {', '.join(names[:6])} (amount {amt_glow:g})")
+    sharp = img.copy()                       # the picture before any blur: the focus face is taken from it
+    motion = str(a.get("motion") or "")
+    if motion and on["motion"]:
+        who, _, dspec = motion.partition(":")
+        if fm is None or who not in fm["figs"]:
+            raise UsageError(f"--motion names a drawn figure ({', '.join(sorted(fm['figs'])) if fm else 'none drawn'})",
+                             "pixelcanvas polish --motion girl:right")
+        ds = dspec.strip().lower()
+        dvec = "toward" if ds in ("toward", "towards", "away", "in", "out", "viewer", "zoom") else \
+            _dir_vec(dspec, motion_direction(p, who)) if ds else motion_direction(p, who)
+        img, share, mode = motion_blur(p, img, fm, who, dvec, amt_motion)
+        lines_out.append(f"motion: {who} moves {mode} ({share * 100:.1f}% of the canvas, amount {amt_motion:g}; "
+                         f"the figure itself untouched)")
+    if on["dof"] and fm is not None and focus and amt_dof > 0:
+        img, share = depth_of_field(p, img, fm, focus, amt_dof)
+        lines_out.append(f"dof: focus on {focus}; by camera distance {share * 100:.0f}% of the canvas softens "
+                         f"(amount {amt_dof:g}; --focus <figure> to choose, --dof 0 for all sharp)")
+    if fm is not None and focus:
+        fk = fm["faces"].get(focus)
+        if fk is not None and fk.any():
+            img[fk] = sharp[fk]              # nothing blurs or smears the focus figure's face
+    if on["vignette"] and amt_vig > 0:
+        img = fx.apply_effect("vignette", img, amt_vig)
+        lines_out.append(f"vignette: corners darkened a little (amount {amt_vig:g})")
+    if on["grain"] and amt_grain > 0:
+        img = fx.apply_effect("grain", img, amt_grain, seed=7)
+        lines_out.append(f"grain: fine film grain (amount {amt_grain:g})")
     target = cur.copy()
     target[..., :3] = np.clip(img, 0, 1)
     layer = fx.to_fx_layer(np.asarray(below, np.float32), target)
@@ -422,14 +816,14 @@ def cmd_polish(ctx, args: List[str]):
         from . import workflow_draw
         workflow_draw.refresh(p)
     region = cli.resolve_region(p, None, ctx.notes, u)
-    off = [k for k in PARTS if not on[k]]
+    off = [k for k in PARTS + FX_PARTS if not on[k]]
     label = "polish" + (" " + " ".join(f"--no-{k}" for k in off) if off else "")
     rep = cli.paint_step(ctx, label=label, layer="fx", build=lambda: [], clip=None, area_px=(0, 0, p.W, p.H),
                          region=region, pixel_fn=make, extra_lines=lines_out, key_metric="overall", on_apply=tick)
     missing = [ln for ln in lines_out if ln not in rep.lines]
     for k, ln in enumerate(missing):
         rep.lines.insert(1 + k, ln)
-    rep.lines.append("each part can be left out: " + " ".join(f"--no-{k}" for k in PARTS) + ";  undo with  "
+    rep.lines.append("each part can be left out: " + " ".join(f"--no-{k}" for k in PARTS + FX_PARTS) + ";  undo with  "
                      "pixelcanvas undo")
     return rep
 
