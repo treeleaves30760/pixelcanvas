@@ -610,8 +610,10 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
         out.append(_solid(name, prs[0]["mat"], subj, "hair", prs, rad=0.04 * h, bias=-0.03 * h))
     style = str(hair.get("style") or "medium")
     clumps = _clumps(rig, locks, style, h)
-    for ci, (pts, rr) in enumerate(clumps):
-        part = _tube(f"clump{ci}", "hair", subj, "hair", pts, rr, {"scalp": pts[0]}, point_end=True,
+    for ci, cl in enumerate(clumps):
+        pts, rr = cl[0], cl[1]
+        # bangs are named apart: the crown highlight and the shading leave them out
+        part = _tube(f"{'bangs' if len(cl) > 2 and cl[2] else 'clump'}{ci}", "hair", subj, "hair", pts, rr, {"scalp": pts[0]}, point_end=True,
                      n_rings=max(10, 3 * len(pts)), n_pts=14, bias=-0.002 * h)
         # inner strand lines: one or two confident lines per clump, from near its root toward the tip
         P = np.asarray(pts)
@@ -710,7 +712,7 @@ def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.
             X3, _ = perp_basis(Pm[-1] - Pm[0])
             sgn = 1.0 if c % 2 == 0 else -1.0
             Pm = Pm + X3[None] * (sgn * 0.3 * float(np.mean(rr)) * np.sin(2 * math.pi * t) * t)[:, None]
-            out.append((Pm, rr))
+            out.append((Pm, rr, grp))
     return out
 
 

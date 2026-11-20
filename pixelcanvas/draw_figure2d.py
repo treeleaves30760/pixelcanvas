@@ -991,10 +991,11 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         hm = cv2.resize(np.isin(lab, hair_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
         # only where the band faces the camera: the head's front half in the picture
         band &= hm
-        cap_ids = [k for k in hair_ids if tb[k]["name"] == "hair-cap"]
-        if cap_ids:
-            band &= cv2.resize(np.isin(lab, cap_ids).astype(np.uint8), (p.W, p.H),
-                               interpolation=cv2.INTER_NEAREST) > 0
+        # on the top mass (cap and back locks), never across the bangs, where a band reads as a headband
+        bang_ids = [k for k in hair_ids if str(tb[k]["name"]).startswith("bangs")]
+        if bang_ids:
+            band &= ~(cv2.resize(np.isin(lab, bang_ids).astype(np.uint8), (p.W, p.H),
+                                 interpolation=cv2.INTER_NEAREST) > 0)
         bu = band.astype(np.uint8)
         for i in np.nonzero(gaps)[0]:
             qa, qb = q[i], q[len(th) * 2 - 1 - i]
