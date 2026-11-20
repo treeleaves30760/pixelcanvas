@@ -39,7 +39,7 @@ KINDS_3D = ("block", "prop")
 
 USAGE = {
     "camera": "pixelcanvas camera --horizon 700 --eye-height 0.9 --fov 50",
-    "pose": "pixelcanvas pose girl --preset run --at 520,900 --yaw 30 [--lean 15 --twist 20 --bend 10 --look camera|left|right|up|down|back|at:x,y --energy 0..1 --mirror --arm-r raised|forward|back|down|bent|out|hip|behind|crossed|face|chin|hair --leg-l forward|back|bent|raised|kick|out|tucked --hand-r fist|open|relaxed|point|grip|peace|cup --hand-l-to hip|chest|x,y|<block> --foot-r-to x,y --on <block> --check]",
+    "pose": "pixelcanvas pose girl --preset run --at 520,900 --yaw 30 [--lean 15 --twist 20 --bend 10 --look camera|left|right|up|down|back|at:x,y --energy 0..1 --mirror --arm-r raised|forward|back|down|bent|out|hip|behind|crossed|face|chin|hair --leg-l forward|back|bent|raised|kick|out|tucked --hand-r fist|open|relaxed|point|grip|peace|cup --hand-l-to hip|chest|x,y|<block>|<figure>:hand-r --foot-r-to x,y --on <block> --fit x0,y0,x1,y1 --check]",
     "block": "pixelcanvas block wall box --at 300,820 --size 4,0.3,1.0",
     "prop": "pixelcanvas prop sword --kind sword --hand r",
     "form": "pixelcanvas form girl",
@@ -635,7 +635,7 @@ def cmd_pose(ctx, args):
                           "reset": "flag", "hand-shape-r": "value", "hand-shape-l": "value",
                           "lean": "value", "twist": "value", "bend": "value", "look": "value", "energy": "value",
                           "arm-r": "value", "arm-l": "value", "leg-r": "value", "leg-l": "value", "check": "flag",
-                          "no-gesture": "flag", "no-balance": "flag"},
+                          "no-gesture": "flag", "no-balance": "flag", "fit": "value"},
                          alias={"pose": "preset", "facing": "yaw", "face": "yaw", "turn": "yaw", "edit": "set",
                                 "joints": "set", "joint": "set", "sit-on": "on", "stand-on": "on", "size": "height",
                                 "right-hand": "hand-r", "left-hand": "hand-l", "right-foot": "foot-r",
@@ -741,8 +741,16 @@ def cmd_pose(ctx, args):
             else:
                 hands[s] = v
     spec["hands"] = hands
+    if a.get("fit"):
+        if str(a["fit"]).lower() in ("none", "off"):
+            spec.pop("fit", None)
+        else:
+            spec["fit"] = [float(v) for v in coords.parse_box(a["fit"], ctx.notes, "pixelcanvas pose girl --fit "
+                                                                                    "300,150,700,980")]
+            spec.pop("on", None)
     if a.get("at"):
         spec["at"] = [float(v) for v in coords.parse_point(a["at"], ctx.notes, USAGE["pose"])]
+        spec.pop("fit", None) if not a.get("fit") else None
     elif not spec.get("at") and not spec.get("on"):
         box = d["subjects"].get(subj, {}).get("box")
         spec["at"] = [round((box[0] + box[2]) / 2, 1), round(box[3] - 0.015 * (box[3] - box[1]), 1)] if box \
@@ -824,7 +832,10 @@ def _pose_report(p, el, res) -> List[str]:
     fy, _ = P3.view_angles(cam, F["chest"], J["chest"])
     dist = float(cam.to_cam([J["pelvis"]])[0, 2])
     out = [f"{el['subject']} ({el['id']}): {res['preset']} ({P3.PRESETS[res['preset']]['desc']}), "
-           f"{body.heads:g} heads, {body.Ht:g} m, {dist:.1f} m from the camera, {P3.facing_words(fy)}"]
+           f"{body.heads:g} heads, {body.Ht:.2f} m, {dist:.1f} m from the camera, {P3.facing_words(fy)}"]
+    if res.get("fit"):
+        out.append(f"fitted into --fit {','.join(f'{v:g}' for v in rig['fit'])}: {res['fit']['height']:.2f} m tall, "
+                   f"feet at {res['fit']['at'][0]:g},{res['fit']['at'][1]:g}")
     vb = owner_box(p, sc, el["id"])
     if vb is not None:
         ub = coords.px_box_to_units(tuple(int(v) for v in vb), p.W, p.H)
