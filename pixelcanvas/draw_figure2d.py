@@ -931,6 +931,10 @@ def do_cel_shade(ctx, who: str = "all"):
         if t["mat"] == "hair":
             sm |= m & ((lam_hair < thr) | near)     # the hair: one mass, short cast shadows (bangs on the cap)
             dm |= m & (lam_hair < thr - 0.45)
+        elif str(t["mat"]).startswith("prop:"):
+            # a held thing (an umbrella, a sword): one tone per part, its ribs and edges do not band it
+            if float(np.median(lam_s[m])) < thr:
+                sm |= m
         elif t["group"].startswith("hand"):
             sm |= m & ((lam_s < -0.25) | cast | near)   # a hand's normals are flat: no half-shaded fist
         elif t["group"] == "head":
@@ -1128,8 +1132,8 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
         J = {k: np.asarray(v, float) for k, v in el["j3d"].items()}
         feet = [J[f"heel-{s_}"] for s_ in "rl"] + [J[f"foot-{s_}"] for s_ in "rl"]
         lift = max(0.0, min(f[1] for f in feet))
-        if block_ids and lift > 1.2:
-            continue                    # sitting on a block: the block carries it
+        if block_ids and lift > 0.15:
+            continue                    # sitting or standing on a block: no shadow on the floor far below
         if lift > 4.0:
             continue
         fc = np.mean([[f[0], 0.0, f[2]] for f in feet], 0)
