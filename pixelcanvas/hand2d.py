@@ -371,7 +371,7 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
                      flat3=pl.lift(to_plane(poly), back_d), normal=view, bias=-0.004 * h, mitten=small)
         parts.append(part)
         if fpoly is not None:
-            front_d = dG - float(grip_r) - 0.004 * h
+            front_d = dG - 1.5 * float(grip_r) - 0.02 * h          # over the hilt or handle (often thicker)
             fpart = _part(f"fingers-{s}", "blob", mat, subj, f"hand-{s}", {f"fingers-{s}": None}, rad=0.08 * h,
                           flat3=pl.lift(to_plane(fpoly), front_d), normal=view, bias=-0.004 * h, mitten=small)
             # the separations between the wrapped fingers lie on the front part
@@ -384,7 +384,7 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
     # in front of the wrist's end of the forearm, so the hand is never cut by the cloth it hangs beside
     depth = min(d_near, float(pl.depth(W[None])[0]) - 0.03 * h) - 0.004 * h
     if G is not None:
-        depth = min(depth, float(pl.depth(G[None])[0]) - float(grip_r) - 0.004 * h)
+        depth = min(depth, float(pl.depth(G[None])[0]) - 1.5 * float(grip_r) - 0.02 * h)
     part = _part(f"hand-{s}", "blob", mat, subj, f"hand-{s}", joints, rad=0.12 * h,
                  flat3=pl.lift(to_plane(poly), depth), normal=view, bias=-0.004 * h, mitten=small)
     for ln in lines:
