@@ -366,6 +366,21 @@ def _keep_fn(sc: dict, k: int, R):
     return keep
 
 
+def _inner_rgb(p, pt: dict, cache: dict) -> Optional[Tuple[int, int, int]]:
+    """The colour of an inner line (a near limb over a far one, a fold, a seam) on a dark part (black stockings, a
+    navy uniform): a lighter tone of the part's colour, so the overlap reads instead of one dark mass. None on a
+    light part (the line colour stays)."""
+    if pt.get("block") or str(pt.get("mat", "")).startswith("prop:"):
+        return None
+    try:
+        rgb = np.asarray(colour_of(p, pt, cache), float)
+    except Exception:  # noqa: BLE001
+        return None
+    if float(rgb @ [0.299, 0.587, 0.114]) >= 72:
+        return None
+    return tuple(int(round(v)) for v in rgb + (255 - rgb) * 0.24)
+
+
 def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
     """Stroke specs (canvas px) for the parts of the subjects in ``subj_keep`` (and groups)."""
     R = sc["R"]
@@ -373,6 +388,7 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
     step = max(1.0, 0.75 / R.s)
     min_len = 0.004 * S
     out = []
+    rgb_cache: dict = {}
     for k, (pt, o) in enumerate(zip(sc["parts"], sc["outs"])):
         if o is None or not pt.get("line", True) or pt["subj"] not in subj_keep:
             continue
@@ -390,12 +406,14 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
                 w = W_HAIR
             else:
                 w = W_IN
-            out.append({"pts": st["pts"], "closed": st["closed"], "w": w, "part": pt, "k": k})
+            out.append({"pts": st["pts"], "closed": st["closed"], "w": w, "part": pt, "k": k,
+                        "rgb": _inner_rgb(p, pt, rgb_cache) if c == 2 and not block else None})
         cam = sc["cam"]
         for q in o.get("details_px", []):
             dense = S2.resample(q, step)
             for run in S2.detail_strokes(dense, k, R, step, min_len * 0.7):
-                out.append({"pts": run, "closed": False, "w": W_DET, "part": pt, "k": k, "detail": True})
+                out.append({"pts": run, "closed": False, "w": W_DET, "part": pt, "k": k, "detail": True,
+                            "rgb": _inner_rgb(p, pt, rgb_cache)})
         for det in pt.get("details", []):
             P3 = np.asarray(det["pts"], float)
             if det.get("nrm") is not None:
@@ -409,7 +427,7 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
             dense = S2._catmull(q, max(8, len(q) * 6))
             for run in S2.detail_strokes(dense, k, R, step, min_len * 0.7):
                 out.append({"pts": run, "closed": False, "w": det.get("w", W_DET), "part": pt, "k": k,
-                            "detail": True})
+                            "detail": True, "rgb": _inner_rgb(p, pt, rgb_cache)})
     return out
 
 
@@ -647,6 +665,8 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
             rec["d2d_part"] = pt["name"]
             rec["part"] = region_of(p, pt)
             rec["even"] = True                  # one confident weight along the stroke, tapered at its ends
+            if st.get("rgb"):                   # an inner line on a dark part: a lighter tone of it
+                rec["auto_rgb"], rec["rgb_fixed"] = [int(v) for v in st["rgb"]], True
             d["lines"].append(rec)
             ids.setdefault(f"{pt['subj'].lstrip('@')} {pt['group']}", []).append(rec["id"])
         for subj, fl in face_lines:
