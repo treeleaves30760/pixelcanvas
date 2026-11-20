@@ -879,6 +879,8 @@ def cmd_style(ctx: Ctx, args: List[str]) -> Report:
     step = p.begin_step([])
     old = p.state["style"]
     p.state["style"] = name
+    if not getattr(ctx, "auto_style", False):
+        p.state["style_user"] = True          # the user chose it: 3D commands leave it alone
     plan = workflow.plan_of(p.state)          # the style's stages (with a change stage when changes are stated)
     if p.state["stage"] not in plan:
         ctx.notes.append(f"stage {p.state['stage']} is not in the {name} plan; back to sketch")
@@ -3135,6 +3137,7 @@ def cmd_do(ctx: Ctx, args: List[str]) -> Report:
         if i == len(cmds):          # the last command's own report in full: its numbers are what comes next
             keep = [ln for ln in r.lines[1:] if not ln.startswith("worst spots") and
                     not re.match(r"\s+\d\) \d", ln)]
+            keep = [ln for ln in keep if not (ln.startswith("CHECK") and ln in seen_keep)]
         for ln in keep[:12]:
             rep.add("    " + ln.strip())
         if r.worse and r.step is not None:
@@ -3295,9 +3298,30 @@ def _wrap_mode() -> None:
 _wrap_mode()
 
 
+def _cel_for_3d(ctx: Ctx) -> None:
+    """The first camera / figure / pose / scene on a picture without a reference sets style cel (anime line art
+    over a 3D guide), unless the user chose a style."""
+    try:
+        p = ctx.project
+    except Exception:  # noqa: BLE001
+        return
+    st = p.state
+    if p.ref is not None or st.get("mode") == "hand" or st.get("style_user") or st.get("style") == "cel":
+        return
+    sub = Ctx(ctx.project_arg, batch=True)
+    sub._project = p
+    sub.auto_style = True  # type: ignore[attr-defined]
+    sub.cmdline = "pixelcanvas style cel"
+    cmd_style(sub, ["cel"])
+    p.reload()
+    ctx.notes.append("style cel: posed 3D figures are drawn as anime cel art (pixelcanvas style <name> changes it)")
+
+
 def dispatch(ctx: Ctx, toks: List[str]) -> Report:
     import difflib
     name = toks[0].lower().lstrip("-")
+    if name in ("camera", "figure", "pose", "scene") and not _PROBE[0] and toks[1:2] != ["list"]:
+        _cel_for_3d(ctx)
     fn = COMMANDS.get(name)
     if fn is None:
         close = difflib.get_close_matches(name, list(COMMANDS), n=1, cutoff=0.5)

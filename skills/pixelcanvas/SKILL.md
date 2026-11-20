@@ -24,7 +24,7 @@ command changes it, reports numbers and writes a picture of the result.
 Undo at once when a score fell or the picture looks worse: `pixelcanvas undo` (or the `pixelcanvas undo N` that NEXT gives).
 Never run a second command before you have looked at the first one's VIEW. A new picture with posed figures is the
 exception: there you look once per level (the guide, the drawing, the finish), as `new-picture.md` says.
-`pixelcanvas help pose,figure,block` prints the options and values of several commands in one call.
+`pixelcanvas help pose,figure,scene` prints the options and values of several commands in one call.
 Coordinates are always 0-1000 on each axis (x right, y down), read off the rulers of the views. Never pixels.
 Colours: always quote them, `--color "#202020"`. In the shell an unquoted `#` starts a comment.
 
@@ -240,17 +240,19 @@ The todo list, the loop and the stall rules above apply as in trace mode.
 
 ## Without a reference picture
 
-People in a scene, the short path (each line one shell call; `steps.txt` holds the camera, block and figure lines; the blocks are the background):
+People in a scene, the short path (each line one shell call; `steps.txt` holds the camera, `scene <kit>`, block and figure lines):
 ```bash
 pixelcanvas new pic --mode free --size 1000x1400 --request "a schoolgirl runs down a corridor"
-pixelcanvas do @steps.txt          # camera, block ..., figure girl --pose run --at 420,900 --wear ... --hair ... --face ...
+pixelcanvas do @steps.txt          # camera, scene corridor ..., figure girl --pose run --at 420,900 --wear ... --hair ... --face ...
 pixelcanvas render                 # the guide; look
 pixelcanvas do "draw all; flat auto; shade all"     # look
-pixelcanvas polish                 # look
+pixelcanvas polish --focus girl --motion boy:left   # look
 pixelcanvas export final.png --stages stages
 pixelcanvas stage done             # closes every stage: status FINISHED
 ```
-`pixelcanvas figure <who>` poses, dresses, gives hair and a face in one line: `new-picture.md` has its syntax.
+`pixelcanvas scene corridor|room|classroom|street|platform|outdoor|field|beach|rooftop|stairs --time day|sunset|night`
+draws the place from the camera under the figures. `pixelcanvas figure <who>` poses, dresses, gives hair and a face
+in one line: `new-picture.md` has its syntax.
 
 Free mode draws from a text request. You say what the picture is, the tool builds it stage by stage, on a working canvas 3x the
 picture you export (coordinates stay 0-1000; `--scale 1|2|3` on `pixelcanvas new` sets it). Follow `NEXT:`. When

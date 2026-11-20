@@ -25,7 +25,7 @@ composition: <where the main figure sits, what leads the eye>
 ### <id>
 action: <one verb phrase>   contact: <what touches what>
 ## scene
-blocks (near to far): <name> <kind> <size m> at <x,y>
+kit: <scene kit and its options>   blocks: <what a figure sits on, leans on or stands behind>
 ## light
 key: <direction, colour>  fill: <colour>
 ## palette
@@ -38,25 +38,28 @@ key: <direction, colour>  fill: <colour>
 
 ```
 camera --horizon 430 --eye-height 1.1 --fov 55
-block floor plane --size 6,30,0 --at 500,1000 --color "#9a6234"
-block wall-l box --size 0.3,30,3.2 --at 500,1000 --offset -2.3,0 --color "#e2cfa8"
-figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --set "head: turn 20" --hand-shape-r fist --wear "blouse:white,skirt:navy:pleated,thigh-highs:black,shoes:brown" --hair "twintails,blunt,pink,bows:black" --face "smile,blue"
-figure boy --pose walk --at 680,790 --heads 6.5 --yaw -20 --wear "shirt:white,shorts:#1f2a4a,socks:#1f2a4a,shoes:brown" --hair "short,side,#1a1820" --face "grin,brown"
+scene corridor --time day --wall "#e6dcc4" --trim "#7a4e30" --floor "#b07a4a" --lamps 4
+figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --twist 15 --look camera --hand-shape-r fist --wear "blouse:white,skirt:navy:pleated,thigh-highs:black,shoes:brown" --hair "twintails,blunt,pink,ribbon,bows:black" --face "smile,blue"
+figure boy --pose walk --at 680,790 --heads 6.5 --yaw -20 --look left --wear "shirt:white,shorts:#1f2a4a,socks:#1f2a4a,shoes:brown" --hair "short,side,#1a1820" --face "grin,brown,left"
 ```
 
-The scene is blocks: a floor plane, walls, benches, stairs, railings, poles; `draw all` draws them in 2D with the
-figures. With horizon 430 and eye height 1.1 m a figure standing at y 800-830 is about half the canvas tall; lower
-on the canvas is nearer and bigger.
+The place is one `scene <kit>` line: kits corridor room classroom street platform outdoor field beach rooftop
+stairs; `--time day|sunset|night`; colours `--wall --trim --floor --ceiling --sky --ground --road --building --sea
+--sand ...`; `--doors` / `--windows left|right|both|none`, `--lamps <n>`. It is drawn from the camera under the
+figures. Add a `block` only for what a figure touches or stands behind (a bench, a ledge, stairs, a railing):
+`block bench box --size 1.8,0.45,0.45 --at 520,860`. With horizon 430 and eye height 1.1 m a figure standing at
+y 800-830 is about half the canvas tall; lower on the canvas is nearer and bigger.
 
-`figure` options: `--pose <preset>`, `--at x,y` (the ground point under the figure, 0-1000), `--heads 6.5`,
-`--yaw <deg>`, `--set "<joint>: <motion> <deg>; ..."`, `--on <block>`, `--hand-r/-l <block|x,y>`,
-`--foot-r/-l <block|x,y>`, `--hand-shape-r/-l relaxed|fist|open|point|grip|peace|cup`; `--wear` pieces
-`piece[:colour][:style|length|sleeve]`; `--hair` style (long medium bob short spiky ponytail twintails braid bun),
-bangs (blunt side parted none), colour, `bows:<colour>`; `--face` expression (neutral smile open grin angry sad
-crying surprised panicked sleepy), eye colour. Joints: body pelvis spine chest neck head arm elbow hand leg knee
-foot (`-r` / `-l`); motions: arm raise|forward|twist, elbow bend, leg forward|raise|twist, knee bend, spine bend|
-side|twist, head turn|tilt|nod, body lean. Blocks: box stairs cylinder plane railing, `--size w,d,h` in metres,
-`--lift <m>` above the ground, `--offset dx,dz`.
+`figure` options: `--pose <preset>` (`pose list` groups them: stand / arms, move, air, sit, low / lying, lean,
+fight); modifiers `--lean --twist --bend <deg>`, `--look camera|left|right|up|down|back|at:x,y`, `--energy 0..1`,
+`--arm-r/-l raised|forward|back|down|bent|out|hip|behind|crossed|face|chin|hair`, `--leg-r/-l forward|back|bent|
+raised|kick|out|tucked|relaxed`; hands `--hand-shape-r/-l relaxed|fist|open|point|grip|peace|cup|spread|flat|reach`,
+`--hand-r-to hip|chest|x,y|<block>`, `--foot-r-to x,y`; `--at x,y` (the ground point, 0-1000), `--heads 6.5`,
+`--yaw <deg>`, `--on <block>`, `--set "<joint>: <motion> <deg>; ..."` for anything else. `--wear` pieces
+`piece[:colour][:style|length|sleeve]`; `--hair` style (long medium bob short spiky ponytail twintails braid bun
+buns), bangs (blunt side parted none), colour, accessories (hairband hairpin bow ribbon), `bows:<colour>`;
+`--face` expression (neutral smile open grin laugh shout angry sad crying teary surprised panicked smug
+embarrassed sleepy closed shut wink), eye colour, gaze (center left right up down up-left ...).
 
 Rules:
 - The pose says what the body does: weight, the foot that carries it, where the arms go, where the head looks.
