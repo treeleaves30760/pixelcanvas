@@ -1,20 +1,50 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-11-21)
 
-A picture costs a session fewer commands and less reading.
+A new picture is a place, figures set up in one line each, and a 2D anime drawing over the 3D guide, in about ten
+commands.
 
-- `figure <who> --pose <preset> --at x,y --wear "..." --hair "..." --face "..."` poses, dresses, gives hair and a
-  face to a figure in one command line.
-- `do @steps.txt` runs a file of commands (one per line, `#` comments) as one batch.
-- `help pose,dress,hair3d` prints each command's arguments, options, values and an example in a few lines; `pose
-  list`, `dress list` and `block list` run without a project.
-- Guessed option names map to the real ones (`--elevation` -> `--lift`, `--colour`, `--position`, ...); `hip-r`
-  is the leg joint; `hair3d --bangs swept`, `--wind left|right|back`.
-- A picture drawn over a 3D guide closes every stage with one `stage done` after `export final.png`; the plan
-  boxes, todo items and checks of the 2D-only route stay out of its way.
-- The plugin guides follow the short path: the director writes `steps.txt`, the blocker runs it in one call, the
-  painter looks once per level, the critic checks the finished picture once.
+### Places
+- `scene <kit>` draws a finished background in the camera's perspective, under the figures: corridor, room,
+  classroom, street, platform, outdoor, field, beach, rooftop, stairs. `--time day|sunset|night` (night and sunset
+  light the figures too), colours per surface (`--wall --trim --floor --sky --ground --sea ...`), doors, windows,
+  lamps with light pools, an arch at the corridor's end, contact shadows on its floor. `scene list` shows the kits.
+- Blocks for furniture (benches, desks, lamp posts, trees) draw in their own colours and areas.
+
+### Figures
+- `figure <who> --pose run --at x,y --wear "blouse:white,skirt:navy:pleated,shoes" --hair "twintails,blunt,pink"
+  --face "smile,blue"` poses, dresses, gives hair and a face in one command line; every `pose` option passes
+  through.
+- 73 pose presets in groups (stand / arms, move, air, sit, low / lying, lean, fight) with modifiers: `--lean
+  --twist --bend`, `--look camera|left|...|at:x,y`, `--energy`, `--arm-r raised|hip|crossed|...`, `--leg-l
+  kick|tucked|...`, hand anchors `--hand-r-to hip|chest|x,y|<block>`, and `--check` for balance, contact and
+  foreshortening. Seated figures clear the seat edge; look-back turns the torso.
+- Anime faces: eyes with lash weight, lower lash, crease, iris bands and two catch-lights; 18 expressions (laugh,
+  shout, teary, smug, embarrassed, wink, ...) and `--gaze`.
+- Hair: clumps that taper to sharp tips, an angel-ring highlight, `buns`, ahoge on request,
+  `--accessory hairband,hairpin,bow,ribbon`.
+- Hands built in 3D from the wrist and drawn as anime hands: grouped fingers, finger lines, a fold line on a fist;
+  shapes `spread`, `flat`, `reach` join fist, open, point, grip, peace, cup.
+- Body and clothes: shoulders, hips and knees built from the deltoid and thigh, a jacket over a white shirt with
+  collar points and lapels, sleeve seams and cuffs, pleated hems, shoes as one solid with a heel and sole, lighter
+  inner lines on dark clothes.
+
+### Light and finish
+- Cel shading from one raking light, smoothed per part; the far leg in shadow; a chin shadow on the neck; contact
+  shadows under every figure (detached for a jump).
+- `polish` is the whole finish in one call: rim light, depth of field by camera distance, `--focus <figure>`,
+  `--motion <figure>:<direction>` for a trail, lamp glow, vignette, grain; the focus face never blurs.
+
+### Fewer commands
+- `do @steps.txt` runs a file of commands as one batch; `help pose,figure,scene` prints the options and values of
+  several commands in a few lines; `pose list`, `dress list`, `block list` and `scene list` run without a project.
+- Guessed option names map to the real ones (`--elevation`, `--colour`, `--position`, ...); `hip-r`, `--bangs
+  swept`, `--wind left|right|back` and unknown dress styles no longer stop a command.
+- A picture without a reference switches to style cel at its first `camera`, `scene`, `pose` or `figure`; after
+  `export final.png` one `stage done` closes every stage; a band stays behind the 3D figures.
+- The plugin's subagents follow the short path: the director writes `steps.txt`, the blocker runs it in one call,
+  the critic checks the guide and the final picture with the judge's criteria, the painter looks once per level.
 
 ## 0.7.0 (2026-11-20)
 

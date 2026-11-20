@@ -836,6 +836,12 @@ def cmd_new(ctx: Ctx, args: List[str]) -> Report:
                "0-1000)" if p.state.get("work_scale", 1) > 1 else ""))
     if local_line:
         rep.add(local_line)
+    if mode == "free":
+        rep.add("free mode: camera, scene <kit> and figure <who> lines (one batch: pixelcanvas do @steps.txt), then "
+                "render, draw all, flat auto, shade all, polish, export")
+        rep.next = ("pixelcanvas do @steps.txt   (camera --horizon 430 --eye-height 1.1; scene corridor; "
+                    "figure girl --pose run --at 400,850 --wear ... --hair ... --face ...)")
+        return rep
     rep.add(f"style guess: {style} ({workflow.STYLE_WORDS[style]})")
     rep.add(f"  because: {why}")
     rep.add(f"  other styles: {', '.join(s for s in workflow.STYLES if s != style)}  (change with  pixelcanvas style <name>)")
