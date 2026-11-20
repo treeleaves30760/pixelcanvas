@@ -608,13 +608,13 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
     for ci, (pts, rr) in enumerate(clumps):
         part = _tube(f"clump{ci}", "hair", subj, "hair", pts, rr, {"scalp": pts[0]}, point_end=True,
                      n_rings=max(10, 3 * len(pts)), n_pts=14, bias=-0.002 * h)
-        # inner strand lines: two to four, following the clump from near its root toward the tip
+        # inner strand lines: one or two confident lines per clump, from near its root toward the tip
         P = np.asarray(pts)
         L = float(np.sum(np.linalg.norm(np.diff(P, axis=0), axis=1)))
-        n_lines = int(np.clip(round(L / (0.35 * h)) + 1, 2, 4)) if L > 2.5 * float(np.max(rr)) else 0
+        n_lines = int(np.clip(round(L / (1.0 * h)) + 1, 1, 2)) if L > 3.0 * float(np.max(rr)) else 0
         for li in range(n_lines):
-            off = (-0.35, 0.3, -0.05, 0.5)[li]
-            t0, t1 = 0.12 + 0.08 * li, 0.62 + 0.09 * ((li * 7) % 3)
+            off = (0.3 if ci % 2 else -0.3, -0.05 if ci % 2 else 0.1)[li]
+            t0, t1 = 0.1 + 0.12 * li, 0.55 + 0.12 * ((ci + li) % 3)
             idx = np.linspace(t0, t1, 7) * (len(P) - 1)
             base = np.array([P[int(np.floor(x))] + (P[min(int(np.floor(x)) + 1, len(P) - 1)] - P[int(np.floor(x))]) *
                              (x - np.floor(x)) for x in idx])
@@ -625,7 +625,7 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
     return out
 
 
-CLUMPS = {"long": 9, "medium": 8, "bob": 7, "short": 7, "ponytail": 7, "twintails": 10, "braid": 6, "bun": 6}
+CLUMPS = {"long": 9, "medium": 8, "bob": 7, "short": 11, "ponytail": 7, "twintails": 10, "braid": 6, "bun": 6}
 
 
 def _resample_chain(P: np.ndarray, r: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -697,7 +697,10 @@ def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.
             big = 1.0 if c % 3 != 1 else 0.72
             if big < 1.0 and len(Pm) > 2:
                 Pm = Pm[0] + (Pm - Pm[0]) * 0.86
-            rr = float(np.max(rr[:max(2, len(rr) // 3)])) * big * _taper(t, grp)
+            r_root = float(np.max(rr[:max(2, len(rr) // 3)]))
+            if style == "short":
+                r_root = min(r_root, 0.12 * h)       # a short cut hugs the skull: no puffs
+            rr = r_root * big * _taper(t, grp)
             # an S-curve across the clump
             X3, _ = perp_basis(Pm[-1] - Pm[0])
             sgn = 1.0 if c % 2 == 0 else -1.0

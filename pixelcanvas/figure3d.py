@@ -764,28 +764,31 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     if style not in ("spiky",):
         for sg in (1.0, -1.0):
             root, nrm = _cap_point(rig, sg * 1.25, 0.25, 1.08)
-            ln = {"short": 0.55, "bob": 0.9}.get(style, 1.25) * h
+            ln = {"short": 0.42, "bob": 0.9}.get(style, 1.25) * h
             out += _lock(rig, owner, k, root, unit(-Hd[:, 1] + 0.3 * nrm), ln, r0 * 0.9, gvec, col, nseg=6, tip=0.1)
             k += 1
     # the back and the crown
     if style in ("long", "medium", "bob", "short", "spiky"):
         rows = [(0.6, 11, 0.82), (0.1, 13, 1.0), (-0.35, 9, 0.97)] if style in ("long", "medium", "bob") else \
-            [(0.75, 9, 1.0), (0.3, 11, 1.0), (-0.15, 9, 0.9)]
+            [(0.8, 7, 1.0), (0.45, 9, 0.85), (0.05, 7, 0.6)] if style == "spiky" else \
+            [(0.75, 9, 0.9), (0.3, 11, 0.8), (-0.15, 9, 0.7)]
         for y, n, lf in rows:
             for i in range(n):
                 ph = (1.25 + (2 * math.pi - 2.5) * i / (n - 1))
                 root, nrm = _cap_point(rig, ph, y, 1.06)
                 if style == "spiky":
-                    d0 = unit(nrm * 1.0 + Hd[:, 1] * 0.15 - Hd[:, 2] * 0.45)
-                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.95 + 0.4 * ((i * 7) % 5) / 4), r0 * 0.95,
+                    # spikes sweep up and back from the crown; the lower rows are shorter
+                    d0 = unit(nrm * 0.75 + Hd[:, 1] * 0.35 - Hd[:, 2] * 0.6)
+                    out += _lock(rig, owner, k, root, d0, 0.75 * Lb * lf * (0.8 + 0.35 * ((i * 7) % 5) / 4), r0 * 1.1,
                                  gvec * 0.35, col, nseg=3, stiff=0.85, tip=0.03)
                 else:
-                    d0 = unit(nrm * 0.5 - Hd[:, 1] * 0.8)
+                    d0 = unit(nrm * (0.15 if style == "short" else 0.5) - Hd[:, 1] * 0.8)
                     curl = None
                     if style == "bob":
                         def curl(i_, nn=nrm):
                             return -nn * 0.35 if i_ >= 4 else 0
-                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.94 + 0.12 * ((i * 5) % 3) / 2), r0 * 1.45,
+                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.94 + 0.12 * ((i * 5) % 3) / 2),
+                                 r0 * (1.0 if style == "short" else 1.45),
                                  gvec, col, nseg=8 if style == "long" else 6, curl=curl, tip=0.18)
                 k += 1
         if style in ("short", "spiky"):
@@ -793,9 +796,9 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
                 ph = -0.9 + 1.8 * i / 4
                 if style == "short":
                     # a boy's cut: crown locks lie on the skull, combed forward and down over the front
-                    root, nrm = _cap_point(rig, ph * 1.2, 0.8, 1.05)
+                    root, nrm = _cap_point(rig, ph * 1.2, 0.8, 1.0)
                     d0 = unit(Hd[:, 2] * 0.85 - Hd[:, 1] * 0.35 + nrm * 0.1 + Hd[:, 0] * 0.25 * ph)
-                    out += _lock(rig, owner, k, root, d0, 0.5 * h, r0 * 1.0, gvec, col, nseg=4, stiff=0.6,
+                    out += _lock(rig, owner, k, root, d0, 0.5 * h, r0 * 0.85, gvec, col, nseg=4, stiff=0.6,
                                  tip=0.05)
                     k += 1
                     continue
@@ -853,8 +856,8 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
                 R = np.stack([R[:, 0], R[:, 1], nrm], 1)
                 out += _bow(owner, root + nrm * 0.03 * h + Hd[:, 1] * 0.06 * h, R, 0.17 * h, "bow", f"bow{k}")
         if style == "bun":
-            root, nrm = _cap_point(rig, math.pi * 0.95, 0.6, 1.15)
-            out.append(_P(ell_prim(root + nrm * 0.12 * h, np.eye(3), (0.26 * h,) * 3), owner, "bun", "hair",
+            root, nrm = _cap_point(rig, math.pi * 0.95, 0.72, 1.1)
+            out.append(_P(ell_prim(root + nrm * 0.08 * h, np.eye(3), (0.19 * h,) * 3), owner, "bun", "hair",
                           seam="always", group="hair"))
     if hair.get("ahoge", False) and style not in ("spiky",):
         root, nrm = _cap_point(rig, 0.25, 0.97, 1.08)
