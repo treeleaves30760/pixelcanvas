@@ -75,7 +75,10 @@ PRESET_HANDS = {"run": ("fist", "fist"), "sprint": ("fist", "fist"), "walk": ("r
 # how a preset moves (figure frame: x her right, y up, z forward; metres per second-ish)
 MOTION = {"run": (0, 0.1, 1.0), "sprint": (0, 0.1, 1.3), "walk": (0, 0, 0.35), "walk-together": (0, 0, 0.35),
           "jump": (0, 0.8, 0.1), "leap": (0, 0.3, 0.9), "land": (0, -0.6, 0.2), "dance-twirl": (0.7, 0.1, 0),
-          "kick": (0, 0, 0.3), "punch": (0, 0, 0.4), "swing": (0.3, 0, 0.4)}
+          "kick": (0, 0, 0.3), "punch": (0, 0, 0.4), "swing": (0.3, 0, 0.4),
+          "run-toward": (0, 0.1, 1.0), "sprint-side": (0, 0.1, 1.3), "jump-toward": (0, 0.6, 0.6),
+          "jump-strike": (0, 0.7, 0.3), "jump-tuck": (0, 0.9, 0.1), "fall": (0, -1.4, 0.0), "dance-step": (0.4, 0.1, 0.2),
+          "cheer": (0, 0.5, 0)}
 
 
 def garment_key(word: str) -> Optional[str]:
@@ -95,7 +98,7 @@ def motion_of(rig: dict, F: Dict[str, np.ndarray]) -> Tuple[np.ndarray, bool]:
     right = unit(np.cross([0, 1.0, 0], fwd))
     w = v[0] * right + v[1] * np.array([0, 1.0, 0]) + v[2] * fwd
     lift = float(rig.get("lift") or 0.0)
-    floating = lift > 0.15 and PRESETS.get(pk, {}).get("rest") != "air"
+    floating = (lift > 0.15 and PRESETS.get(pk, {}).get("rest") != "air") or pk == "float"
     return w, floating
 
 
@@ -755,8 +758,9 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     cap["A"] = rig.cr_A * np.array([1.1, 1.08, 1.1])[None, :]
     out.append(cap)
     wind = hair.get("wind")
-    w = np.array([wind[0], -wind[1], 0.0]) if wind is not None else -motion * 1.5
-    gscale = 0.6 if floating else 1.0
+    # the air of the motion, plus any --wind on top of it
+    w = -motion * 1.5 + (np.array([wind[0], -wind[1], 0.0]) if wind is not None else 0.0)
+    gscale = 0.25 if floating else 1.0
     gvec = np.array([0, -1.0, 0]) * gscale + w * 0.8
     if floating:
         gvec = gvec + np.array([0, 0.12, 0]) + Hd[:, 2] * -0.15
