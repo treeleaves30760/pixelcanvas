@@ -341,13 +341,28 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
             ("socks" if "socks" in garments else "thigh-highs" if "thigh-highs" in garments else "skin")
         fr_ = 1.15 if shoe else 1.0
         tip = toe - (toe - heel) * (0.2 if shoe else 0.22)
-        parts.append(_tube(f"foot-{s}", fmat, subj, f"foot-{s}", [ank, ball, tip],
-                           [0.068 * h * k * fr_, 0.062 * h * k * fr_, (0.042 if shoe else 0.03) * h * k * fr_],
-                           {f"ankle-{s}": ank}, point_end=not shoe, round_end=shoe, n_rings=10,
-                           bias=-0.012 * h if shoe else 0.0))
         if shoe:
-            parts[-1]["details"].append({"pts": np.array([J[f"heel-{s}"] + (toe - heel) * 0.05, ball,
-                                                          toe + (toe - heel) * 0.04]), "w": 0.5})
+            # a shoe: the instep from the ankle down to the ball and a sole from behind the heel to a round toe, one
+            # closed outline (the union of the solids), a sole line along its bottom
+            from .render3d import rcone
+            fw = unit(toe - heel)
+            upf = rig.F[f"foot-{s}"][:, 1]
+            r_sole = 0.05 * h * k
+            back = heel - fw * 0.02 * h
+            tipc = toe - fw * 0.04 * h
+            prims = [rcone(ank, ball, 0.07 * h * k, 0.064 * h * k),
+                     rcone(back + upf * 0.01 * h, ball, r_sole, 0.064 * h * k),
+                     rcone(ball, tipc, 0.064 * h * k, 0.048 * h * k)]
+            parts.append(_solid(f"foot-{s}", fmat, subj, f"foot-{s}", prims, {f"ankle-{s}": ank},
+                                rad=0.07 * h, bias=-0.012 * h))
+            low = -upf * 0.62 * r_sole
+            sole = np.array([back + low, heel + fw * 0.3 * float(np.linalg.norm(toe - heel)) + low * 1.05,
+                             ball + low * 1.2, tipc + fw * 0.5 * 0.048 * h * k - upf * 0.35 * 0.048 * h * k])
+            parts[-1]["details"].append({"pts": sole, "w": 0.5})
+        else:
+            parts.append(_tube(f"foot-{s}", fmat, subj, f"foot-{s}", [ank, ball, tip],
+                               [0.068 * h * k, 0.062 * h * k, 0.03 * h * k],
+                               {f"ankle-{s}": ank}, point_end=True, round_end=False, n_rings=10, bias=0.0))
         _ = sock
 
     # ---- clothes
