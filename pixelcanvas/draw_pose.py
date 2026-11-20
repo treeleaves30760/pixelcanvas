@@ -844,8 +844,9 @@ def _pose_report(p, el, res) -> List[str]:
     out.append(f"head seen at yaw {hy:.0f}, pitch {hp:.0f}: pixelcanvas sketch head {el['subject']} takes them "
                f"(the face is drawn on it)")
     if el["subject"]:
-        out.append(f'change: pixelcanvas pose {el["subject"]} --set "arm-r: raise 90, forward 20; knee-l: 60; '
-                   'head: turn 20"   (degrees; -r / -l = the figure\'s own right / left; --show joints names them)')
+        out.append(f'change: pixelcanvas pose {el["subject"]} --lean 15 --twist 20 --look camera --arm-l hip '
+                   '--energy 0.8 | --set "arm-r: raise 90; knee-l: 60" (degrees; -r / -l = her own right / left; '
+                   '--show joints names them)')
     return out
 
 

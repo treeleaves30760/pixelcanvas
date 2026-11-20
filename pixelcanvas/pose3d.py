@@ -529,8 +529,8 @@ def _X(desc, edits, reach=None, hands=None, dynamic=False, contact=None, **kw):
     return p
 
 
-_STAG = {"leg-r": {"forward": 14, "raise": 6}, "knee-r": {"bend": 8}, "leg-l": {"forward": -8, "raise": 2},
-         "knee-l": {"bend": 18}, "foot-l": {"point": 16}}          # weight on the right leg, the left one relaxed
+_STAG = {"leg-r": {"forward": 2, "raise": 6}, "knee-r": {"bend": 4}, "leg-l": {"forward": 10, "raise": -3},
+         "knee-l": {"bend": 22}, "foot-l": {"point": 12}}          # weight on the right leg, the left one relaxed
 _SEIZA = {"leg-r": {"forward": 82, "raise": 5}, "leg-l": {"forward": 82, "raise": 5}, "knee-r": {"bend": 160},
           "knee-l": {"bend": 160}, "foot-r": {"point": 82}, "foot-l": {"point": 82}}
 _CROUCH = {"leg-r": {"forward": 105, "raise": 16}, "leg-l": {"forward": 100, "raise": 16}, "knee-r": {"bend": 140},
@@ -698,7 +698,7 @@ PRESETS.update({
         "chest": {"twist": 20}, "spine": {"bend": 6}, "head": {"tilt": -10, "nod": 8, "turn": 15},
         "arm-l": {"forward": 85, "raise": 10, "twist": -10}, "elbow-l": {"bend": 25},
         "leg-l": {"forward": 18, "raise": 12}, "knee-l": {"bend": 25},
-        "leg-r": {"forward": -10, "raise": 12}, "knee-r": {"bend": 10}}, reach={"r": "cheek-l"},
+        "leg-r": {"forward": -10, "raise": 12}, "knee-r": {"bend": 10}}, reach={"r": "cheek"},
         yaw=-60, plant=True, hands={"r": "grip", "l": "grip"}),
     "bow": _X("a polite bow from the waist, hands together in front of the thighs", {
         "pelvis": {"bend": 18}, "spine": {"bend": 30}, "head": {"nod": 12},
@@ -1872,7 +1872,7 @@ def check_pose(res: dict, blocks: Dict[str, Block]) -> List[str]:
                 not (pre.get("reach") or {}).get(s) and s not in {k[-1] for k in (res.get("targets") or {})}:
             out.append(f"elbow-{s} bends backward ({eb:.0f} deg)")
     for pr in prims:
-        if not pr["part"].startswith(("foot", "shin", "knee", "hand", "thigh", "pelvis")):
+        if not pr["part"].startswith(("foot", "shin", "knee", "hand", "pelvis")):
             continue
         y, pt = lowest(pr)
         sup, name = _support_at(blocks, pt[0], pt[2], y + 0.3)
