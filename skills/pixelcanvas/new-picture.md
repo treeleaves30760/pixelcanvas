@@ -8,7 +8,7 @@ shadows, faces. A problem is fixed at the level that causes it: a wrong pose is 
 |---|---|---|---|
 | 1 brief | shot, camera, figures, scene, light, palette; `brief.md` + `steps.txt` | `pixelcanvas-director` | 1-2 |
 | 2 guide | camera, blocks, posed and dressed figures, the guide | `pixelcanvas-blocker` | 3-6 |
-| 3-4 picture | 2D drawing, background, finish, `final.png` | `pixelcanvas-painter` | 6-12 |
+| 3-4 picture | 2D drawing, finish, `final.png` | `pixelcanvas-painter` | 4-8 |
 | check | the finished picture against the brief | `pixelcanvas-critic` | 2-3 |
 
 ## The run: four subagent calls
@@ -33,7 +33,7 @@ subagent's answer before you end your turn. You open one picture yourself: `fina
 pixelcanvas new pic --mode free --size 1000x1400 --request "<request>"
 pixelcanvas do @steps.txt              # a file of commands, one per line, run as one batch
 pixelcanvas do "draw all; flat auto; shade all"
-pixelcanvas help pose,figure,band      # options and values of several commands in one call
+pixelcanvas help pose,figure,block     # options and values of several commands in one call
 ```
 
 `pixelcanvas figure` sets a whole figure in one line:
@@ -61,5 +61,5 @@ pixelcanvas figure girl --pose run --at 420,900 --heads 6.5 --yaw 30 --set "head
 - **Shot**: framing, camera height and angle, horizon height on the canvas, lens (wide 35 / normal 50 / long 85).
 - **Each figure**: the action in one verb phrase, the preset and the joint edits, yaw, ground point, height,
   contact, hand shapes, clothes, hair, expression, eye colour: the `figure` line says all of it.
-- **Scene**: the blocks a figure touches or stands behind; the far shapes as bands back to front.
+- **Scene**: blocks: the floor, the walls, what a figure touches or stands behind; `draw all` draws them in 2D.
 - **Light** (direction, key and fill colours), **palette** (5-8 named colours), **focus**.

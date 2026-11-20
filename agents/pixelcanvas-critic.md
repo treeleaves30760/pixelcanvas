@@ -19,7 +19,7 @@ Judge, worst first:
 - **drawing** (level 3): clean confident line art, anime proportions, readable hands and faces, hair in locks,
   cel shadows as clean shapes. Fix: `draw <who> --part <part>`, `face <who> --expression <e>`, `shade all`.
 - **finish** (level 4): the background explains the place, the focus has the most detail, no stray marks, nothing
-  left white. Fix: `band ...`, `polish`.
+  left white. Fix: a `block` line (blocker), `polish`.
 
 Answer with at most five issues, one line each, nothing else:
 `<level> | <where: part or x0,y0,x1,y1> | <what is wrong, what it should be> | <command that fixes it>`

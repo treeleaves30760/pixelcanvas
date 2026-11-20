@@ -26,7 +26,6 @@ composition: <where the main figure sits, what leads the eye>
 action: <one verb phrase>   contact: <what touches what>
 ## scene
 blocks (near to far): <name> <kind> <size m> at <x,y>
-bands (far to near): <name> <colour> "<points>" (sky, far walls, windows, trees)
 ## light
 key: <direction, colour>  fill: <colour>
 ## palette
@@ -38,11 +37,16 @@ key: <direction, colour>  fill: <colour>
 `steps.txt`, one command per line (no `pixelcanvas` prefix needed), the camera first:
 
 ```
-camera --horizon 430 --eye-height 1.1 --fov 50
+camera --horizon 430 --eye-height 1.1 --fov 55
 block floor plane --size 6,30,0 --at 500,1000 --color "#9a6234"
-block wall box --size 6,0.4,1.1 --at 300,820 --color "#c9bfae"
-figure girl --pose sit-ledge --on wall --at 420,800 --heads 6.5 --yaw -20 --set "head: turn 30; arm-r: raise 30" --hand-shape-r grip --wear "blouse:white,skirt:#2a2f5a:pleated,thigh-highs:black,shoes:brown" --hair "twintails,blunt,#f09ac0,bows:black" --face "smile,#3a78c8"
+block wall-l box --size 0.3,30,3.2 --at 500,1000 --offset -2.3,0 --color "#e2cfa8"
+figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --set "head: turn 20" --hand-shape-r fist --wear "blouse:white,skirt:navy:pleated,thigh-highs:black,shoes:brown" --hair "twintails,blunt,pink,bows:black" --face "smile,blue"
+figure boy --pose walk --at 680,790 --heads 6.5 --yaw -20 --wear "shirt:white,shorts:#1f2a4a,socks:#1f2a4a,shoes:brown" --hair "short,side,#1a1820" --face "grin,brown"
 ```
+
+The scene is blocks: a floor plane, walls, benches, stairs, railings, poles; `draw all` draws them in 2D with the
+figures. With horizon 430 and eye height 1.1 m a figure standing at y 800-830 is about half the canvas tall; lower
+on the canvas is nearer and bigger.
 
 `figure` options: `--pose <preset>`, `--at x,y` (the ground point under the figure, 0-1000), `--heads 6.5`,
 `--yaw <deg>`, `--set "<joint>: <motion> <deg>; ..."`, `--on <block>`, `--hand-r/-l <block|x,y>`,
