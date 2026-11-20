@@ -358,7 +358,7 @@ PRESETS: Dict[str, dict] = {
         "arm-l": {"forward": 26, "raise": 26}, "elbow-r": {"bend": 18}, "elbow-l": {"bend": 34}}),
     "run": _P("running: leaning forward, right knee up, left leg pushing off on its toes, arms pumping", {
         "body": {"lean": 21}, "pelvis": {"twist": 10}, "chest": {"twist": -12}, "head": {"nod": -18},
-        "leg-r": {"forward": 98, "raise": 12}, "knee-r": {"bend": 128}, "foot-r": {"point": 25},
+        "leg-r": {"forward": 100, "raise": 8}, "knee-r": {"bend": 128}, "foot-r": {"point": 25},
         "leg-l": {"forward": -14, "raise": 6}, "knee-l": {"bend": 8}, "foot-l": {"point": 50},
         "arm-l": {"forward": 45, "raise": 50}, "elbow-l": {"bend": 70},
         "arm-r": {"forward": -50, "raise": 32}, "elbow-r": {"bend": 90}}),
