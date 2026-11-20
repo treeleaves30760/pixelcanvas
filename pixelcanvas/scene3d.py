@@ -38,9 +38,9 @@ KIT_LINES = {
     "bedroom": "a bed against the right wall, a curtained window, boards  [--bed --curtain]",
     "street": "road, pavements, building fronts with window rows, lamp poles  [--time night lights the windows]",
     "platform": "station platform, safety line, rails, roof on pillars, lamps  [--side left|right]",
-    "outdoor": "ground, sky, clouds, far hills  [--far hills|trees|skyline]",
+    "outdoor": "ground, sky, clouds  [--far hills|trees|mountains|sea|skyline --slope --flowers n --water]",
     "field": "grass rows to the horizon, far trees  [--far]",
-    "beach": "sand, wet sand, foam, sea  [--shore m]",
+    "beach": "sand, wet sand, foam, sea  [--shore m; --water: shallow water to the camera]",
     "rooftop": "concrete floor, parapet, wire fence, far skyline",
     "stairs": "a flight of steps between walls, handrails, a lamp  [--steps n]",
     "park": "a paved path between slim trees, grass, far trees  [--blossom for pink cherry trees]",
@@ -420,8 +420,21 @@ def kit_outdoor(k: Kit, kind: str = "outdoor") -> None:
     far = str(o.get("far") or {"outdoor": "hills", "field": "trees", "beach": "sea"}.get(kind, "hills")).lower()
     for w in far.replace(",", " ").split():
         k.far.append({"kind": w})
-    if kind == "beach":
+    if kind == "beach" or o.get("water"):
         k.far.append({"kind": "sea"})
+    if o.get("slope"):
+        k.far.append({"kind": "slope"})
+    if kind == "field" or o.get("flowers"):
+        rng = np.random.default_rng(4)
+        for _ in range(int(o.get("flowers_n") or 26)):         # a few flat flowers near the camera
+            x, z = rng.uniform(-4, 4), rng.uniform(2.2, 7)
+            col = [(250, 250, 250), (246, 210, 90), (236, 120, 140)][int(rng.integers(0, 3))]
+            r = 0.05
+            f = k.face([[x + r * math.cos(t), 0.12 + r * math.sin(t), z] for t in np.linspace(0, 6.28, 10)[:-1]],
+                       col, "flowers", 3, lw=0.4)
+            f["normal"] = np.array([0, 0, -1.0])
+            f["billboard"] = True
+            k.line([x, 0, z], [x, 0.08, z], 3, 0.5, rgb=(70, 120, 60))
     k.clouds = [(160, 0.45, 1.0), (520, 0.3, 0.8), (820, 0.55, 1.2)]
     if kind == "field":
         g = k.col("ground")
@@ -731,11 +744,13 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         g = below & (t < 1e4)
         sea = None
         if any(f["kind"] == "sea" for f in kit.far):
-            shore = float(kit.o.get("shore") or 14.0)
+            shore = 0.0 if kit.o.get("water") else float(kit.o.get("shore") or 14.0)
             sea = g & (t > shore)
             g2 = g & ~sea
         else:
             g2 = g
+        if "hill" in regions and any(f_["kind"] == "slope" for f_ in kit.far):
+            g2 = g2 & (rid != regions.index("hill"))
         img[g2] = kit.ground["rgb"] * mult
         rid[g2] = reg(kit.ground["region"])
         depth[g] = t[g]
@@ -743,6 +758,14 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
             img[sea] = kit.col("sea") * mult
             rid[sea] = reg("sea")
             # the wet sand and a line of foam where the sea meets the beach, a lighter band further out
+            if kit.o.get("water"):
+                # shallow water to the camera: lighter toward the camera, a few ripple lines
+                nearw = np.clip(1 - t / 25.0, 0, 1)[..., None]
+                img[g] = (img[g] * (1 - 0.35 * nearw[g]) + np.asarray(_mix(kit.col("sea"), (200, 240, 240), 0.6),
+                                                                      np.float32) * 0.35 * nearw[g])
+                for zr in (3.0, 5.0, 8.0, 13.0):
+                    ring = g & (np.abs(t - zr) < 0.03 * zr)
+                    img[ring] = _mix(kit.col("sea"), (255, 255, 255), 0.5)
             wet = g & (t > shore * 0.9) & (t <= shore)
             img[wet] = _mix(kit.col("sand"), kit.col("sea"), 0.25) * mult
             foam = g & (t > shore * 0.97) & (t <= shore * 1.02)
@@ -991,6 +1014,30 @@ def _far(kit: Kit, img, rid, reg, cs, hz: float, haze, mult) -> None:
                 m = (np.arange(Hs)[:, None] >= y[None, :]) & (np.arange(Hs)[:, None] <= hz + 1)
                 img[m] = col
                 rid[m] = reg("hill")
+        elif kind == "mountains":
+            for layer, (amp, k_h) in enumerate(((0.16, 0.6), (0.1, 0.4))):
+                pk = np.zeros(Ws, np.float32)
+                for _ in range(4):
+                    c, wdt, hh = rng.uniform(0, Ws), rng.uniform(0.15, 0.35) * Ws, rng.uniform(0.5, 1.0)
+                    pk = np.maximum(pk, hh * np.clip(1 - np.abs(xs - c) / wdt, 0, 1))
+                y = hz - amp * S * pk - 0.01 * S
+                col = _mix(_rgb("#7c8aa8") * mult, haze, k_h)
+                m = (np.arange(Hs)[:, None] >= y[None, :]) & (np.arange(Hs)[:, None] <= hz + 1)
+                img[m] = col
+                rid[m] = reg("mountain")
+                if layer == 0:
+                    snow = m & (np.arange(Hs)[:, None] < (y + 0.025 * S)[None, :])
+                    img[snow] = _mix((250, 250, 255), haze, 0.4)
+        elif kind == "slope":
+            # a rolling grassy hill rising from one side of the picture across the horizon
+            y = hz + 0.02 * S - 0.2 * S * np.clip(1 - xs / (0.75 * Ws), 0, 1) ** 1.6 * \
+                (1 + 0.06 * np.sin(xs / Ws * 9))
+            col = kit.col("ground") * mult
+            m = np.arange(Hs)[:, None] >= y[None, :]
+            img[m] = col
+            rid[m] = reg("hill")
+            cv2.polylines(img, [np.stack([xs, y], 1).astype(np.int32)], False,
+                          tuple(float(v) for v in _mix(col, (0, 0, 0), 0.35)), max(1, int(0.0018 * S)), cv2.LINE_AA)
         elif kind in ("trees", "forest"):
             col = _mix(kit.col("tree") * mult, haze, 0.45)
             m = np.zeros((Hs, Ws), np.uint8)
@@ -1034,9 +1081,9 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
             "shift", "light", "side", "far", "sky", "ground", "road", "building", "door", "window", "lamp",
             "line", "steps", "at", "platform", "roof", "sea", "sand", "hill", "tree", "fence", "concrete",
             "pavement", "board", "desk", "stairs", "haze", "lamp-every", "shore", "bed", "curtain", "track",
-            "weather"]
+            "weather", "flowers"]
     spec = {v: "value" for v in vals}
-    spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag", "blossom": "flag"})
+    spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag", "blossom": "flag", "slope": "flag", "water": "flag"})
     a = parse(args, Spec(USAGE["scene"], ["kit"], spec, alias={"colour": "color", "tod": "time"}, min_pos=0))
     kit = str(a.get("kit") or "").lower()
     o = {}
@@ -1061,8 +1108,12 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
         o["arch"] = False
     elif a.get("arch"):
         o["arch"] = True
-    if a.get("blossom"):
-        o["blossom"] = True
+    for fl in ("blossom", "slope", "water"):
+        if a.get(fl):
+            o[fl] = True
+    if "flowers" in o:
+        o["flowers_n"] = int(float(o.pop("flowers")))
+        o["flowers"] = True
     if "weather" in o and o["weather"] not in ("clear", "cloudy", "rain", "snow"):
         raise UsageError("--weather is clear, cloudy, rain or snow", USAGE["scene"])
     if a.get("no-polish"):
@@ -1103,6 +1154,7 @@ def paint(p, rec: dict) -> Dict[str, np.ndarray]:
     elif (p.root / LIGHT_NPZ).exists():
         (p.root / LIGHT_NPZ).unlink()
     p._write_layer_file("light", la if len(res) == 3 else None)
+    _weather_front(p, rec["opts"])
     d = dc.dstate(p)
     from .regions import clean_name
     for name, m in masks.items():
@@ -1209,6 +1261,36 @@ def relight(p) -> None:
     p._write_layer_file("light", _figure_light(p, la))
 
 
+def _weather_front(p, o: dict) -> None:
+    """Rain or snow in front of everything: a sparse layer above the line art (a few streaks or flakes)."""
+    w = str(o.get("weather") or "clear")
+    names = [e["name"] for e in p.state["layers"]]
+    if w not in ("rain", "snow"):
+        if "weather" in names:
+            p._write_layer_file("weather", None)
+        return
+    if "weather" not in names:
+        at = names.index("line") + 1 if "line" in names else len(names)
+        p.state["layers"].insert(at, {"name": "weather", "mode": "normal", "opacity": 1.0, "visible": True,
+                                      "clip": False, "alpha_lock": False, "empty": True})
+    W, H = p.W, p.H
+    S = float(max(W, H))
+    a = np.zeros((H, W, 4), np.float32)
+    rng = np.random.default_rng(33)
+    if w == "rain":
+        for _ in range(int(0.00002 * W * H * (1000.0 / S) ** 2 * 6)):
+            x, y = rng.uniform(-0.1 * W, W), rng.uniform(0, H)
+            L = rng.uniform(0.04, 0.08) * S
+            cv2.line(a, (int(x), int(y)), (int(x + 0.18 * L), int(y + L)), (0.86, 0.9, 0.96, 0.55),
+                     max(1, int(0.0015 * S)), cv2.LINE_AA)
+    else:
+        for _ in range(int(0.00002 * W * H * (1000.0 / S) ** 2 * 5)):
+            x, y = rng.uniform(0, W), rng.uniform(0, H)
+            cv2.circle(a, (int(x), int(y)), max(1, int(rng.uniform(0.004, 0.008) * S)), (1.0, 1.0, 1.0, 0.9), -1,
+                       cv2.LINE_AA)
+    p._write_layer_file("weather", a)
+
+
 def _light_layer(p) -> None:
     """The scene's light: a multiply layer under the line art, over the scene and the figures (night, sunset)."""
     names = [e["name"] for e in p.state["layers"]]
@@ -1244,7 +1326,7 @@ def cmd_scene(ctx, args):
     rec = {"kit": kit, "opts": o}
     before = dc.composite_u8(p, "view")
     names = [f"regions/{n}.png" for n in p.state.get("regions", {})]
-    step = p.begin_step(["layers/paper.png", "layers/light.png"] + names + [f"regions/{n}.png" for n in
+    step = p.begin_step(["layers/paper.png", "layers/light.png", "layers/weather.png"] + names + [f"regions/{n}.png" for n in
                                                         ("wall", "floor", "ceiling", "sky", "ground")])
     try:
         d["scene3d"] = rec

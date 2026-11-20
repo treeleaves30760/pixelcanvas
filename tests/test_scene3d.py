@@ -94,3 +94,15 @@ def test_block_front_draws_over_the_figure(draw):
     ok(draw("block", "rail", "fence", "--at", "500,960", "--size", "3,0.06,1.0", "--front"))
     assert [b for b in state()["draw"]["sketch"] if b.get("name") == "rail"][0]["front"] is True
     ok(draw("draw", "all"))
+
+
+def test_slope_mountains_water_and_front_rain(draw):
+    cam = P3.Camera(200, 150, horizon=450, eye=1.4)
+    _, m = S3.render(S3.build_kit("field", {"slope": True, "far": "mountains"}), cam, 200, 150)
+    assert m["hill"].any() and m["mountain"].any()
+    _, m = S3.render(S3.build_kit("beach", {"water": True}), cam, 200, 150)
+    assert m["sea"][-5:].mean() > 0.9                 # the water comes to the camera
+    _scene(draw)
+    ok(draw("scene", "street", "--weather", "rain"))
+    names = [e["name"] for e in state()["layers"]]
+    assert names.index("weather") > names.index("line")
