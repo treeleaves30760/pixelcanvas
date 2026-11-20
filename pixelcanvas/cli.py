@@ -41,6 +41,7 @@ class Report:
     next: str = ""
     touched: Optional[Tuple[int, int, int, int]] = None   # px box changed (for batches)
     mutated: bool = False
+    max_lines: int = MAX_LINES
 
     def add(self, line: str) -> None:
         self.lines.append(line)
@@ -53,7 +54,7 @@ class Report:
         if self.view_ref:
             tail.append(f"VIEW-REF: {self.view_ref}   (the reference over the same area)")
         tail.append("NEXT: " + (self.next or "pixelcanvas next"))
-        room = MAX_LINES - len(tail)
+        room = self.max_lines - len(tail)
         if len(body) > room:
             cut = len(body) - room + 1
             body = body[: room - 1] + [f"... ({cut} more lines; see  pixelcanvas status)"]
@@ -88,9 +89,31 @@ class Spec:
 
 LIST_OPTS = ("plus", "minus", "accent", "regions")   # options that take a list: repeats join with ';'
 
+# option names sessions guess; used only when the command has the target option and not the guessed one
+OPT_ALIAS = {"elevation": "lift", "raise": "lift", "y-offset": "lift", "colour": "color", "col": "color",
+             "fill": "color", "position": "at", "pos": "at", "where": "at", "facing": "yaw", "turn": "yaw",
+             "rotation": "yaw", "rotate": "rot", "hand-shape-right": "hand-shape-r", "hand-shape-left": "hand-shape-l",
+             "shape-r": "hand-shape-r", "shape-l": "hand-shape-l", "expr": "expression", "emotion": "expression",
+             "eye": "eyes", "eye-color": "eyes", "fringe": "bangs", "cut": "style", "kind": "style",
+             "type": "kind", "width": "size", "thickness": "weight", "w": "weight", "out": "to", "output": "to",
+             "part": "region", "parts": "regions", "region": "part"}
+
+
+class _SpecProbe(Exception):
+    """Raised by parse() while `help <cmd>` probes a command for its options."""
+
+    def __init__(self, spec: "Spec"):
+        super().__init__("probe")
+        self.spec = spec
+
+
+_PROBE = [False]
+
 
 def parse(tokens: List[str], spec: Spec) -> Dict[str, object]:
     import difflib
+    if _PROBE[0]:
+        raise _SpecProbe(spec)
     out: Dict[str, object] = {}
     posvals: List[str] = []
     i = 0
@@ -103,6 +126,8 @@ def parse(tokens: List[str], spec: Spec) -> Dict[str, object]:
                 key, val = key.split("=", 1)
             key = key.lower().replace("_", "-")
             key = spec.alias.get(key, key)
+            if key not in spec.opts and OPT_ALIAS.get(key) in spec.opts:
+                key = OPT_ALIAS[key]
             if key not in spec.opts:
                 close = difflib.get_close_matches(key, names, n=1, cutoff=0.5)
                 hint = f" (did you mean --{close[0]}?)" if close else ""
@@ -535,8 +560,136 @@ USAGE = {
 }
 
 
+# what `help <cmd>` adds to the options list: the values an option takes, in one or two lines
+HELP_NOTES = {
+    "figure": ["one call: pose + dress + hair3d + face for a figure; options are the pose options plus --wear, "
+               "--hair, --face",
+               "--wear \"blouse,skirt:#2c3460:pleated,thigh-highs:black,shoes:brown\" (piece[:colour[:style|length|"
+               "sleeve]]; --color is the default colour)",
+               "--hair \"twintails,blunt,#f09ac0,bows:black\" (style, bangs, colour; wind:dx/dy)   "
+               "--face \"smile,#3a78c8\" (expression, eye colour)"],
+    "pose": ["presets: pixelcanvas pose list; --set \"<joint>: <motion> <deg>; ...\" joints: body pelvis spine chest "
+             "neck head arm-r/-l elbow-r/-l hand-r/-l leg-r/-l knee-r/-l foot-r/-l",
+             "motions: arm raise|forward|twist, elbow bend, leg forward|raise|twist, knee bend, spine/chest bend|side|"
+             "twist, head turn|tilt|nod, body lean; --hand-shape-r/-l relaxed|fist|open|point|grip|peace|cup",
+             "--at x,y ground point; --heads 6.5 | --height 1.6 (m); --yaw deg; --on <block>; --hand-r/--foot-l "
+             "<block|x,y> contact"],
+    "block": ["kinds: box stairs cylinder plane railing; --size w,d,h (m); --at x,y ground point; --lift m (height "
+              "above the ground); --offset dx,dz (m); --rot deg; --steps n"],
+    "camera": ["--horizon 0-1000 (y of the eye line), --eye-height m, --fov deg (35 wide, 50 normal, 85 long), "
+               "--tilt deg"],
+    "dress": ["pieces: pixelcanvas dress list; --length short|knee|long --sleeve none|short|long --fit tight|loose "
+              "--style pleated|flared|pencil|open|closed --trim <colour>"],
+    "hair3d": ["--style long|medium|bob|short|spiky|ponytail|twintails|braid|bun  --bangs blunt|side|parted|none  "
+               "--wind dx,dy | left | right | back | auto  --bows <colour>"],
+    "face": ["--expression neutral|smile|open|grin|angry|sad|crying|surprised|panicked|sleepy  --eyes <colour>"],
+    "draw": ["draw all | <who> [--part hair|face|head|torso|arm-r|arm-l|leg-r|leg-l|hand-r|hand-l] | scene"],
+    "do": ["pixelcanvas do \"a; b; c\" runs commands as one batch; pixelcanvas do @steps.txt runs a file, one "
+           "command per line (# starts a comment)"],
+    "line": ['line "x,y x,y ..." [--weight 1.2] [--color c] draws one stroke; line redo <id> "x,y ..."; '
+             'line weight <id> <w>; line delete <id>[,<id>...]; line list [--all]'],
+    "band": ["band <name> \"x,y x,y ...\" --color <c> [--above | --below | --closed] [--behind <regions>] "
+             "[--depth 0-1]: a sky / land / wall shape behind the figures"],
+}
+
+
+HELP_SYNTAX = {"face": "face <who>   options: --expression --eyes --weight --keep-eyes   (a 3D figure's face)"}
+HELP_SUBWORDS = {"line": ("redo", "weight", "delete", "list", "close", "move"), "pose": ("list",),
+                 "dress": ("list",), "block": ("list",), "stage": ("done",), "region": ("add", "list", "rest"),
+                 "change": ("add", "list", "drop", "none"), "palette": ("make", "pick", "set", "map")}
+
+
+def _scratch_project() -> Optional[Project]:
+    """A tiny free-mode project in the temp folder: lets `help`, `pose list`, `dress list` ... run without one."""
+    import tempfile
+    root = Path(tempfile.gettempdir()) / "pixelcanvas-scratch"
+    d = root / "scratch.pixelcanvas"
+    try:
+        return Project.find(str(d))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        c = Ctx(None)
+        cmd_new(c, [str(root / "scratch"), "--mode", "free", "--size", "200x200"])
+        return c._project
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _probe_spec(ctx: Ctx, name: str, sub: List[str]) -> Optional[Spec]:
+    fn = COMMANDS.get(name)
+    if fn is None:
+        return None
+    p = None
+    try:
+        p = ctx.project
+    except Exception:  # noqa: BLE001
+        p = _scratch_project()
+    if p is None:
+        return None
+    for args in (list(sub), list(sub) + ["x"], list(sub) + ["x", "x"]):
+        c = Ctx(str(p.root), batch=True)
+        c._project = p
+        _PROBE[0] = True
+        try:
+            fn(c, args)
+        except _SpecProbe as e:
+            return e.spec
+        except Exception:  # noqa: BLE001
+            continue
+        finally:
+            _PROBE[0] = False
+            try:
+                p.reload()
+            except Exception:  # noqa: BLE001
+                pass
+    return None
+
+
+def _help_one(ctx: Ctx, name: str, sub: List[str]) -> List[str]:
+    if name not in COMMANDS:
+        import difflib
+        close = difflib.get_close_matches(name, list(COMMANDS), n=1, cutoff=0.5)
+        return [f"{name}: no such command" + (f" (did you mean {close[0]}?)" if close else "")]
+    sp = None if name in HELP_SYNTAX and not sub else _probe_spec(ctx, name, sub)
+    head = " ".join([name] + list(sub))
+    out = []
+    if sp is None and name in HELP_SYNTAX and not sub:
+        out.append(HELP_SYNTAX[name])
+    elif sp is not None:
+        pos = " ".join(f"<{x.rstrip('*')}>" + ("..." if x.endswith("*") else "") for x in sp.pos)
+        opts = " ".join("--" + k + ("" if v == "flag" else "") for k, v in sp.opts.items())
+        out.append(f"{head} {pos}".rstrip() + (f"   options: {opts}" if opts else ""))
+    else:
+        out.append(head)
+    out.extend("  " + n for n in HELP_NOTES.get(name, []))
+    ex = USAGE.get(name)
+    if sp is not None and sp.usage and sp.usage.startswith("pixelcanvas"):
+        ex = sp.usage
+    if ex:
+        out.append(f"  EXAMPLE: {ex}")
+    return out
+
+
 def cmd_help(ctx: Ctx, args: List[str]) -> Report:
     rep = Report()
+    if args:
+        # help pose  |  help pose,dress,hair3d  |  help pose dress hair3d  |  help line redo
+        names = [w for a in args for w in a.replace(",", " ").split() if w]
+        groups: List[Tuple[str, List[str]]] = []
+        for w in names:
+            if groups and w.lower() in HELP_SUBWORDS.get(groups[-1][0], ()) and not groups[-1][1]:
+                groups[-1][1].append(w.lower())
+            elif w.lower() in COMMANDS or not groups:
+                groups.append((w.lower(), []))
+            else:
+                groups[-1][1].append(w)
+        for name, sub in groups:
+            rep.lines.extend(_help_one(ctx, name, sub))
+        rep.max_lines = 200
+        rep.next = "run the EXAMPLE with your values"
+        return rep
     rep.add("pixelcanvas: a paint program. Coordinates are 0-1000 on each axis (x right, y down).")
     rep.add("after each command: read the report, open VIEW (the canvas) and, to compare, VIEW-REF (the reference)")
     rep.add("setup:   new  style  mode hand  status  next  todo [--all]  stage  undo [n]  redo")
@@ -2890,6 +3043,13 @@ def split_batch(text: str) -> List[str]:
 def cmd_do(ctx: Ctx, args: List[str]) -> Report:
     if not args:
         raise UsageError("do needs commands separated by ;", USAGE["do"])
+    if len(args) == 1 and args[0].startswith("@"):
+        src = Path(args[0][1:])
+        if not src.is_file():
+            raise UsageError(f"no file {src}: write one command per line, then  pixelcanvas do @{src}",
+                             "pixelcanvas do @steps.txt")
+        body = src.read_text(encoding="utf-8-sig")
+        args = ["\n".join(ln for ln in body.splitlines() if ln.strip() and not ln.strip().startswith("#"))]
     if any(";" in x for x in args) or len(args) == 1:
         text = " ".join(args)
     elif all(" " in x for x in args):
@@ -3015,6 +3175,16 @@ COMMANDS: Dict[str, Callable] = {
     "layer": cmd_layer, "layers": lambda c, a: cmd_layer(c, a or ["list"]), "export": cmd_export, "do": cmd_do,
     "fx": cmd_fx, "text": cmd_text, "fonts": cmd_fonts, "help": cmd_help,
 }
+
+
+def _cmd_figure(ctx, args):
+    from .cli_figure import cmd_figure
+    return cmd_figure(ctx, args)
+
+
+COMMANDS["figure"] = _cmd_figure
+USAGE["figure"] = ('pixelcanvas figure girl --pose run --at 500,900 --yaw 30 --wear "blouse:white,skirt:#2c3460:pleated,'
+                   'shoes:brown" --hair "twintails,blunt,#f09ac0" --face "smile,#3a78c8"')
 
 _DRAW_INSTALLED = False
 
@@ -3152,9 +3322,17 @@ def run(argv: List[str]) -> Tuple[int, str]:
         argv = ["next"] if _has_project(proj) else ["help"]
     if len(argv) > 1 and any(t in ("--help", "-h", "-?", "help") for t in argv[1:]) and argv[0] != "text":
         argv = ["help", argv[0]]
+    if argv[0].lower() in ("pose", "block", "dress", "prop", "hair3d") and argv[1:2] == ["list"]             and not _has_project(proj):
+        sp = _scratch_project()          # the lists need no project of yours
+        if sp is not None:
+            ctx.project_arg = str(sp.root)
     try:
         t_cmd = time.time()
         rep = dispatch(ctx, argv)
+        if argv[1:2] == ["list"]:
+            rep.max_lines = 300          # a list is read once, whole
+            if ctx.project_arg and "pixelcanvas-scratch" in str(ctx.project_arg):
+                rep.next = 'pixelcanvas new pic --mode free --size 1000x1400 --request "<the request>"'
         code = getattr(ctx, "exit_code", 0)
         _log_seconds(ctx, time.time() - t_cmd, code)
         lines = rep.text().split("\n")

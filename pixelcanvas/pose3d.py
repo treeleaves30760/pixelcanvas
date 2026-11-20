@@ -175,7 +175,7 @@ LIMITS: Dict[str, Dict[str, Tuple[float, float]]] = {
 SIDED = ("arm", "elbow", "hand", "leg", "knee", "foot")
 CENTRAL_SIGNED = {"body": ("roll", "turn"), "pelvis": ("side", "twist"), "spine": ("side", "twist"),
                   "chest": ("side", "twist"), "neck": ("turn", "tilt"), "head": ("turn", "tilt")}
-JOINT_ALIAS = {"hips": "pelvis", "thigh": "leg", "upperleg": "leg", "shoulder": "arm", "upperarm": "arm",
+JOINT_ALIAS = {"hips": "pelvis", "hip": "leg", "thigh": "leg", "upperleg": "leg", "shoulder": "arm", "upperarm": "arm",
                "forearm": "elbow", "lowerarm": "elbow", "wrist": "hand", "ankle": "foot", "waist": "spine",
                "torso": "spine", "back": "spine", "belly": "spine", "ribs": "chest", "root": "body", "whole": "body",
                "figure": "body", "shin": "knee", "lowerleg": "knee", "face": "head"}

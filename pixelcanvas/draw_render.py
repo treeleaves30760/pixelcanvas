@@ -619,6 +619,7 @@ def cmd_hair3d(ctx, args):
     hair.setdefault("style", "medium")
     if a.get("bangs"):
         b = str(a["bangs"]).lower()
+        b = {"swept": "side", "side-swept": "side", "straight": "blunt", "center": "parted"}.get(b, b)
         if b not in F3.BANGS:
             raise UsageError(f"--bangs is one of {', '.join(F3.BANGS)}", USAGE["hair3d"])
         hair["bangs"] = b
@@ -629,6 +630,7 @@ def cmd_hair3d(ctx, args):
             hair[key] = str(a[key])
     if a.get("wind"):
         w = str(a["wind"]).lower()
+        w = {"left": "-0.6,0", "right": "0.6,0", "back": "auto", "behind": "auto", "up": "0,-0.6"}.get(w, w)
         if w in ("auto", "none", "off"):
             hair.pop("wind", None)
         else:
