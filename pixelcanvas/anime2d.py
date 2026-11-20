@@ -341,11 +341,7 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
             elif pr["t"] in ("ell", "rcone", "cyl"):
                 parts.append(_solid(nm, f"prop:{pe['name']}", subj, "props", [pr], rad=0.05))
             elif pr["t"] == "box":
-                A = np.asarray(pr["A"], float)
-                q = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], float)
-                P_ = np.asarray(pr["c"], float) + q @ A.T
-                parts.append(_blob(nm, f"prop:{pe['name']}", subj, "props", P_, unit(q @ A.T), rad=0.05, hull=True,
-                                   bias=-0.01))
+                parts.append(_box2d(pr, nm, f"prop:{pe['name']}", subj, cam))
     # the joints the folds and seams need
     for pt in parts:
         pt.setdefault("subj", subj)
@@ -698,6 +694,44 @@ def _hand2d(rig, s: str, shape: str, mat: str, subj: str, eye: np.ndarray, h: fl
     """The drawn hand of side s (see hand2d): one part, or two for a hand gripping a prop."""
     from .hand2d import hand_parts
     return hand_parts(rig, s, shape, mat, subj, eye, h, k, cam, grip_r)
+
+
+def _box2d(pr: dict, name: str, mat: str, subj: str, cam=None) -> dict:
+    """A box prop (a blade, a guard, a book, a bag): its outline is the hull of its corners as the camera sees them
+    (corner normals along the box's own diagonals, so a thin long box keeps both ends); a blade gets one highlight
+    line along its edge."""
+    A = np.asarray(pr["A"], float)
+    c = np.asarray(pr["c"], float)
+    q = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], float)
+    P_ = c + q @ A.T
+    ax = A / np.maximum(np.linalg.norm(A, axis=0), 1e-9)
+    N_ = unit(q @ ax.T)
+    # many samples on the faces so the front faces always have some
+    f = np.linspace(-1, 1, 5)
+    S, SN = [P_], [N_]
+    for k in range(3):
+        for sg in (-1.0, 1.0):
+            g = np.array([[a, b] for a in f for b in f])
+            Q = np.zeros((len(g), 3))
+            o = [j for j in range(3) if j != k]
+            Q[:, o[0]], Q[:, o[1]], Q[:, k] = g[:, 0], g[:, 1], sg
+            S.append(c + Q @ A.T)
+            SN.append(np.repeat((sg * ax[:, k])[None], len(g), 0))
+    kw = {}
+    if cam is not None:
+        import cv2
+        qq, zz = cam.project(P_)
+        if (zz > 0.05).all():
+            hull = cv2.convexHull(qq.astype(np.float32), returnPoints=False).ravel()
+            kw["poly3"] = P_[hull]
+    part = _blob(name, mat, subj, "props", np.vstack(S), np.vstack(SN), rad=0.05, hull=True, bias=-0.01, **kw)
+    if name.endswith("blade"):
+        L = np.linalg.norm(A, axis=0)
+        i = int(np.argmax(L))
+        j = int(np.argsort(L)[1])
+        part["details"].append({"pts": np.array([c - A[:, i] * 0.92 + A[:, j] * 0.35, c + A[:, i] * 0.9 + A[:, j] * 0.35]),
+                                "w": 0.45})
+    return part
 
 
 def _canopy2d(pr: dict, name: str, mat: str, subj: str) -> dict:

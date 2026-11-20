@@ -32,7 +32,7 @@ _FIST_THUMB = ((0.55, 0.2, 0.8), (0.25, -0.8, 0.55))
 SHAPES: Dict[str, dict] = {
     "relaxed": {"curl": [(14, 22, 12), (22, 28, 14), (28, 32, 16), (34, 36, 18)], "spread": (8, 0, -3, -7),
                 "thumb": ((0.7, 0.62, 0.3), (0.85, 0.2, 0.35))},
-    "open": {"curl": [(3, 5, 3)] * 4, "spread": (12, 2, -4, -12), "thumb": ((0.5, 0.85, 0.08), (0.7, 0.7, 0.0))},
+    "open": {"curl": [(4, 6, 4), (3, 5, 3), (4, 6, 4), (6, 8, 5)], "spread": (10, 2, -5, -12), "thumb": ((0.5, 0.85, 0.08), (0.7, 0.7, 0.0))},
     "spread": {"curl": [(2, 3, 2)] * 4, "spread": (18, 4, -9, -24), "thumb": ((0.3, 0.95, 0.0), (0.5, 0.86, 0.0))},
     "flat": {"curl": [(0, 2, 1)] * 4, "spread": (3, 0, -1, -3), "thumb": ((0.72, 0.62, 0.0), (0.92, 0.38, 0.0))},
     "reach": {"curl": [(10, 14, 8), (12, 16, 9), (15, 18, 10), (18, 22, 12)], "spread": (11, 2, -5, -12),
@@ -100,7 +100,7 @@ def hand_pieces(W, u, t, n, L: float, shape: str, grip_r: Optional[float] = None
     d2 = unit(sp["thumb"][1][0] * u + sp["thumb"][1][1] * t + sp["thumb"][1][2] * n)
     m = tb + d1 * 0.25 * L
     out.append({"kind": "cap", "label": 10, "a": P(0.02, 0.05, 0.02), "b": m, "ra": 0.085 * L, "rb": 0.055 * L})
-    out.append({"kind": "cap", "label": 11, "a": m, "b": m + d2 * 0.2 * L, "ra": 0.052 * L, "rb": 0.04 * L})
+    out.append({"kind": "cap", "label": 11, "a": m, "b": m + d2 * 0.2 * L, "ra": 0.054 * L, "rb": 0.047 * L})
     # the fingers
     for i in range(4):
         kx, ky = KNUCKLES[i]
@@ -114,7 +114,7 @@ def hand_pieces(W, u, t, n, L: float, shape: str, grip_r: Optional[float] = None
             d, nn = unit(math.cos(b) * d + math.sin(b) * nn), unit(-math.sin(b) * d + math.cos(b) * nn)
             q = p + d * (FINGER_LEN[i] * frac * L + (0.04 * L if j == 0 else 0.0))
             out.append({"kind": "cap", "label": 20 + 4 * i + j, "a": p, "b": q, "ra": r * (1 - 0.07 * j),
-                        "rb": r * (0.93 - 0.1 * j) if j < 2 else r * 0.72})
+                        "rb": r * (0.93 - 0.1 * j) if j < 2 else r * 0.86})
             p = q
     return out
 
@@ -263,7 +263,7 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
     from .anime2d import _part
     W, u, t, n = F3.hand_frame(rig, s)
     W = np.asarray(W, float)
-    L = 0.5 * h * min(k, 1.15) * 0.95
+    L = 0.5 * h * min(k, 1.15) * 1.05              # wrist to fingertip about 0.75 of the face (chin to hairline)
     name, _ = shape_of(shape)
     eye = np.asarray(eye, float)
     shift = np.zeros(3)
@@ -297,7 +297,7 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
     ker = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * close_r + 1, 2 * close_r + 1))
     covm = cv2.morphologyEx(cover.astype(np.uint8), cv2.MORPH_CLOSE, ker)
     gL = GRID / (ext / L)                                   # grid px per hand length
-    if name != "spread":
+    if name in ("relaxed", "flat", "reach", "cup"):
         # the anime grouping: middle, ring and little finger one tapered shape (the index stays apart)
         grp = np.isin(_finger_of(lb), [3, 4, 5]).astype(np.uint8)
         rg = int(max(2, round((0.11 if small else 0.07) * gL)))
@@ -324,7 +324,12 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
             ok = [q for q in g if 0 <= int(q[1]) < inner.shape[0] and 0 <= int(q[0]) < inner.shape[1]
                   and inner[int(q[1]), int(q[0])]]
             if len(ok) >= 2 and np.linalg.norm(ok[-1] - ok[0]) > 0.12 * gL:
-                lines.insert(0, np.array(ok))
+                # one smooth arc through the knuckles (a quadratic from the first to the last, bowed to the middle)
+                a0, a1, cm = ok[0], ok[-1], np.mean(ok, 0)
+                ctl = 2 * cm - 0.5 * (a0 + a1)
+                tt = np.linspace(0, 1, 9)[:, None]
+                arc = (1 - tt) ** 2 * a0 + 2 * (1 - tt) * tt * ctl + tt ** 2 * a1
+                lines = [arc] + lines[:1]
     if not lines and name not in ("fist", "point", "grip"):
         # no edge to read (a hand seen from its side): the separation between the index and the middle finger
         def chain(i):

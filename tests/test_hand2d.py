@@ -39,3 +39,17 @@ def test_a_fist_has_inner_lines_and_a_spread_hand_is_wider_than_a_fist():
         q, _ = cam.project(np.asarray(p["flat3"]))
         return float(np.ptp(q, axis=0).max())
     assert width("spread") > width("fist") * 1.2
+
+
+def test_a_sword_blade_is_drawn_as_a_long_outline_with_an_edge_line():
+    from pixelcanvas import anime2d as A2
+    from pixelcanvas import draw_figure2d as DF
+    cam = P3.Camera(700, 980, horizon=430, eye=1.25)
+    spec = {"preset": "fight-stance", "at": [500, 930]}
+    res = P3.solve_figure(spec, cam, {}, {})
+    held = [{"type": "sword", "hand": "r", "name": "sword", "id": "P1", "subject": "g"}]
+    parts = A2.figure_parts({"rig": spec}, res["body"], res["J"], res["F"], {}, "g", held, eye=cam.C, cam=cam)
+    blade = next(pt for pt in parts if pt["name"] == "sword-blade")
+    q, _ = cam.project(np.asarray(blade["poly3"]))
+    assert np.ptp(q, axis=0).max() > 100 and len(blade["details"]) == 1
+    _ = DF
