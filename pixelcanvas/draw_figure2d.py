@@ -436,7 +436,7 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
             continue
         block = pt["kind"] == "plane" or pt.get("block")
         for st in S2.outline_strokes(o["poly"], k, R, _keep_fn(sc, k, R), step, min_len * 1.5,
-                                     sigma=0.6 if block else (4.0 if pt["name"] == "head" else 2.5),
+                                     sigma=0.6 if block else (3.0 if pt["name"] == "head" else 2.5),
                                      bridge=int(round(0.006 * S / step))):
             c = st["cls"]
             if block:
@@ -587,6 +587,19 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     side = float(rig.Hd[:, 0] @ ((cam.C - hc) / max(1e-9, float(np.linalg.norm(cam.C - hc)))))
     if abs(side) > 0.85 and float(rig.Hd[:, 2] @ (cam.C - hc)) > -0.2 * float(np.linalg.norm(cam.C - hc)):
         specs = _profile_face(rig, cam, specs, fc.get("expression", "neutral"), side, hp, iris, lash, shape)
+    cut = None
+    if 0.35 < abs(side) <= 0.85:
+        # three-quarter view: the nose bridge hides the inner corner of the far eye
+        fs = -1.0 if side > 0 else 1.0
+        bq, _ = cam.project(F3.face_surface(rig, np.array([[fs * 0.035, 0.02], [fs * 0.035, -0.2],
+                                                              [-fs * 0.12, -0.1]])))
+        dvec = bq[1] - bq[0]
+        nrm2 = np.array([-dvec[1], dvec[0]])
+        ref = float((bq[2] - bq[0]) @ nrm2)
+        far_s = "l" if fs < 0 else "r"
+
+        def cut(P, far_s=far_s, b0=bq[0], nrm2=nrm2, ref=ref):
+            return ((np.asarray(P, float) - b0) @ nrm2) * ref > 0      # True: on the nose's near side (hidden)
     unit = max(0.55, hp / 110.0)                          # px per weight unit; a 220 px head: 2 px
     wk = unit / base_width(p)
     from .draw_render import material_colours
@@ -600,6 +613,9 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         P = sp["px"]
         # brows show through the bangs (as anime draws them); everything else only where the face shows
         vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")) | (sp["kind"] in ("brow", "mark")))
+        far_eye = cut is not None and sp["name"].split("-")[0] in _EYE_PARTS and             sp["name"].partition("-")[2][:1] == cut.__defaults__[0]
+        if far_eye:
+            vis = vis & ~cut(P)
         sp["vis2"] = vis
         if sp.get("fill") is None and sp["kind"] != "skin":
             continue
@@ -608,6 +624,9 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         m = dc.poly_mask(p.H, p.W, P)
         if not sp.get("float"):
             m &= head_m
+        if far_eye:
+            yy, xx = np.mgrid[0:p.H, 0:p.W]
+            m &= ~cut(np.stack([xx.ravel(), yy.ravel()], 1)).reshape(p.H, p.W)
         if sp.get("clip"):
             cm = clips.get(sp["clip"])
             if cm is None:
