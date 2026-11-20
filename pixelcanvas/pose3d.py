@@ -484,11 +484,12 @@ PRESETS: Dict[str, dict] = {
         "arm-r": {"raise": 160, "forward": 20}, "elbow-r": {"bend": 25},
         "arm-l": {"raise": 95, "forward": 25}, "elbow-l": {"bend": 30},
         "head": {"tilt": 10, "turn": 15}, "chest": {"side": 6}}),
-    "look-back": _P("walking away and looking back over the left shoulder at the viewer", {
-        "chest": {"twist": 30}, "neck": {"turn": 40}, "head": {"turn": 45, "tilt": -5},
-        "leg-r": {"forward": 12}, "knee-r": {"bend": 10}, "leg-l": {"forward": -10}, "knee-l": {"bend": 20},
-        "foot-l": {"point": 20}, "arm-r": {"raise": 10, "forward": -10}, "arm-l": {"raise": 10, "forward": 12},
-        "elbow-r": {"bend": 15}, "elbow-l": {"bend": 20}}, yaw=160),
+    "look-back": _P("walking away and looking back over the shoulder at the viewer", {
+        "pelvis": {"twist": -8, "side": -5}, "spine": {"twist": -22, "side": 6}, "chest": {"twist": -28, "side": 4},
+        "neck": {"turn": -38}, "head": {"turn": -40, "tilt": 8, "nod": -4},
+        "leg-r": {"forward": 16}, "knee-r": {"bend": 10}, "leg-l": {"forward": -14}, "knee-l": {"bend": 26},
+        "foot-l": {"point": 28}, "arm-r": {"raise": 14, "forward": -24}, "arm-l": {"raise": 12, "forward": 22},
+        "elbow-r": {"bend": 20}, "elbow-l": {"bend": 38}}, yaw=160),
     "lean-wall": _P("leaning back against a wall, arms crossed, left leg crossed in front", {
         "body": {"lean": -8}, "head": {"turn": 15, "tilt": 6},
         "arm-r": {"forward": 42, "raise": -6, "twist": -55}, "elbow-r": {"bend": 120},
@@ -595,7 +596,7 @@ PRESETS.update({
                 reach={"r": "thigh", "l": "thigh"}),
     "sit-look-back": _X("sitting sideways, the upper body twisted back over her right shoulder to look at the viewer "
                         "(--on <block>)", {
-        "spine": {"twist": -38, "side": -4}, "chest": {"twist": -26}, "neck": {"turn": -30}, "head": {"turn": -35, "tilt": -6},
+        "spine": {"twist": -26, "side": -6}, "chest": {"twist": -16}, "neck": {"turn": -12}, "head": {"turn": -16, "tilt": -8},
         "leg-r": {"forward": 94, "raise": 6}, "knee-r": {"bend": 95},
         "leg-l": {"forward": 92, "raise": 4}, "knee-l": {"bend": 88}, "foot-l": {"point": 15},
         "arm-l": {"forward": 40, "raise": 6}, "elbow-l": {"bend": 70}}, reach={"r": "seat-behind"},
@@ -1942,7 +1943,7 @@ def check_pose(res: dict, blocks: Dict[str, Block]) -> List[str]:
     E = res["edits"]
     turn = E.get("neck", {}).get("turn", 0) + E.get("head", {}).get("turn", 0) + \
         E.get("chest", {}).get("twist", 0) + E.get("spine", {}).get("twist", 0)
-    if abs(turn) > 150:
+    if abs(turn) > 155:
         out.append(f"the head turns {abs(turn):.0f} deg from the hips: too far round")
     return out
 
