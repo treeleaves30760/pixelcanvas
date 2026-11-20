@@ -453,6 +453,7 @@ def test_pose_show_joints_is_a_look_not_a_step(draw):
 def test_floor_shadow_is_compact_and_blur_leaves_no_halo(draw):
     _scene(draw)
     ok(draw("block", "floor", "plane", "--at", "500,990", "--size", "8,6,0"))
+    ok(draw("pose", "boy", "--at", "520,840"))        # the whole stride and its shadow inside the canvas
     ok(draw("dress", "boy", "blazer,shorts", "--color", "navy"))
     ok(draw("render"))
     ok(draw("draw", "all"))
