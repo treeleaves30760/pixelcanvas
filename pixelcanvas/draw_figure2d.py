@@ -446,7 +446,7 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
                 w = W_HAIR
             else:
                 w = W_IN
-            rgb = _inner_rgb(p, pt, rgb_cache) if c == 2 and not block else None
+            rgb = _inner_rgb(p, pt, rgb_cache) if c in (2, 3) and not block else None
             if rgb is not None:
                 w = max(w, 1.0)                 # a near dark limb over a far one: a clear separation line
             out.append({"pts": st["pts"], "closed": st["closed"], "w": w, "part": pt, "k": k, "rgb": rgb})
@@ -1290,7 +1290,9 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         if vis.mean() < 0.3:
             continue
         q, zz = cam.project(P3)
-        hc, _ = cam.project(c[None])
+        hc, zh = cam.project(c[None])
+        if 2.4 * R0 * cam.f / max(float(zh[0]), 1e-3) < 70:
+            continue                    # a small head on the canvas: no ring (it would read as crumbs)
         if float(np.median(q[:, 1])) > float(hc[0, 1]):
             continue                    # seen from below, the crown is out of sight: no band on the forehead
         band = dc.poly_mask(p.H, p.W, q)
@@ -1310,7 +1312,7 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
         ring = dc.light_of(hairc, 0.8)
         if dc.lum(hairc) < 30:          # dark hair: a cool tinted shine, not grey
-            ring = tuple(int(min(255, c * 0.6 + t_ * 0.4)) for c, t_ in zip(dc.light_of(hairc, 2.2), (70, 90, 140)))
+            ring = tuple(int(c + (t_ - c) * 0.55) for c, t_ in zip(hairc, (80, 90, 125)))
         out.append(Fill(mask_rle=mask_to_rle(band), color=ring, feather=0.6))
     return out
 
@@ -1350,7 +1352,10 @@ def _hair_underlayer(p, mp: dict, subjects: List[str]) -> list:
         if m.sum() < 10:
             continue
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
-        out.append(Fill(mask_rle=mask_to_rle(m), color=tuple(int(c) for c in dc.shadow_of(hairc, 1.0)), feather=0.6))
+        col = dc.shadow_of(hairc, 1.0)
+        if dc.lum(hairc) < 30:      # dark hair: the under-layer clearly deeper than the base, a little cool
+            col = (hairc[0] * 0.35, hairc[1] * 0.35, hairc[2] * 0.35 + 6)
+        out.append(Fill(mask_rle=mask_to_rle(m), color=tuple(int(c) for c in col), feather=0.6))
     return out
 
 

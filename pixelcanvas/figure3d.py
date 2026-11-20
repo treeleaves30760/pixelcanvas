@@ -809,7 +809,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     # the back and the crown
     if style in ("long", "medium", "bob", "short", "spiky"):
         rows = [(0.6, 11, 0.82), (0.1, 13, 1.0), (-0.35, 9, 0.97)] if style in ("long", "medium", "bob") else \
-            [(0.8, 7, 1.0), (0.45, 9, 0.85), (0.05, 7, 0.6)] if style == "spiky" else \
+            [(0.8, 7, 1.0), (0.5, 9, 0.8), (0.25, 7, 0.4)] if style == "spiky" else \
             [(0.75, 9, 0.9), (0.3, 11, 0.8), (-0.15, 9, 0.7)]
         for y, n, lf in rows:
             for i in range(n):
