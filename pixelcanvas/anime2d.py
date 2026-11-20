@@ -951,6 +951,10 @@ def _box2d(pr: dict, name: str, mat: str, subj: str, cam=None) -> dict:
         L = np.linalg.norm(A, axis=0)
         i = int(np.argmax(L))
         j = int(np.argsort(L)[1])
+        # a flat blade tapering to its point (the far end along the blade from the guard)
+        Ai, Aj = A[:, i], A[:, j]
+        part["poly3"] = np.array([c - Ai - Aj, c + 0.78 * Ai - Aj, c + Ai - 0.08 * Aj, c + 0.78 * Ai + Aj,
+                                  c - Ai + Aj])
         part["details"].append({"pts": np.array([c - A[:, i] * 0.92 + A[:, j] * 0.35, c + A[:, i] * 0.9 + A[:, j] * 0.35]),
                                 "w": 0.45})
     return part

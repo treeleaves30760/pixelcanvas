@@ -113,8 +113,9 @@ def hand_pieces(W, u, t, n, L: float, shape: str, grip_r: Optional[float] = None
             b = math.radians(bend)
             d, nn = unit(math.cos(b) * d + math.sin(b) * nn), unit(-math.sin(b) * d + math.cos(b) * nn)
             q = p + d * (FINGER_LEN[i] * frac * L + (0.04 * L if j == 0 else 0.0))
-            out.append({"kind": "cap", "label": 20 + 4 * i + j, "a": p, "b": q, "ra": r * (1 - 0.07 * j),
-                        "rb": r * (0.93 - 0.1 * j) if j < 2 else r * 0.86})
+            kb = 1.15 if (j == 0 and curls[i][0] > 60) else 1.0       # a curled finger's knuckle: a bump
+            out.append({"kind": "cap", "label": 20 + 4 * i + j, "a": p, "b": q, "ra": r * (1 - 0.07 * j) * kb,
+                        "rb": (r * (0.93 - 0.1 * j) if j < 2 else r * 0.86) * kb})
             p = q
     return out
 
@@ -312,7 +313,7 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
     edges = _edges(zb, lb, covm > 0, thr, max_sep=True, margin=mg)
     edges |= gap & (cv2.erode(covm, np.ones((2 * mg + 1, 2 * mg + 1), np.uint8)) > 0)
     lines = _trace(edges, 0.16 * GRID / (ext / L))
-    if name in ("fist", "point", "peace", "grip") and len(lines) < 2:
+    if name in ("fist", "point", "peace", "grip"):
         # the curled fingers' fold: a curve through the middle knuckles (the line every drawn fist has)
         curled = [i for i in range(4) if SHAPES[name]["curl"][i][0] > 45 or name == "grip"]
         pk = [pc["b"] for pc in pieces if pc["kind"] == "cap" and pc["label"] >= 20 and (pc["label"] - 20) % 4 == 0
@@ -344,7 +345,8 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
               and inner[int(q[1]), int(q[0])]]
         if len(ok) >= 2 and np.linalg.norm(ok[-1] - ok[0]) > 0.12 * gL:
             lines.append(np.array(ok))
-    lines = lines[:1] if small else lines[:4]
+    curled_shape = name in ("fist", "point", "peace", "grip")
+    lines = lines[:(2 if curled_shape else 1)] if small else lines[:4]
 
     def outline(m):
         cs, _ = cv2.findContours(m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
