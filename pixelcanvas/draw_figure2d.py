@@ -1114,6 +1114,8 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
     from .render3d import light_world
     lab, tb = mp["lab"], mp["table"]
     block_ids = [k for k, t in enumerate(tb) if t.get("block")]
+    from .scene3d import floor_mask
+    sfl = floor_mask(p)                     # the floor of a scene kit (pixelcanvas scene) takes shadows too
     cam = DP.camera_of(p)
     L = light_world(cam, dc.light_vec(dc.dstate(p)))
     off = np.array([-L[0], 0.0, -L[2]])
@@ -1121,6 +1123,9 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
     up = cv2.resize(lab, (p.W, p.H), interpolation=cv2.INTER_NEAREST)
     figure_px = (up >= 0) & ~np.isin(up, block_ids)
     blocks = np.isin(up, block_ids) if block_ids else None
+    if sfl is not None:
+        # a scene kit's floor is the ground (with any blocks on it)
+        blocks = (sfl[0] if blocks is None else (blocks | sfl[0])) & ~figure_px
     try:
         flat = p.layer("flat", create=False)
     except Exception:  # noqa: BLE001
@@ -1165,8 +1170,12 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
         cx, cy = np.round(q.mean(0)).astype(int)
         if ground is blocks:
             k0 = up[int(np.clip(cy, 0, p.H - 1)), int(np.clip(cx, 0, p.W - 1))]
-            t0 = tb[k0] if k0 >= 0 and tb[k0].get("block") else tb[block_ids[0]]
-            base = tuple(t0["rgb"])
+            if k0 >= 0 and tb[k0].get("block"):
+                base = tuple(tb[k0]["rgb"])
+            elif sfl is not None:
+                base = tuple(int(v) for v in sfl[1](cx, cy))
+            else:
+                base = tuple(tb[block_ids[0]]["rgb"])
             col = _ground_shadow_colour(base)
         else:
             if flat is not None and (flat[..., 3][sh] > 0.5).any():

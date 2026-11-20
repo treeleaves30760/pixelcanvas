@@ -466,7 +466,8 @@ def motion_blur(p, img: np.ndarray, fm: dict, subj: str, d: np.ndarray, amount: 
     return out, float((w > 0.05).mean())
 
 
-def rim_light(p, img: np.ndarray, fm: dict, light_rgb, amount: float) -> Tuple[np.ndarray, float]:
+def rim_light(p, img: np.ndarray, fm: dict, light_rgb, amount: float,
+              keep: Optional[np.ndarray] = None) -> Tuple[np.ndarray, float]:
     """A thin bright rim inside each figure's outline on the side that faces the plan light (not on the face)."""
     S = float(max(p.W, p.H))
     lv = dc.light_vec(dc.dstate(p))
@@ -474,7 +475,7 @@ def rim_light(p, img: np.ndarray, fm: dict, light_rgb, amount: float) -> Tuple[n
     if np.linalg.norm(d2) < 1e-3:
         return img, 0.0
     d2 /= np.linalg.norm(d2)
-    w_px = max(1.5, 0.0045 * S)
+    w_px = max(2.5, 0.008 * S)          # past the outline's own width: the rim lies just inside the line
     tot = np.zeros(img.shape[:2], bool)
     col = np.asarray(light_rgb, np.float32) / 255.0
     for subj, m in fm["figs"].items():
@@ -487,7 +488,11 @@ def rim_light(p, img: np.ndarray, fm: dict, light_rgb, amount: float) -> Tuple[n
         tot |= rim
     if not tot.any():
         return img, 0.0
+    if keep is not None:
+        tot &= ~keep                         # the line art keeps its colour
     wmap = cv2.GaussianBlur(tot.astype(np.float32), (0, 0), 0.6) * 0.55 * amount
+    if keep is not None:
+        wmap[keep] = 0.0
     scr = 1.0 - (1.0 - img) * (1.0 - col[None, None, :] * 0.8)
     return img * (1 - wmap[..., None]) + scr * wmap[..., None], float(tot.mean())
 
@@ -554,7 +559,8 @@ def cmd_polish(ctx, args: List[str]):
     fm = figure_maps(p)
     fig_default = 1.0 if fm is not None else 0.0
     amt_rim = cli._num(a, "rim", 0.5 * fig_default, 0.0, 1.0, ctx.notes, u)
-    amt_dof = cli._num(a, "dof", 0.5 * fig_default, 0.0, 1.0, ctx.notes, u)
+    # shallow focus when asked for (--focus <figure> or --dof): a picture is sharp throughout by default
+    amt_dof = cli._num(a, "dof", 0.6 * fig_default if a.get("focus") else 0.0, 0.0, 1.0, ctx.notes, u)
     amt_glow = cli._num(a, "glow", 0.5, 0.0, 1.0, ctx.notes, u)
     amt_vig = cli._num(a, "vignette", 0.08 * fig_default, 0.0, 1.0, ctx.notes, u)
     amt_grain = cli._num(a, "grain", 0.0, 0.0, 1.0, ctx.notes, u)
@@ -641,7 +647,7 @@ def cmd_polish(ctx, args: List[str]):
         ctx.notes.append(f"--focus {a['focus']}: no drawn figure of that name; focus on {focus}")
     if on["rim"] and fm is not None and amt_rim > 0:
         lc = light_colour(p, np.clip(np.rint(img * 255), 0, 255).astype(np.uint8))
-        img, share = rim_light(p, img, fm, lc, amt_rim)
+        img, share = rim_light(p, img, fm, lc, amt_rim, keep=line_a > 0.15 if line_a is not None else None)
         lines_out.append(f"rim: a light rim on the lit side of {len(fm['figs'])} figure(s) ({share * 100:.2f}% of the "
                          f"canvas, amount {amt_rim:g})")
     if on["glow"] and amt_glow > 0:

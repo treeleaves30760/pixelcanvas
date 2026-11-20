@@ -1978,4 +1978,6 @@ def irregular_ridge(box, seed: int, peaks: int = 0) -> List[Tuple[float, float]]
 COMMANDS = {
     "cloud": cmd_cloud, "clouds": cmd_cloud, "reflect": cmd_reflect, "foliage": cmd_foliage, "tufts": cmd_tufts,
     "atmosphere": cmd_atmosphere, "glow": cmd_glow, "wet": cmd_wet, "ground": cmd_ground, "window": cmd_window,
+    "scene": lambda ctx, args: __import__("pixelcanvas.scene3d", fromlist=["cmd_scene"]).cmd_scene(ctx, args),
 }
+USAGE["scene"] = "pixelcanvas scene corridor --time day --wall #e6dcc4 --trim #7a4e30 --floor #b07a4a --arch"
