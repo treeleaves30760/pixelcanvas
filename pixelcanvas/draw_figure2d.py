@@ -547,6 +547,29 @@ def save_maps(p, sc: dict, table: List[dict]) -> None:
                         s=np.array([R.s]), table=json.dumps(table))
 
 
+def far_limb_masks(mp: dict, keep: set, W: int, H: int) -> List[np.ndarray]:
+    """Canvas masks of the far limb of each same-colour pair that touch on the canvas (the far arm, the far leg in
+    black stockings): the flat takes it one step darker so the near limb reads in front."""
+    lab, tb, z = mp["lab"], mp["table"], mp["z"]
+    out = []
+    pairs: Dict[tuple, Dict[str, List[int]]] = {}
+    for k, t in enumerate(tb):
+        g = str(t.get("group", ""))
+        if t["subj"] not in keep or not t["drawn"] or g[:-2] not in ("arm", "leg", "foot") or g[-2] != "-":
+            continue
+        pairs.setdefault((t["subj"], t["region"], g[:-2]), {}).setdefault(g[-1], []).append(k)
+    ker = np.ones((5, 5), np.uint8)
+    for sides in pairs.values():
+        if len(sides) != 2:
+            continue
+        mr, ml = np.isin(lab, sides["r"]), np.isin(lab, sides["l"])
+        if mr.sum() < 20 or ml.sum() < 20 or not (cv2.dilate(mr.astype(np.uint8), ker).astype(bool) & ml).any():
+            continue
+        far = mr if float(z[mr].mean()) > float(z[ml].mean()) else ml
+        out.append(cv2.resize(far.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST).astype(bool))
+    return out
+
+
 def load_maps(p) -> Optional[dict]:
     f = p.root / NPZ
     if not f.exists():
@@ -1125,6 +1148,8 @@ def flat_drawn(ctx, rep) -> None:
         arr = _restore(p, "flat2d", arr)
         a0 = arr.copy()
         brush.apply_ops(arr, ops)
+        for fm in far_limb_masks(mp, keep, p.W, p.H):      # the far limb of a same-colour pair: one step darker
+            arr[fm, :3] *= 0.84
         _snapshot(p, "flat2d", a0, arr)
         p._write_layer_file("flat", arr)
         allm = np.zeros((p.H, p.W), bool)

@@ -64,3 +64,15 @@ def test_a_pleated_skirt_hem_has_a_pleat_rhythm():
     c = sk["rings"][-1][0]
     r = np.linalg.norm(hem - c, axis=1)
     assert len(hem) >= 96 and r.std() / r.mean() > 0.01               # fold edges stand out of the hem
+
+
+def test_the_far_limb_of_a_same_colour_pair_is_picked_for_a_darker_flat():
+    from pixelcanvas import draw_figure2d as DF
+    lab = np.full((40, 40), -1, np.int32)
+    lab[5:35, 10:20] = 0                                               # the right leg, near
+    lab[5:35, 20:30] = 1                                               # the left leg, far, touching it
+    z = np.where(lab == 1, 5.0, 4.0).astype(np.float32)
+    tb = [{"subj": "g", "drawn": True, "group": "leg-r", "region": "g-stockings"},
+          {"subj": "g", "drawn": True, "group": "leg-l", "region": "g-stockings"}]
+    ms = DF.far_limb_masks({"lab": lab, "table": tb, "z": z}, {"g"}, 80, 80)
+    assert len(ms) == 1 and ms[0][40, 50] and not ms[0][40, 30]

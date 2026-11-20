@@ -16,10 +16,10 @@ from . import figure3d as F3
 from .shape2d import chain_tube, ell_samples, perp_basis, ring, unit
 
 # radius profiles along each limb, in head heights (t from the near joint to the far one)
-UPPER = [(0.0, 0.122), (0.2, 0.118), (0.55, 0.102), (1.0, 0.09)]
-FORE = [(0.0, 0.09), (0.22, 0.092), (0.65, 0.07), (1.0, 0.056)]
-THIGH = [(0.0, 0.2), (0.35, 0.182), (0.8, 0.138), (1.0, 0.122)]
-SHIN = [(0.0, 0.12), (0.27, 0.133), (0.62, 0.098), (0.9, 0.066), (1.0, 0.064)]
+UPPER = [(0.0, 0.122), (0.22, 0.124), (0.6, 0.1), (1.0, 0.084)]
+FORE = [(0.0, 0.084), (0.2, 0.092), (0.65, 0.066), (1.0, 0.05)]
+THIGH = [(0.0, 0.21), (0.4, 0.19), (0.8, 0.14), (1.0, 0.118)]
+SHIN = [(0.0, 0.112), (0.1, 0.108), (0.3, 0.13), (0.6, 0.094), (0.88, 0.06), (1.0, 0.06)]
 NECK = 0.108
 HAND_SCALE = 0.86
 
@@ -116,8 +116,8 @@ MALE_WORDS = ("boy", "man", "male", "guy", "father", "dad", "king", "prince", "k
 TEMPLATE = {
     "child": {"girl": {"shoulder": 0.6, "chest": 0.48, "waist": 0.42, "hip": 0.5, "neck": 0.1},
               "boy": {"shoulder": 0.64, "chest": 0.5, "waist": 0.44, "hip": 0.48, "neck": 0.105}},
-    "teen": {"girl": {"shoulder": 0.64, "chest": 0.52, "waist": 0.38, "hip": 0.58, "neck": 0.1},
-             "boy": {"shoulder": 0.74, "chest": 0.6, "waist": 0.47, "hip": 0.52, "neck": 0.115}},
+    "teen": {"girl": {"shoulder": 0.66, "chest": 0.55, "waist": 0.36, "hip": 0.6, "neck": 0.1},
+             "boy": {"shoulder": 0.82, "chest": 0.64, "waist": 0.45, "hip": 0.52, "neck": 0.118}},
 }
 
 
@@ -165,7 +165,7 @@ class Torso:
         sh = 0.5 * (J["shoulder-r"] + J["shoulder-l"])
         lv = [  # (centre, X, Z, a, b)
             (J["neck"] + C[:, 1] * 0.02 * h, C[:, 0], C[:, 2], tpl["neck"] * h, tpl["neck"] * h),
-            (sh - C[:, 1] * 0.03 * h, C[:, 0], C[:, 2], (tpl["shoulder"] - 0.07) * h, 0.22 * h),
+            (sh - C[:, 1] * 0.07 * h, C[:, 0], C[:, 2], (tpl["shoulder"] - 0.07) * h, 0.22 * h),
             (sh + (J["spine"] - sh) * 0.42, C[:, 0], C[:, 2], tpl["chest"] * h, 0.27 * h),
             (J["spine"], S[:, 0], S[:, 2], tpl["waist"] * h, 0.22 * h),
             (J["pelvis"] + P[:, 1] * 0.02 * h, P[:, 0], P[:, 2], tpl["hip"] * h, 0.26 * h),
@@ -310,6 +310,10 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
             A0 = J[f"top-{kind}-{s}"] if kind in ("upperarm", "thigh") else J[A_]
             parts.append(_tube(f"{kind}-{s}", "skin", subj, ("arm-" if kind in ("upperarm", "forearm") else "leg-") + s,
                                _limb_axis(A0, J[B_], t), r, {A_: J[A_], B_: J[B_]}))
+            if kind == "shin":
+                kh = _knee_hint(J, s, float(r[0]), eye)
+                if kh:
+                    parts[-1]["details"].append(kh)
         # hands: an anime hand silhouette for the hand shape, turned to the viewer, foreshortened with the hand
         W = J[f"wrist-{s}"]
         hmat = "gloves" if "gloves" in garments else "skin"
@@ -396,6 +400,32 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
 
 # ============================================================================================ clothes
 
+def _knee_hint(J, s: str, r: float, eye) -> Optional[dict]:
+    """A straight leg's kneecap: a short arc just below the knee on the side toward the viewer."""
+    if eye is None:
+        return None
+    K, A, H_ = J[f"knee-{s}"], J[f"ankle-{s}"], J[f"hip-{s}"]
+    d1, d2 = unit(K - H_), unit(A - K)
+    if math.degrees(math.acos(float(np.clip(d1 @ d2, -1, 1)))) > 30:
+        return None
+    b = _band(K + d2 * r * 0.55, d2, r * 0.45, eye, n=7)
+    return {"pts": b["pts"][1:6] + unit(np.asarray(eye, float) - K) * r * 0.55, "w": 0.38}
+
+
+def _waist_folds(F, tor: "Torso", lift: float) -> List[dict]:
+    """Where the trunk bends sideways (the shoulder line against the hip line): two short folds at the waist on the
+    compressed side."""
+    C, P = F["chest"], F["pelvis"]
+    side = float(C[:, 1] @ P[:, 0])                  # the chest leans toward +X: that side compresses
+    if abs(side) < math.sin(math.radians(8)):
+        return []
+    sg = 1.0 if side > 0 else -1.0
+    out = []
+    for t0 in (2.75, 3.15):
+        out.append(_front_line(tor, [t0 - 0.08, t0, t0 + 0.06], [sg * 0.97, sg * 0.82, sg * 0.66], lift, 0.4))
+    return out
+
+
 def _limb_tops(J, F, tpl: Dict[str, float], h: float, k: float) -> None:
     """Where the drawn upper arm and thigh start (``top-upperarm-<s>``, ``top-thigh-<s>`` in J): the arm's round
     top sits a little below the shoulder line, so the trunk's shoulder runs into a deltoid instead of a ball above
@@ -451,6 +481,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                               frames=fr, depth_ratio=dr, round_start=False, round_end=False, open_end=True,
                               open_start=True, n_rings=16, n_pts=24, bias=bias)
             out.append(body_part)
+            body_part["details"] += _waist_folds(F, tor, ease + 0.004 * h)
             # sleeves
             sleeve = str(o.get("sleeve") or ("short" if g == "dress" else "long"))
             trim = g in ("blazer", "coat") and o.get("trim", True) is not False
@@ -588,6 +619,9 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                         q = brk["pts"][2:7].copy()
                         q[1:4] -= sa * float(rl[-2]) * np.array([0.25, 0.45, 0.25])[:, None]
                         lo["details"].append({"pts": q, "w": 0.42})
+                    kh = _knee_hint(J, s, float(rl[0]), eye)
+                    if kh:
+                        lo["details"].append(kh)
                     out.append(lo)
         elif g in ("socks", "thigh-highs"):
             for s in "rl":
@@ -599,8 +633,11 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                 else:
                     t0 = 0.42
                 axs, rs, js = _limb_cover(J, s, "shin", t0, 1.0, ease, h, k, 1.0)
+                kh = _knee_hint(J, s, float(rs[0]), eye) if g == "thigh-highs" else None
                 out.append(_tube(f"{g}-{s}", g, subj, f"leg-{s}", axs, rs, js, round_start=g == "thigh-highs",
                                  open_start=g == "socks", bias=bias))
+                if kh:
+                    out[-1]["details"].append(kh)
         elif g == "boots":
             for s in "rl":
                 axs, rs, js = _limb_cover(J, s, "shin", 0.5, 1.0, 0.03 * h, h, k, 1.1)
