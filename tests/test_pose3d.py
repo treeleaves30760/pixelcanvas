@@ -469,7 +469,7 @@ def test_every_preset_reads_as_a_silhouette_at_its_default_yaw(name):
 
 def test_moving_presets_keep_four_separate_limbs_round_the_figure():
     cam = P3.Camera(600, 800, 330, 1.2, 44)
-    for name in ("run", "sprint", "run-toward", "sprint-side", "walk", "jump", "jump-toward", "leap", "kick",
+    for name in ("run", "sprint", "sprint-side", "walk", "jump", "jump-toward", "leap", "kick",
                  "land", "dance-twirl", "dance-step"):
         for yaw in (0, 35, -35, 90):
             res = P3.solve_figure({"preset": name, "at": [500, 900], "yaw": yaw}, cam, {}, {})

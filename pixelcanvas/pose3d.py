@@ -538,21 +538,22 @@ _CROUCH = {"leg-r": {"forward": 105, "raise": 16}, "leg-l": {"forward": 100, "ra
            "knee-l": {"bend": 140}, "foot-r": {"point": -25}, "foot-l": {"point": -25}}
 
 PRESETS.update({
-    "run-toward": _X("running toward the viewer: chest leading, near knee high, arms pumping wide so the shape reads", {
+    "run-toward": _X("running toward the viewer: chest leading, near knee coming at the viewer, arms pumping close "
+                     "to the body, one fist forward, one back", {
         "body": {"lean": 14}, "pelvis": {"twist": 14}, "chest": {"twist": -18}, "head": {"nod": -12, "tilt": 5},
-        "leg-r": {"forward": 95, "raise": 8}, "knee-r": {"bend": 110}, "foot-r": {"point": 25},
+        "leg-r": {"forward": 95, "raise": 6}, "knee-r": {"bend": 105}, "foot-r": {"point": 25},
         "leg-l": {"forward": -25, "raise": 4}, "knee-l": {"bend": 45}, "foot-l": {"point": 45},
-        "arm-l": {"forward": 40, "raise": 55}, "elbow-l": {"bend": 70},
-        "arm-r": {"forward": -45, "raise": 40}, "elbow-r": {"bend": 90}}, yaw=22, dynamic=True,
+        "arm-l": {"forward": 62, "raise": 16, "twist": -10}, "elbow-l": {"bend": 92},
+        "arm-r": {"forward": -48, "raise": 20}, "elbow-r": {"bend": 88}}, yaw=22, dynamic=True,
         hands={"r": "fist", "l": "fist"}),
     "sprint-side": _X("flat-out sprint seen side-on (the sprint preset in profile)",
                       dict(PRESETS["sprint"]["edits"]), yaw=90, dynamic=True, hands={"r": "fist", "l": "fist"}),
-    "float": _X("floating / hovering: body loose and arched, one knee bent, toes pointed, arms drifting out", {
-        "body": {"lean": -6}, "spine": {"bend": -8, "side": 5}, "head": {"tilt": 8, "nod": -8},
-        "arm-r": {"raise": 62, "forward": 20}, "elbow-r": {"bend": 35}, "hand-r": {"bend": -20},
-        "arm-l": {"raise": 42, "forward": -12}, "elbow-l": {"bend": 55},
-        "leg-r": {"forward": 18, "raise": 4}, "knee-r": {"bend": 35}, "foot-r": {"point": 50},
-        "leg-l": {"forward": -12, "raise": 14}, "knee-l": {"bend": 75}, "foot-l": {"point": 55}},
+    "float": _X("floating / hovering: hanging relaxed, arms a little away from the body, knees soft, toes down", {
+        "body": {"lean": -4}, "spine": {"bend": -5, "side": 4}, "head": {"tilt": 8, "nod": 4},
+        "arm-r": {"raise": 26, "forward": 14}, "elbow-r": {"bend": 32}, "hand-r": {"bend": -15},
+        "arm-l": {"raise": 20, "forward": 24}, "elbow-l": {"bend": 45}, "hand-l": {"bend": -10},
+        "leg-r": {"forward": 10, "raise": 5}, "knee-r": {"bend": 22}, "foot-r": {"point": 65},
+        "leg-l": {"forward": -4, "raise": 9}, "knee-l": {"bend": 48}, "foot-l": {"point": 70}},
         rest="air", lift=0.5, dynamic=True, hands={"r": "open", "l": "open"}),
     "jump-toward": _X("leaping toward the viewer: arms flung up and out, back arched, legs kicked back", {
         "body": {"lean": 10}, "spine": {"bend": -16}, "head": {"nod": -16, "tilt": -6},
@@ -1767,6 +1768,73 @@ def _look_edits(E: dict, look, J, F, cam: Camera) -> dict:
 
 
 def solve_figure(spec: dict, cam: Camera, blocks: Dict[str, Block], others: Dict[str, dict]) -> dict:
+    """``spec['fit'] = [x0, y0, x1, y1]`` (0-1000): the figure is placed and scaled so its drawn extent fills that
+    box (feet on its bottom edge, centred); otherwise as _solve_figure."""
+    fit = spec.get("fit")
+    if not fit:
+        return _solve_figure(spec, cam, blocks, others)
+    x0, y0, x1, y1 = [float(v) for v in fit]
+    s2 = {k: v for k, v in spec.items() if k != "fit"}
+    s2["at"] = [(x0 + x1) / 2, y1]
+    s2["on"] = None
+    s2["height"] = float(spec.get("height") or 1.6)
+    res = None
+    for _ in range(6):
+        res = _solve_figure(s2, cam, blocks, others)
+        bx = figure_extent(res, cam)
+        h, w = max(bx[3] - bx[1], 1.0), max(bx[2] - bx[0], 1.0)
+        s2["height"] = float(np.clip(s2["height"] * min((y1 - y0) / h, (x1 - x0) / w), 0.3, 4.0))
+        s2["at"] = [s2["at"][0] + (x0 + x1) / 2 - (bx[0] + bx[2]) / 2, s2["at"][1] + y1 - bx[3]]
+        if cam.ground_point(s2["at"][0], s2["at"][1]) is None:
+            s2["at"][1] = cam.horizon + 5
+    res = _solve_figure(s2, cam, blocks, others)
+    res["fit"] = {"height": s2["height"], "at": [round(v, 1) for v in s2["at"]]}
+    return res
+
+
+def figure_extent(res: dict, cam: Camera) -> Tuple[float, float, float, float]:
+    """The figure's drawn box in 0-1000 units (joints, head top, hands, feet, with a margin for the flesh)."""
+    J = res["J"]
+    keys = [k for k in J if not k.startswith(("hip-", "spine"))]
+    U = cam.project_units(np.array([J[k] for k in keys]))
+    r = res["body"].r["thigh"]
+    z = float(cam.to_cam(J["pelvis"])[0, 2])
+    m = cam.f * r / max(z, 0.1) * 1000.0 / max(cam.W, cam.H)
+    ht = cam.project_units(np.array([J["head-top"]]))[0]
+    return (float(U[:, 0].min() - m), float(min(U[:, 1].min(), ht[1]) - m), float(U[:, 0].max() + m),
+            float(U[:, 1].max() + m * 0.5))
+
+
+def frame_lines(res: dict, cam: Camera) -> List[str]:
+    """Parts the picture's frame cuts, one line, with an --at that brings the figure in."""
+    J = res["J"]
+    names = ["head-top", "hand-r", "hand-l", "foot-r", "foot-l", "heel-r", "heel-l", "elbow-r", "elbow-l", "knee-r",
+             "knee-l"]
+    U = {k: cam.project_units(np.array([J[k]]))[0] for k in names}
+    cut = [k for k, u in U.items() if not (0 <= u[0] <= 1000 and 0 <= u[1] <= 1000)]
+    if not cut:
+        return []
+    x0, y0, x1, y1 = figure_extent(res, cam)
+    dx = (-x0 + 20 if x0 < 0 else 0) + (1000 - x1 - 20 if x1 > 1000 else 0)
+    dy = (-y0 + 20 if y0 < 0 else 0) + (1000 - y1 - 10 if y1 > 1000 else 0)
+    at = res.get("at_units")
+    sug = f"--at {at[0] + dx:.0f},{at[1] + dy:.0f}" if at else "--at x,y further in"
+    if y1 - y0 > 980 or x1 - x0 > 980:
+        sug = f"--fit 50,30,950,980 (or a smaller --height)"
+    side = []
+    if x0 < 0:
+        side.append("left")
+    if x1 > 1000:
+        side.append("right")
+    if y0 < 0:
+        side.append("top")
+    if y1 > 1000:
+        side.append("bottom")
+    return [f"the frame cuts {', '.join(sorted(set(k.split('-')[0] for k in cut)))} at the {'/'.join(side)}: "
+            f"{sug}, or --fit x0,y0,x1,y1"]
+
+
+def _solve_figure(spec: dict, cam: Camera, blocks: Dict[str, Block], others: Dict[str, dict]) -> dict:
     """Pose a figure from its spec: {preset, edits, mods, at [x,y units], height, heads, yaw, mirror, on, targets
     {limb: target}, lift}. ``mods`` = {lean, twist, bend, look, energy, arm-r/l, leg-r/l}. ``others`` = solved
     figures by subject (targets may name one). Returns J, F, prims, body, notes, clamps, ik lines, contacts,
@@ -1812,8 +1880,28 @@ def solve_figure(spec: dict, cam: Camera, blocks: Dict[str, Block], others: Dict
         gap = res.get("contact_gap")
         res = _place(spec, pk, pre, E1, reach, cam, blocks, others)
         res["contact_gap"] = res.get("contact_gap", gap)
+    # a hand that cannot reach its target: the chest leans toward it (bend and side bend at the waist)
+    for _ in range(3):
+        short = [(s, T, g) for s, (T, g) in (res.get("arm_gaps") or {}).items() if g > 0.015]
+        if not short:
+            break
+        body = res["body"]
+        L = float(np.linalg.norm(res["J"]["neck"] - res["J"]["pelvis"]))
+        for s, T, g in short:
+            d = np.asarray(T) - res["J"][f"shoulder-{s}"]
+            loc = res["F"]["pelvis"].T @ d
+            hz = math.hypot(loc[0], loc[2]) or 1.0
+            step = min(g * 1.3, 0.25)
+            _add(E, "spine", "bend", math.degrees(math.asin(min(1.0, step * loc[2] / hz / L))))
+            _add(E, "spine", "side", -math.degrees(math.asin(max(-1.0, min(1.0, step * loc[0] / hz / L)))))
+        E0, clamps = clamp_edits(E)
+        res = _place(spec, pk, pre, E0, reach, cam, blocks, others)
+        del body
     res["clamps"] = clamps
-    res["check"] = check_pose(res, blocks) + view_check(res, cam) + silhouette_lines(res, cam)
+    at = spec.get("at")
+    res["at_units"] = list(at) if at else None
+    res["check"] = check_pose(res, blocks) + view_check(res, cam) + silhouette_lines(res, cam) + \
+        frame_lines(res, cam)
     return res
 
 
@@ -1986,6 +2074,7 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
     for k in J:
         J[k] = J[k] + [dx, 0, dz]
     ik_lines: List[str] = []
+    arm_gaps: Dict[str, Tuple[np.ndarray, float]] = {}
     # seated on a block: slide forward until the knees clear its front edge (the thighs rest on the seat)
     if rest == "seat" and stand_blk is not None:
         fw = np.array([F["pelvis"][0, 2], 0.0, F["pelvis"][2, 2]])
@@ -2071,6 +2160,8 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
             ik_lines.append(f"{limb_name}: {what}")
             continue
         gap = ik_limb(body, J, F, limb_name.replace("hand", "arm").replace("foot", "leg"), T)
+        if limb_name.startswith(("hand", "arm")):
+            arm_gaps[limb_name.split("-")[1]] = (np.asarray(T, float), gap)
         ik_lines.append(f"{limb_name.replace('arm', 'hand').replace('leg', 'foot')} reaches {what}" +
                         (f": {gap:.2f} m out of reach, the arm points straight at it" if gap > 0.01 else ""))
     prims = body_prims(body, J, F)
@@ -2091,7 +2182,7 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
     return {"J": J, "F": F, "body": body, "prims": prims, "preset": pk, "edits": E, "clamps": [], "notes": notes,
             "ik": ik_lines, "contacts": cts, "balance": bal, "yaw": yaw, "support": on if blk is not None else "ground",
             "sup_y": sup_y, "lift": lift, "targets": dict(spec.get("targets") or {}), "reach": dict(reach),
-            "contact_gap": contact_gap}
+            "contact_gap": contact_gap, "arm_gaps": arm_gaps}
 
 
 def check_pose(res: dict, blocks: Dict[str, Block]) -> List[str]:
