@@ -247,6 +247,23 @@ def _front_line(tor: "Torso", ts, xs, lift: float, w: float = 0.45) -> dict:
     return {"pts": pts, "w": w, "nrm": nrm}
 
 
+def _face_profile(rig, h: float) -> List[dict]:
+    """The small solids that give the anime head its profile: a short pointed nose and a soft chin, set on the face
+    surface (they show only where they pass the silhouette: in profile and three-quarter view)."""
+    from .render3d import rcone
+    Hd = rig.Hd
+    nose_root, nose_tip = F3.face_surface(rig, np.array([[0.0, -0.1], [0.0, -0.2]]))
+    # the nose: a narrow wedge from the bridge to a tip that juts forward and a little down
+    tip = nose_tip + Hd[:, 2] * 0.055 * h - Hd[:, 1] * 0.01 * h
+    out = []
+    for a_, b_, ra, rb in ((nose_root - Hd[:, 2] * 0.02 * h, tip, 0.012 * h, 0.012 * h),
+                           (nose_tip - Hd[:, 2] * 0.03 * h - Hd[:, 1] * 0.015 * h, tip, 0.016 * h, 0.011 * h)):
+        out.append(rcone(a_, b_, ra, rb))
+    for pr in out:
+        pr.update({"owner": "x", "piece": "head", "part": "head", "mat": "skin", "seam": "mat", "group": "head"})
+    return out
+
+
 def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[List[dict]] = None,
                  eye: Optional[np.ndarray] = None, cam=None) -> List[dict]:
     """Every part of one posed figure (body, hands, feet, clothes, hair, held props). ``eye`` (the camera's
@@ -282,14 +299,21 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
     for pr in hp:
         if pr["piece"] == "head":
             if pr["t"] == "rcone":
-                pr = dict(pr, rb=0.045 * h, b=pr["b"] + rig.Hd[:, 1] * 0.02 * h)      # a small pointed chin
+                # a small pointed chin; a boy's jaw a little longer
+                pr = dict(pr, rb=0.045 * h, b=pr["b"] + rig.Hd[:, 1] * (0.02 if not is_male(subj, el) else -0.012) * h)
             head_pr.append(pr)
+    if eye is not None:
+        # the nose's outline only near profile: in three-quarter view it would leave an arc past the far cheek
+        to_eye = np.asarray(eye, float) - J["head"]
+        if abs(float(rig.Hd[:, 0] @ to_eye)) > 0.8 * float(np.linalg.norm(to_eye)):
+            head_pr += _face_profile(rig, h)
     # no joint shared with the neck: the chin's line is always drawn
     parts.append(_solid("head", "skin", subj, "head", head_pr, {"head": J["head"]}, rad=0.42 * h, bias=0.08 * h))
     for pr in hp:
         if pr["piece"].startswith("ear-"):
             parts.append(_solid(pr["piece"], "skin", subj, "head", [pr], {"ear": None}, rad=0.08 * h, bias=0.09 * h))
-    parts.append(_tube("neck", "skin", subj, "head", [J["neck"] - F["neck"][:, 1] * 0.02 * h, J["neck-top"]],
+    parts.append(_tube("neck", "skin", subj, "head", [J["neck"] - F["neck"][:, 1] * 0.02 * h,
+                                                      J["neck-top"] + F["neck"][:, 1] * 0.1 * h],
                        [NECK * h * k, NECK * h * k * 0.95], {"neck": J["neck"], "neck-top": J["neck-top"]},
                        round_start=False, round_end=False, n_rings=6, bias=0.1 * h))
 

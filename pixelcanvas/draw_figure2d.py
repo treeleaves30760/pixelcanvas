@@ -435,6 +435,84 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
 
 # ============================================================================================ the face
 
+_EYE_PARTS = ("white", "lashshade", "iris", "irisdark", "irislight", "pupil", "shine", "lash", "lashfill", "lower",
+              "lid", "eyelid", "eye", "flick", "tearpool")
+
+
+def _profile_face(rig, cam, specs: List[dict], expression: str, side: float, hp: float, iris, lash,
+                  shape: str) -> List[dict]:
+    """A head seen from the side: the near eye as the side-view wedge set back from the silhouette (the frontal eye
+    would sit on the outline), the mouth as a short notch at the lips; the nose comes from the head's outline."""
+    e = FC.expression_key(expression) or "neutral"
+    keep = []
+    for sp in specs:
+        base = sp["name"].split("-")[0]
+        if base in _EYE_PARTS or base in ("mouth", "nose", "teeth", "tongue"):
+            continue
+        keep.append(sp)
+    sg = 1.0 if side > 0 else -1.0
+    hc = rig.J["head"]
+    pts = F3.face_surface(rig, np.array([[sg * 0.33, FC.EYE_C[1]], [0.0, -0.33]]))
+    (A, M), _ = cam.project(pts)
+    p0, _ = cam.project(np.array([hc, hc + rig.Hd[:, 2] * rig.h, hc + rig.Hd[:, 1] * rig.h]))
+    f = p0[1] - p0[0]
+    f = f / max(1e-9, float(np.linalg.norm(f)))
+    u = p0[2] - p0[0]
+    u = u / max(1e-9, float(np.linalg.norm(u)))
+    w = 0.17 * hp
+    eh = 0.17 * hp
+    style, opn = FC._EYE.get(e, ("open", 1.0))
+    opn = max(0.35, opn) * (0.8 if shape == "narrow" else 1.0)
+
+    def Q(a, b):
+        return A + f * a * w + u * b * eh
+
+    def spec(name, P, kind, weight=0.0, fill=None, closed=True, rgb=None, clip=None, wprof=None):
+        P = np.asarray(P, float)
+        return {"name": name, "pts": P, "px": P, "vis": np.ones(len(P), bool), "closed": closed, "weight": weight,
+                "taper": "none" if closed else "both", "kind": kind, "fill": fill, "rgb": rgb, "clip": clip,
+                "wprof": wprof}
+    s = "r" if sg > 0 else "l"
+    out = []
+    if style != "open":
+        bend = 0.25 if style == "happy" else -0.2
+        arc = FC._curve([Q(-0.5, 0.0), Q(0.0, bend), Q(0.42, -0.05)], 12)
+        out.append(spec(f"eye-{s}", arc, "lash", 2.1, closed=False, rgb=lash))
+    else:
+        K, T, B = Q(-0.5, 0.02), Q(0.42, 0.5 * opn), Q(0.32, -0.42 * opn)
+        top = FC._curve([K, Q(0.0, 0.42 * opn), T], 12)
+        front = FC._curve([T, Q(0.46, 0.0), B], 8)[1:]
+        low = FC._curve([B, Q(-0.05, -0.3 * opn), K], 10)[1:]
+        out.append(spec(f"white-{s}", np.vstack([top, front, low]), "white", fill=(252, 252, 255)))
+        ic = Q(0.2, -0.04)
+        t = np.linspace(0, 2 * np.pi, 24)
+        ell = lambda rx, ry, c: c + np.outer(np.cos(t), f) * rx * w + np.outer(np.sin(t), u) * ry * eh  # noqa: E731
+        out.append(spec(f"iris-{s}", ell(0.16, 0.44 * opn, ic), "iris", fill=tuple(int(v) for v in iris),
+                        clip=f"white-{s}"))
+        out.append(spec(f"irisdark-{s}", ell(0.17, 0.2 * opn, ic + u * 0.3 * opn * eh), "iris",
+                        fill=FC._tint(iris, -0.45), clip=f"iris-{s}"))
+        out.append(spec(f"pupil-{s}", ell(0.07, 0.2 * opn, ic), "pupil", fill=FC._tint(iris, -0.75),
+                        clip=f"iris-{s}"))
+        out.append(spec(f"shine-{s}0", ell(0.06, 0.1, ic + u * 0.18 * eh + f * 0.04 * w), "shine",
+                        fill=(255, 255, 255), clip=f"white-{s}"))
+        flick = K - f * 0.2 * w + u * 0.16 * eh          # the outer corner is at the back of a side-view eye
+        lash_l = np.vstack([[flick], top])
+        th = np.interp(np.linspace(0, 1, len(lash_l)), [0, 0.15, 0.5, 1], [0.0, 0.24, 0.16, 0.02])
+        out.append(spec(f"lashfill-{s}", np.vstack([lash_l, (lash_l + np.outer(th * eh, u))[::-1]]), "lashfill",
+                        fill=tuple(int(v) for v in lash)))
+        out.append(spec(f"lash-{s}", lash_l, "lash", 2.0, closed=False, rgb=lash))
+        out.append(spec(f"lower-{s}", np.vstack([B, Q(0.05, -0.34 * opn)]), "lid", 0.8, closed=False, rgb=lash))
+    # the mouth: a short notch in from the lips
+    open_m = e in ("open", "grin", "laugh", "shout", "crying", "panicked", "surprised")
+    notch = np.array([M - f * 0.01 * hp + u * 0.004 * hp, M - f * 0.07 * hp - u * 0.004 * hp])
+    if open_m:
+        wedge = np.array([M - f * 0.005 * hp + u * 0.012 * hp, M - f * 0.06 * hp, M - f * 0.005 * hp - u * 0.03 * hp])
+        out.append(spec("mouth", wedge, "mouth", 1.0, fill=(150, 50, 62)))
+    else:
+        out.append(spec("mouth", notch, "mouth", 1.0, closed=False))
+    return keep + out
+
+
 def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     """Face fills (Fill ops for the paint layer) and line specs on the 2D head of figure ``el``."""
     from .draw_render import HAIR, _col, look_of
@@ -452,7 +530,24 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     iris = _col(p, fc.get("eyes"), "#4a78c0")
     lash = dc.shadow_of(_col(p, (lk.get("hair") or {}).get("color"), HAIR), 1.6)
     lash = tuple(int(v * 0.55) for v in lash)
-    specs = FC.project(rig, cam, FC.features(fc.get("expression", "neutral"), iris, lash))
+    brow = tuple(int(v * 0.62) for v in dc.shadow_of(_col(p, (lk.get("hair") or {}).get("color"), HAIR), 1.5))
+    gz = FC.gaze_key(fc.get("gaze")) if fc.get("gaze") else (0.0, 0.0)
+    from .anime2d import is_male
+    shape = str(fc.get("eye-shape") or ("narrow" if is_male(el["subject"], el) else "round"))
+    specs = FC.project(rig, cam, FC.features(fc.get("expression", "neutral"), iris, lash, gz or (0.0, 0.0),
+                                             brow_rgb=brow, shape=shape))
+    # the face's line weights follow the head's size on the canvas: a small face keeps thin, readable lines
+    from .draw_line import base_width
+    hc = rig.J["head"]
+    hp = max(float(np.linalg.norm(np.subtract(*cam.project(np.array([hc, hc + rig.Hd[:, a] * rig.h]))[0])))
+             for a in (0, 1))
+    side = float(rig.Hd[:, 0] @ ((cam.C - hc) / max(1e-9, float(np.linalg.norm(cam.C - hc)))))
+    if abs(side) > 0.85 and float(rig.Hd[:, 2] @ (cam.C - hc)) > -0.2 * float(np.linalg.norm(cam.C - hc)):
+        specs = _profile_face(rig, cam, specs, fc.get("expression", "neutral"), side, hp, iris, lash, shape)
+    unit = max(0.55, hp / 110.0)                          # px per weight unit; a 220 px head: 2 px
+    wk = unit / base_width(p)
+    from .draw_render import material_colours
+    skin = tuple(int(v) for v in material_colours(p, el).get("skin", (253, 227, 208)))
     # where the head shows (not under the bangs): full-res mask of the head's label
     lab = R.lab == hk
     head_m = cv2.resize(lab.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
@@ -460,9 +555,10 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     clips: Dict[str, np.ndarray] = {}
     for sp in specs:
         P = sp["px"]
-        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")))
+        # brows show through the bangs (as anime draws them); everything else only where the face shows
+        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")) | (sp["kind"] == "brow"))
         sp["vis2"] = vis
-        if sp.get("fill") is None:
+        if sp.get("fill") is None and sp["kind"] != "skin":
             continue
         if vis.mean() < (0.25 if sp["kind"] == "tear" else 0.5):
             continue
@@ -477,14 +573,9 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         clips[sp["name"]] = m
         if m.sum() < 3:
             continue
-        col = tuple(int(c) for c in sp["fill"])
-        if sp["kind"] == "iris":
-            # two flat tones (a darker top under the lid), not a gradient
-            y0, y1 = float(P[:, 1].min()), float(P[:, 1].max())
-            fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.6))
-            top = m.copy()
-            top[int(y0 + 0.45 * (y1 - y0)):] = False
-            fills.append(Fill(mask_rle=mask_to_rle(top), color=dc.shadow_of(col, 1.3), feather=0.6))
+        col = tuple(int(c) for c in (sp["fill"] if sp.get("fill") is not None else skin))
+        if sp["kind"] in ("iris", "pupil", "shine", "white", "skin", "teeth", "tongue", "lashfill"):
+            fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.5))
         elif sp["kind"] == "blush":
             fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.003 * max(p.W, p.H),
                               opacity=float(sp.get("alpha", 0.4))))
@@ -498,7 +589,8 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         for run in S2.runs(vis, False):
             if len(run) >= 2:
                 lines.append({"name": sp["name"], "px": P[run], "closed": bool(sp["closed"] and vis.all()),
-                              "weight": sp["weight"], "taper": sp["taper"], "rgb": sp.get("rgb")})
+                              "weight": round(sp["weight"] * wk, 3), "taper": sp["taper"], "rgb": sp.get("rgb"),
+                              "wprof": sp.get("wprof") if len(run) == len(P) else None})
     return fills, lines
 
 
@@ -702,6 +794,8 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
                                         color="line", closed=fl["closed"], src=f"face {fl['name']}")
             rec["d2d"], rec["d2d_group"], rec["d2d_part"] = subj, "face", fl["name"]
             rec["even"] = True
+            if fl.get("wprof"):
+                rec["wprof"] = fl["wprof"]
             if fl.get("rgb"):
                 rec["auto_rgb"] = [int(v) for v in fl["rgb"]]
                 rec["rgb_fixed"] = True
@@ -866,6 +960,14 @@ def drawn_corrections(p, labels: np.ndarray, table: List[dict]) -> Dict[int, Tup
 
 # ============================================================================================ cel shadows
 
+def _skin_shadow(rgb, depth: float = 1.0) -> Tuple[int, int, int]:
+    """A cel skin shadow: pink-warm (toward red), never brown or grey."""
+    r, g, b = (float(v) for v in rgb)
+    k = min(1.6, depth)
+    return (int(np.clip(r * (1 - 0.05 * k), 0, 255)), int(np.clip(g * (1 - 0.2 * k), 0, 255)),
+            int(np.clip(b * (1 - 0.15 * k), 0, 255)))
+
+
 def do_cel_shade(ctx, who: str = "all"):
     from . import brush, cli_draw, workflow_draw
     from .draw_render import _block_shadow, _restore, _snapshot
@@ -925,6 +1027,7 @@ def do_cel_shade(ctx, who: str = "all"):
         lh = (ns * lv[None, None, :].astype(np.float32)).sum(-1)
         lam_hair[hm] = lh[hm]
     shade_parts: Dict[str, Tuple[np.ndarray, np.ndarray, Tuple[int, int, int]]] = {}
+    skin_regions: set = set()
     for k, t in enumerate(tb):
         if t["subj"] not in keep or not t["drawn"]:
             continue
@@ -934,6 +1037,8 @@ def do_cel_shade(ctx, who: str = "all"):
             continue
         if rn not in shade_parts:
             shade_parts[rn] = (np.zeros_like(m), np.zeros_like(m), tuple(t["rgb"]))
+        if t["mat"] == "skin":
+            skin_regions.add(rn)
         sm, dm, _ = shade_parts[rn]
         if t.get("block"):
             if float(np.median(lam[m])) < 0.12:
@@ -944,7 +1049,19 @@ def do_cel_shade(ctx, who: str = "all"):
             sm |= m & ((lam_hair < thr) | near)     # the hair: one mass, short cast shadows (bangs on the cap)
             dm |= m & (lam_hair < thr - 0.45)
         elif t["group"] == "head":
-            sm |= m & ((lam < -0.35) | near)        # the face stays lit: its far side, the shadow under bangs and chin
+            # the face stays lit: a thin edge on its far side, the shadow under the bangs and the chin
+            sm |= m & ((lam < (-0.35 if t["name"] != "head" else -0.72)) | near)
+            if t["name"] == "neck":
+                # the chin's shadow on the neck: a band under the jaw line, as cel faces draw it
+                hk_ = [j for j, u in enumerate(tb) if u["subj"] == t["subj"] and u["name"] == "head"]
+                hm_ = np.isin(lab, hk_)
+                if hm_.any():
+                    ys_ = np.nonzero(hm_)[0]
+                    dpx = max(1, int(0.13 * (ys_.max() - ys_.min())))
+                    under = np.zeros_like(hm_)
+                    for k_ in range(1, dpx + 1):
+                        under[k_:] |= hm_[:-k_]
+                    sm |= m & under
         else:
             sm |= m & ((lam < thr) | cast | near)
     files = ["layers/shade.png", "draw/r3d/shade2d.npz"]
@@ -964,7 +1081,7 @@ def do_cel_shade(ctx, who: str = "all"):
                 if big.sum() < 6:
                     continue
                 col = _block_shadow(rgb) if rn in {t["region"] for t in tb if t.get("block")} else \
-                    dc.shadow_of(rgb, depth)
+                    _skin_shadow(rgb, depth) if rn in skin_regions else dc.shadow_of(rgb, depth)
                 ops.append(Fill(mask_rle=mask_to_rle(big), color=tuple(int(c) for c in col), feather=0.6))
         ops += _hair_bands(p, mp, subjects, lv)
         ops += _figure_shadows(p, mp, subjects)
