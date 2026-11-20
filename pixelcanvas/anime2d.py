@@ -272,9 +272,14 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
     for pr in hp:
         if pr["piece"] == "head":
             if pr["t"] == "rcone":
-                pr = dict(pr, rb=0.045 * h, b=pr["b"] + rig.Hd[:, 1] * 0.02 * h)      # a small pointed chin
+                # a small pointed chin; a boy's jaw a little longer
+                pr = dict(pr, rb=0.045 * h, b=pr["b"] + rig.Hd[:, 1] * (0.02 if not is_male(subj, el) else -0.012) * h)
             head_pr.append(pr)
-    head_pr += _face_profile(rig, h)
+    if eye is not None:
+        # the nose's outline only near profile: in three-quarter view it would leave an arc past the far cheek
+        to_eye = np.asarray(eye, float) - J["head"]
+        if abs(float(rig.Hd[:, 0] @ to_eye)) > 0.8 * float(np.linalg.norm(to_eye)):
+            head_pr += _face_profile(rig, h)
     # no joint shared with the neck: the chin's line is always drawn
     parts.append(_solid("head", "skin", subj, "head", head_pr, {"head": J["head"]}, rad=0.42 * h, bias=0.08 * h))
     for pr in hp:

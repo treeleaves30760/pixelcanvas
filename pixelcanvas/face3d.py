@@ -89,12 +89,15 @@ _BROW = {"angry": (-0.34, 0.2), "shout": (-0.36, 0.22), "sad": (0.3, -0.16), "cr
 _LID = {"sleepy": 0.42, "smug": 0.3}
 
 
-def _open_eye(out, e, s, sg, P, cx, cy, iris_rgb, lash_rgb, gx, gy):
+def _open_eye(out, e, s, sg, P, cx, cy, iris_rgb, lash_rgb, gx, gy, shape="round"):
     W, Hh = EYE_W, EYE_H
     _, opn = _EYE.get(e, ("open", 1.0))
     tilt_in = {"angry": -0.2, "shout": -0.2, "sad": 0.14, "teary": 0.12, "embarrassed": 0.06}.get(e, 0.0)
+    opn *= {"narrow": 0.78, "sharp": 0.82, "droopy": 0.92}.get(shape, 1.0)
+    tilt_in += {"sharp": -0.08, "droopy": 0.1}.get(shape, 0.0)
     top = 0.5 * opn
     out_y = 0.14 - (0.08 if e in ("sad", "teary") else 0.0) + (0.06 if e in ("angry", "shout") else 0.0)
+    out_y += {"sharp": 0.1, "droopy": -0.12, "narrow": 0.03}.get(shape, 0.0)
     upper = _curve([P(-0.52, -0.02 + tilt_in), P(-0.25, top * 0.94), P(0.15, top), P(0.5, out_y + 0.04),
                     P(0.56, out_y - 0.02)])
     lo = 0.5 if opn >= 1 else 0.47
@@ -154,8 +157,16 @@ def _open_eye(out, e, s, sg, P, cx, cy, iris_rgb, lash_rgb, gx, gy):
                     "clip": f"white-{s}"})
     # the upper lash line: heavy, thin at the inner corner, a flick past the outer corner
     lash = np.vstack([upper, _curve([P(0.56, out_y - 0.02), P(0.66, out_y + 0.1)], 4)[1:]])
-    out.append({"name": f"lash-{s}", "pts": lash, "closed": False, "weight": 2.4, "taper": "both", "kind": "lash",
-                "rgb": lash_rgb, "wprof": [[0, 0.35], [0.3, 0.85], [0.72, 1.3], [1, 0.6]]})
+    # the lash mass: a filled dark shape above the line, thickest over the pupil's outer third, tapering to
+    # both corners (it carries the eye at small sizes)
+    t = np.linspace(0, 1, len(lash))
+    th = np.interp(t, [0, 0.25, 0.55, 0.78, 0.92, 1], [0.0, 0.1, 0.2, 0.24, 0.14, 0.0])
+    th = th * Hh * (0.75 if shape == "narrow" else 1.0)
+    top_edge = lash + np.stack([np.zeros(len(lash)), th], 1)
+    out.append({"name": f"lashfill-{s}", "pts": np.vstack([lash, top_edge[::-1]]), "closed": True, "weight": 0.0,
+                "taper": "none", "kind": "lashfill", "fill": tuple(int(v) for v in lash_rgb)})
+    out.append({"name": f"lash-{s}", "pts": lash, "closed": False, "weight": 2.0, "taper": "both", "kind": "lash",
+                "rgb": lash_rgb, "wprof": [[0, 0.4], [0.3, 0.85], [0.72, 1.25], [1, 0.6]]})
     # the lower lash: a short thin hint at the outer side
     out.append({"name": f"lower-{s}", "pts": _curve([P(0.5, out_y - 0.17), P(0.28, -0.84 * lo - 0.02),
                                                       P(0.0, -lo - 0.02)]),
@@ -165,7 +176,11 @@ def _open_eye(out, e, s, sg, P, cx, cy, iris_rgb, lash_rgb, gx, gy):
                 "closed": False, "weight": 0.55, "taper": "both", "kind": "lid", "rgb": lash_rgb})
 
 
-def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34), gaze=(0.0, 0.0)) -> List[dict]:
+EYE_SHAPES = ("round", "narrow", "droopy", "sharp")
+
+
+def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34), gaze=(0.0, 0.0),
+             brow_rgb=None, shape: str = "round") -> List[dict]:
     """Head-frame specs of the face. Each open eye: lid crease, white with the lash's shadow, iris (a darker upper
     band under the lid, a lighter lower crescent), pupil, two catch-lights, the upper lash line (heavy, tapered, a
     flick at the outer corner) and a lower lash hint. ``gaze`` moves the irises (head units, x toward the picture's
@@ -189,8 +204,8 @@ def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34), ga
         bi, bo = _BROW.get(e, (0.0, 0.04))
         inner_u = -0.42 if e not in ("crying", "angry", "shout") else -0.5
         brow = _curve([P(inner_u, 1.0 + bi), P(0.05, 1.16 + 0.5 * (bi + bo)), P(0.58, 0.96 + bo)])
-        out.append({"name": f"brow-{s}", "pts": brow, "closed": False, "weight": 1.15, "taper": "both",
-                    "kind": "brow", "rgb": lash_rgb, "wprof": [[0, 0.75], [0.3, 1.15], [1, 0.55]]})
+        out.append({"name": f"brow-{s}", "pts": brow, "closed": False, "weight": 1.5, "taper": "both",
+                    "kind": "brow", "rgb": brow_rgb or lash_rgb, "wprof": [[0, 0.8], [0.3, 1.2], [1, 0.55]]})
         if st == "happy":
             # a closed laughing eye: an arch
             arc = _curve([P(-0.5, -0.12), P(-0.05, 0.36), P(0.5, -0.06)])
@@ -223,7 +238,7 @@ def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34), ga
                     out.append({"name": f"drop-{s}{k}", "pts": drop, "closed": True, "weight": 0.6, "taper": "none",
                                 "kind": "tear", "fill": (190, 228, 255), "float": True, "rgb": (84, 140, 196)})
             continue
-        _open_eye(out, e, s, sg, P, cx, cy, iris_rgb, lash_rgb, gx, gy)
+        _open_eye(out, e, s, sg, P, cx, cy, iris_rgb, lash_rgb, gx, gy, shape)
     # nose: a small mark on the shadow side
     out.append({"name": "nose", "pts": np.array([[0.014, -0.17], [0.018, -0.2], [0.002, -0.214]]), "closed": False,
                 "weight": 0.85, "taper": "both", "kind": "nose"})
