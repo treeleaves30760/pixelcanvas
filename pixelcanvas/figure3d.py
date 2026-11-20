@@ -791,6 +791,14 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
         if style in ("short", "spiky"):
             for i in range(5):
                 ph = -0.9 + 1.8 * i / 4
+                if style == "short":
+                    # a boy's cut: crown locks lie on the skull, combed forward and down over the front
+                    root, nrm = _cap_point(rig, ph * 1.2, 0.8, 1.05)
+                    d0 = unit(Hd[:, 2] * 0.85 - Hd[:, 1] * 0.35 + nrm * 0.1 + Hd[:, 0] * 0.25 * ph)
+                    out += _lock(rig, owner, k, root, d0, 0.5 * h, r0 * 1.0, gvec, col, nseg=4, stiff=0.6,
+                                 tip=0.05)
+                    k += 1
+                    continue
                 root, nrm = _cap_point(rig, ph, 0.92, 1.04)
                 d0 = unit(nrm + (Hd[:, 2] * 0.6 if style == "short" else Hd[:, 1] * 0.2 - Hd[:, 2] * 0.5))
                 out += _lock(rig, owner, k, root, d0, 0.45 * h, r0 * 0.9, gvec * (0.4 if style == "short" else 0.15),
@@ -848,7 +856,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             root, nrm = _cap_point(rig, math.pi * 0.95, 0.6, 1.15)
             out.append(_P(ell_prim(root + nrm * 0.12 * h, np.eye(3), (0.26 * h,) * 3), owner, "bun", "hair",
                           seam="always", group="hair"))
-    if hair.get("ahoge", True) and style not in ("spiky",):
+    if hair.get("ahoge", False) and style not in ("spiky",):
         root, nrm = _cap_point(rig, 0.25, 0.97, 1.08)
 
         def up_curl(i_):

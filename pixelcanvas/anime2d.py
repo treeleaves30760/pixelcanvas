@@ -654,6 +654,15 @@ def _kmeans(X: np.ndarray, k: int, iters: int = 20) -> np.ndarray:
     return lab
 
 
+def _taper(t: np.ndarray, bang: bool = False) -> np.ndarray:
+    """Width profile of a drawn lock along its length (0 root .. 1 tip): full near the root, a gentle swell, then
+    narrowing to a sharp point (a leaf, not a sausage)."""
+    t = np.asarray(t, float)
+    sw = 1.0 + 0.12 * np.sin(np.pi * np.clip(t / 0.6, 0, 1))
+    k = 1.3 if bang else 1.7
+    return np.maximum(sw * (1.0 - t ** k) ** 0.9, 0.0) + 0.004
+
+
 def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.ndarray, np.ndarray]]:
     """The 3D locks gathered into a few big clumps (bangs apart from the rest), each with an S-curve and a sharp
     tip: an anime head of hair is 6-10 clumps, not a curtain of strands."""
@@ -665,7 +674,7 @@ def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.
     if not chains:
         return []
     if style == "spiky":
-        return [(P, r * 1.05) for P, r in chains]
+        return [(P, float(r[0]) * 1.1 * _taper(np.linspace(0, 1, len(r)), True)) for P, r in chains]
     Hd = rig.Hd
     front = []
     for P, r in chains:
@@ -684,7 +693,11 @@ def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.
             spread = np.max([np.linalg.norm(m[0] - Pm, axis=1) + m[1] for m in mem], 0)
             rr = np.maximum(spread * 0.55, np.mean([m[1] for m in mem], 0) * 1.3)
             t = np.linspace(0, 1, len(Pm))
-            rr = rr * np.clip(1.0 - 0.15 * t, 0.2, 1)
+            # rhythm: big and small clumps in turn, the small ones a little shorter
+            big = 1.0 if c % 3 != 1 else 0.72
+            if big < 1.0 and len(Pm) > 2:
+                Pm = Pm[0] + (Pm - Pm[0]) * 0.86
+            rr = float(np.max(rr[:max(2, len(rr) // 3)])) * big * _taper(t, grp)
             # an S-curve across the clump
             X3, _ = perp_basis(Pm[-1] - Pm[0])
             sgn = 1.0 if c % 2 == 0 else -1.0
