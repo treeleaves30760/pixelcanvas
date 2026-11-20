@@ -333,3 +333,181 @@ def test_flat_mannequin_still_works(draw):
     ok(draw("sketch", "head", "girl"))
     ok(draw("stage", "done"))
     ok(draw("wear", "girl", "shirt"))
+
+
+# ============================================================================================ gesture, modifiers, checks
+
+def _cam():
+    return P3.Camera(300, 420, horizon=380, eye=1.4)
+
+
+def test_presets_cover_the_action_dataset_words():
+    for name in ("run-toward", "sprint-side", "walk", "float", "jump-toward", "jump-strike", "jump-tuck", "fall",
+                 "sit-chair", "sit-bench", "sit-ledge", "sit-floor", "seiza", "hug-knees", "sit-look-back", "kneel",
+                 "kneel-up", "crouch", "squat", "lie-back", "lie-side", "lie-front", "lean-wall", "lean-railing",
+                 "lean-forward", "lean-elbow", "reach-up", "reach-viewer", "wave", "point", "hands-on-hips",
+                 "arms-crossed", "hands-behind", "hand-to-face", "hand-to-hair", "hold-front", "carry", "kick",
+                 "punch", "sword-high", "sword-ready", "swing", "dance-step", "cheer", "look-back", "stretch", "bow",
+                 "aim", "ride", "swim"):
+        assert P3.preset_key(name) == name
+    for alias, name in (("hover", "float"), ("akimbo", "hands-on-hips"), ("bike", "ride"), ("dance", "dance-twirl")):
+        assert P3.preset_key(alias) == name
+
+
+@pytest.mark.parametrize("name", list(P3.PRESETS))
+def test_every_preset_passes_its_own_check_on_flat_ground(name):
+    pre = P3.PRESETS[name]
+    if pre["rest"] == "seat":
+        pytest.skip("seated presets need a block (tested below)")
+    for yaw in (0, 60, 150, -90):
+        res = P3.solve_figure({"preset": name, "at": [500, 900], "yaw": yaw}, _cam(), {}, {})
+        assert not [c for c in res["check"] if "bends backward" in c or "into the" in c], (name, yaw, res["check"])
+
+
+def test_gesture_breaks_the_symmetric_mannequin():
+    res = P3.solve_figure({"preset": "stand", "at": [500, 900]}, _cam(), {}, {})
+    J = res["J"]
+    hips = J["hip-l"][1] - J["hip-r"][1]
+    shoulders = J["shoulder-l"][1] - J["shoulder-r"][1]
+    assert hips * shoulders < 0                     # contrapposto: shoulder line against hip line
+    assert abs(J["knee-l"][2] - J["knee-r"][2]) > 0.02  # one knee relaxed
+    flat = P3.solve_figure({"preset": "stand", "at": [500, 900], "gesture": False}, _cam(), {}, {})
+    assert abs(flat["J"]["hip-l"][1] - flat["J"]["hip-r"][1]) < 1e-6
+
+
+def test_hand_anchors_put_the_hands_on_the_body():
+    for name, word in (("hands-on-hips", "hip"), ("arms-crossed", "cross"), ("hands-behind", "behind")):
+        res = P3.solve_figure({"preset": name, "at": [500, 900]}, _cam(), {}, {})
+        assert not res["ik"], (name, res["ik"])
+        J = res["J"]
+        if word == "hip":
+            for s in "rl":
+                assert np.linalg.norm(J[f"wrist-{s}"] - J[f"hip-{s}"]) < 0.25
+        if word == "behind":
+            fwd = res["F"]["pelvis"][:, 2]
+            assert np.dot(J["wrist-r"] - J["pelvis"], fwd) < 0
+    # an arm descriptor anchors too, and --hand-l-to hip as a target word
+    res = P3.solve_figure({"preset": "stand", "at": [500, 900], "mods": {"arm-r": "hip"},
+                           "targets": {"hand-l": "chest"}}, _cam(), {}, {})
+    assert any("hand-l to the chest" in ln for ln in res["ik"])
+
+
+def test_modifiers_lean_twist_look_energy_mirror():
+    cam = _cam()
+    base = P3.solve_figure({"preset": "stand", "at": [500, 900]}, cam, {}, {})
+    lean = P3.solve_figure({"preset": "stand", "at": [500, 900], "mods": {"lean": 30}}, cam, {}, {})
+    fwd = base["F"]["pelvis"][:, 2]
+    assert np.dot(lean["J"]["head"] - base["J"]["head"], fwd) > 0.1
+    tw = P3.solve_figure({"preset": "stand", "at": [500, 900], "mods": {"twist": 30}}, cam, {}, {})
+    ang = lambda r: np.degrees(np.arctan2(r["F"]["chest"][0, 2], -r["F"]["chest"][2, 2]))  # noqa: E731
+    assert abs(ang(tw) - ang(base)) > 10
+    # look at the camera from a three-quarter view: the head faces the viewer
+    lk = P3.solve_figure({"preset": "stand", "at": [500, 900], "yaw": 50, "mods": {"look": "camera"}}, cam, {}, {})
+    hy, _ = P3.view_angles(cam, lk["F"]["head"], lk["J"]["head"])
+    assert abs(hy) < 8
+    # energy pushes the run further
+    calm = P3.apply_mods(P3.PRESETS["run"]["edits"], {"energy": 0.0})[0]
+    wild = P3.apply_mods(P3.PRESETS["run"]["edits"], {"energy": 1.0})[0]
+    assert wild["leg-r"]["forward"] > P3.PRESETS["run"]["edits"]["leg-r"]["forward"] > calm["leg-r"]["forward"]
+    # mirror swaps the anchors too
+    m = P3.solve_figure({"preset": "hand-to-face", "at": [500, 900], "mirror": True}, cam, {}, {})
+    assert m["J"]["wrist-l"][1] > m["J"]["wrist-r"][1]
+    with pytest.raises(UsageError):
+        P3.parse_look("sideways")
+    assert P3.parse_look("at:300,200") == [300.0, 200.0]
+
+
+def test_balance_fix_moves_the_hips_over_the_feet():
+    cam = _cam()
+    res = P3.solve_figure({"preset": "stand", "at": [500, 900], "mods": {"arm-l": "forward", "arm-r": "forward",
+                                                                          "lean": 35}}, cam, {}, {})
+    assert res["balance"].startswith("balanced"), res["balance"]
+    off = P3.solve_figure({"preset": "stand", "at": [500, 900], "balance": False,
+                           "mods": {"lean": 35, "arm-l": "forward", "arm-r": "forward"}}, cam, {}, {})
+    assert not off["balance"].startswith("balanced")
+    assert any(c.startswith("off balance") for c in off["check"])
+
+
+def test_seated_presets_on_a_bench_and_lean_contact():
+    cam = _cam()
+    g = cam.ground_point(500, 900)
+    bench = P3.Block("bench", "box", g, (1.6, 0.5, 0.45))
+    for name in ("sit-chair", "sit-bench", "sit-desk"):
+        res = P3.solve_figure({"preset": name, "on": "bench", "yaw": 0}, cam, {"bench": bench}, {})
+        assert any(n == "seat" for n, _, _ in res["contacts"]), name
+    wall = P3.Block("wall", "box", cam.ground_point(500, 860), (3.0, 0.3, 2.0))
+    res = P3.solve_figure({"preset": "lean-wall", "on": "wall", "at": [500, 900], "yaw": 0}, cam, {"wall": wall}, {})
+    back = res["J"]["chest"] - res["F"]["chest"][:, 2] * 0.12
+    assert np.linalg.norm(wall.closest(back) - back) < 0.03
+    assert min(P3.lowest(p)[0] for p in res["prims"]) < 0.01     # standing on the ground, not on the wall
+
+
+def test_pose_cli_modifiers_and_check(draw):
+    _scene(draw)
+    ok(draw("pose", "girl", "--preset", "arms-crossed", "--yaw", "20", "--look", "camera", "--twist", "15",
+            "--energy", "0.7", "--hand-r", "fist", "--leg-l", "relaxed"))
+    rig = next(e for e in state()["draw"]["sketch"] if e["kind"] == "figure")["rig"]
+    assert rig["mods"]["look"] == "camera" and rig["hands"]["r"] == "fist" and rig["mods"]["leg-l"] == "relaxed"
+    out = ok(draw("pose", "girl", "--check"))
+    assert "check girl" in out and len(out.splitlines()) <= 6
+    ok(draw("pose", "girl", "--hand-l-to", "hip"))
+    rig = next(e for e in state()["draw"]["sketch"] if e["kind"] == "figure")["rig"]
+    assert rig["targets"]["hand-l"] == "hip"
+
+
+@pytest.mark.parametrize("name", list(P3.PRESETS))
+def test_every_preset_reads_as_a_silhouette_at_its_default_yaw(name):
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    pre = P3.PRESETS[name]
+    blocks, spec = {}, {"preset": name, "at": [500, 900]}
+    if pre["rest"] == "seat":
+        blocks = {"s": P3.Block("s", "box", cam.ground_point(500, 900) - [0, 0, 0.2], (1.0, 0.45, 0.45))}
+        spec = {"preset": name, "on": "s"}
+    res = P3.solve_figure(spec, cam, blocks, {})
+    assert not P3.silhouette_lines(res, cam), name
+
+
+def test_moving_presets_keep_four_separate_limbs_round_the_figure():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    for name in ("run", "sprint", "run-toward", "sprint-side", "walk", "jump", "jump-toward", "leap", "kick",
+                 "land", "dance-twirl", "dance-step"):
+        for yaw in (0, 35, -35, 90):
+            res = P3.solve_figure({"preset": name, "at": [500, 900], "yaw": yaw}, cam, {}, {})
+            assert not P3.silhouette_lines(res, cam), (name, yaw)
+
+
+def test_look_left_right_follow_the_picture_even_in_profile():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    for yaw in (0, 90, -90, 160):
+        for word, sign in (("left", -1), ("right", 1)):
+            res = P3.solve_figure({"preset": "stand", "at": [500, 900], "yaw": yaw, "mods": {"look": word}},
+                                  cam, {}, {})
+            assert sign * res["F"]["head"][0, 2] > 0.5, (yaw, word)
+
+
+def test_lean_presets_fit_the_block_height():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    g = cam.ground_point(500, 900)
+    for name, kind, size in (("lean-railing", "railing", (2.0, 0.06, 0.95)), ("lean-elbow", "box", (0.7, 0.7, 1.1))):
+        blk = P3.Block("w", kind, g + [0.45, 0, 0], size)
+        res = P3.solve_figure({"preset": name, "on": "w", "at": [500, 900], "yaw": 0}, cam, {"w": blk}, {})
+        assert abs(res["contact_gap"]) < 0.06, (name, res["contact_gap"])
+
+
+def test_two_figures_hold_hands_and_lean_back_to_back():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    girl = P3.solve_figure({"preset": "walk-together", "at": [350, 900], "edits": {"arm-l": {"raise": 45}}},
+                           cam, {}, {})
+    hand = girl["J"]["hand-l"]
+    spot = cam.project_units([np.array([hand[0] + 0.3, 0.0, hand[2]])])[0]
+    boy = P3.solve_figure({"preset": "stand", "at": [float(spot[0]), float(spot[1])],
+                           "targets": {"hand-r": "girl:hand-l"}}, cam, {}, {"girl": girl})
+    grip = boy["J"]["wrist-r"] + P3.unit(boy["J"]["hand-r"] - boy["J"]["wrist-r"]) * 0.45 * boy["body"].Lh
+    assert np.linalg.norm(grip - hand) < 0.08, boy["ik"]
+    assert any("girl's hand-l" in ln for ln in boy["ik"])
+    carry = P3.solve_figure({"preset": "stand", "at": [600, 900], "targets": {"hand-l": "girl:back"}},
+                            cam, {}, {"girl": girl})
+    assert any("girl's back" in ln for ln in carry["ik"])
+    bad = P3.solve_figure({"preset": "stand", "at": [600, 900], "targets": {"hand-l": "girl:tail"}},
+                          cam, {}, {"girl": girl})
+    assert any("has no" in ln for ln in bad["ik"])
