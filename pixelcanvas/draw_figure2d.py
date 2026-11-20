@@ -1317,6 +1317,34 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
     return out
 
 
+def _hair_pockets(arr: np.ndarray, up: np.ndarray, tb: List[dict]) -> None:
+    """Gaps the line art closes between hair and the body (a twintail beside the back) are background, not an
+    area of their own: ``flat auto`` gives such a pocket a colour of its guess (skin); give it the colour of the
+    background round it."""
+    H, W = up.shape
+    hair_ids = [k for k, t in enumerate(tb) if t["mat"] == "hair"]
+    if not hair_ids:
+        return
+    empty = (up < 0).astype(np.uint8)
+    n, cl, st, _ = cv2.connectedComponentsWithStats(empty, 4)
+    border = set(np.unique(np.concatenate([cl[0], cl[-1], cl[:, 0], cl[:, -1]])).tolist())
+    outside = np.isin(cl, [i for i in border if i > 0])
+    near_hair = cv2.dilate(np.isin(up, hair_ids).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    for i in range(1, n):
+        if i in border or st[i, cv2.CC_STAT_AREA] > 0.03 * H * W:
+            continue
+        pk = cl == i
+        if not (pk & near_hair).any():
+            continue
+        x, y, w, h = st[i, :4]
+        g = int(0.15 * max(w, h)) + 4
+        win = (slice(max(0, y - g), min(H, y + h + g)), slice(max(0, x - g), min(W, x + w + g)))
+        ref = outside[win] & (arr[win][..., 3] > 0.5)
+        if ref.sum() < 10:
+            continue
+        arr[pk, :3] = np.median(arr[win][ref][:, :3], 0)
+
+
 def _smooth_up(m_low: np.ndarray, p) -> np.ndarray:
     """A label-map mask at canvas size with smooth edges (no stair steps of the low-res map)."""
     f = cv2.resize(m_low.astype(np.float32), (p.W, p.H), interpolation=cv2.INTER_LINEAR)
@@ -1502,6 +1530,7 @@ def flat_drawn(ctx, rep) -> None:
         brush.apply_ops(arr, ops)
         for fm in far_limb_masks(mp, keep, p.W, p.H):      # the far limb of a same-colour pair: one step darker
             arr[fm, :3] *= 0.84
+        _hair_pockets(arr, up, tb)
         _snapshot(p, "flat2d", a0, arr)
         p._write_layer_file("flat", arr)
         allm = np.zeros((p.H, p.W), bool)

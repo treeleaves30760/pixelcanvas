@@ -892,7 +892,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
                 a = 2 * math.pi * j / 7
                 off = (math.cos(a) * Hd[:, 0] + math.sin(a) * Hd[:, 2]) * 0.06 * h
                 fan = (math.cos(a) * Hd[:, 2] + math.sin(a) * Hd[:, 1]) * 0.18
-                d0 = unit(nrm * (0.75 if style == "twintails" else 0.5) + side * 0.2 - Hd[:, 1] * 0.55 + fan)
+                d0 = unit(nrm * (1.1 if style == "twintails" else 0.5) + side * 0.2 - Hd[:, 1] * 0.55 + fan)
 
                 def wave(i_, ph=a, sd=side):
                     return sd * 0.12 * math.sin(0.9 * i_ + ph) if floating else 0
