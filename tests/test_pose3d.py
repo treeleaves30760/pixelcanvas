@@ -496,7 +496,8 @@ def test_lean_presets_fit_the_block_height():
 
 def test_two_figures_hold_hands_and_lean_back_to_back():
     cam = P3.Camera(600, 800, 330, 1.2, 44)
-    girl = P3.solve_figure({"preset": "walk-together", "at": [350, 900]}, cam, {}, {})
+    girl = P3.solve_figure({"preset": "walk-together", "at": [350, 900], "edits": {"arm-l": {"raise": 45}}},
+                           cam, {}, {})
     hand = girl["J"]["hand-l"]
     spot = cam.project_units([np.array([hand[0] + 0.3, 0.0, hand[2]])])[0]
     boy = P3.solve_figure({"preset": "stand", "at": [float(spot[0]), float(spot[1])],
