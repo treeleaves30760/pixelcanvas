@@ -150,6 +150,12 @@ def cmd_face(ctx, args):
         raise UsageError("no head construction yet", "pixelcanvas sketch head <subject>")
     expr = str(a.get("expression") or "calm").lower()
     if expr not in EXPRESSIONS:
+        # the 3D face's names on a 2D head construction: the nearest of its shapes
+        from .face3d import expression_key
+        expr = {"neutral": "calm", "laugh": "grin", "shout": "open", "crying": "sad", "teary": "sad",
+                "panicked": "surprised", "smug": "smile", "embarrassed": "smile", "closed": "sleepy", "shut": "grin",
+                "wink": "smile"}.get(expression_key(expr) or "", expr)
+    if expr not in EXPRESSIONS:
         raise UsageError(f"unknown expression {expr!r}: {', '.join(EXPRESSIONS)}", USAGE["face"])
     wscale = C._num(a, "weight", 1.0, 0.3, 3, ctx) if a.get("weight") else 1.0
     guides = draw_sketch.head_guides(p, el)
