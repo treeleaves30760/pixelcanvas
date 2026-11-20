@@ -156,8 +156,9 @@ def kit_corridor(k: Kit) -> None:
         k.face([[x, 0, z0], [x, wh, z0], [x, wh, D], [x, 0, D]], trim, "wainscot", 0, outline=False)["normal"] = \
             np.array([nx, 0, 0.0])
         # the dado rail, the skirting and the wall's corners as lines
-        k.line([x, wh, z0], [x, wh, D], 1, 1.0)
-        k.line([x, wh + 0.05, z0], [x, wh + 0.05, D], 1, 0.6)
+        # the dado rail: a darker moulding along the top of the wainscot
+        k.face([[x + 0.004 * nx, wh, z0], [x + 0.004 * nx, wh + 0.07, z0], [x + 0.004 * nx, wh + 0.07, D],
+                [x + 0.004 * nx, wh, D]], _mix(trim, (0, 0, 0), 0.25), "wainscot", 1, lw=0.8)["normal"] =             np.array([nx, 0, 0.0])
         k.line([x, 0, z0], [x, 0, D], 1, 1.1)
         k.line([x, Hc, z0], [x, Hc, D], 1, 1.1)
         # wainscot panels: vertical joints every 0.9 m
@@ -213,19 +214,36 @@ def kit_corridor(k: Kit) -> None:
                 for za, zb in ((z - fr, z), (z + dw, z + dw + fr)):       # the side posts of the frame
                     k.face([[x + 2 * e, 0, za], [x + 2 * e, dh, za], [x + 2 * e, dh, zb], [x + 2 * e, 0, zb]],
                            _mix(trim, (0, 0, 0), 0.1), "door", 1)["normal"] = np.array([nx, 0, 0.0])
-                k.line([x + 2 * e, 0.06, z + 0.12], [x + 2 * e, dh - 0.12, z + 0.12], 2, 0.4)
-                k.line([x + 2 * e, 0.06, z + dw - 0.12], [x + 2 * e, dh - 0.12, z + dw - 0.12], 2, 0.4)
-                k.line([x + 2 * e, 1.0, z + dw - 0.14], [x + 2 * e, 1.0, z + dw - 0.22], 2, 1.6,
-                       rgb=(200, 170, 90))
+                # two recessed panels and a handle
+                pc = _mix(k.col("door"), (0, 0, 0), 0.12)
+                for ya, yb in ((0.18, 0.95), (1.1, dh - 0.16)):
+                    k.face([[x + 1.5 * e, ya, z + 0.14], [x + 1.5 * e, yb, z + 0.14], [x + 1.5 * e, yb, z + dw - 0.14],
+                            [x + 1.5 * e, ya, z + dw - 0.14]], pc, "door", 2, lw=0.6)["normal"] =                         np.array([nx, 0, 0.0])
+                hz_ = z + dw - 0.1 if nx < 0 else z + 0.1
+                k.face([[x + 2.5 * e, 0.98, hz_ - 0.025], [x + 2.5 * e, 1.06, hz_ - 0.025],
+                        [x + 2.5 * e, 1.06, hz_ + 0.025], [x + 2.5 * e, 0.98, hz_ + 0.025]], (214, 178, 92),
+                       "door", 3, lw=0.6)["normal"] = np.array([nx, 0, 0.0])
         if on_w:
             for z in np.arange(2.0 + (0.0 if nx > 0 else 1.0), D - 1.5, 4.0):
                 ww, y0, y1 = 2.0, wh + 0.35, min(Hc - 0.35, 2.5)
+                frc = _mix(k.col("ceiling"), (255, 255, 255), 0.3)
+                fw = 0.08
+                k.face([[x + 0.5 * e, y0 - fw, z - fw], [x + 0.5 * e, y1 + fw, z - fw],
+                        [x + 0.5 * e, y1 + fw, z + ww + fw], [x + 0.5 * e, y0 - fw, z + ww + fw]], frc, "window", 1,
+                       lw=0.8)["normal"] = np.array([nx, 0, 0.0])
                 f = k.face([[x + e, y0, z], [x + e, y1, z], [x + e, y1, z + ww], [x + e, y0, z + ww]],
-                           k.col("window"), "window", 1, emit=str(o.get("time")) != "night")
+                           k.col("window"), "window", 1, emit=str(o.get("time")) != "night", lw=0.7)
                 f["normal"] = np.array([nx, 0, 0.0])
                 f["sheen"] = True
-                k.line([x + 2 * e, y0, z + ww / 2], [x + 2 * e, y1, z + ww / 2], 2, 0.8)
-                k.line([x + 2 * e, (y0 + y1) / 2, z], [x + 2 * e, (y0 + y1) / 2, z + ww], 2, 0.6)
+                # the mullion, the transom and a sill, as bars of the frame's colour
+                m_ = 0.035
+                for q in ([[x + 2 * e, y0, z + ww / 2 - m_], [x + 2 * e, y1, z + ww / 2 - m_],
+                           [x + 2 * e, y1, z + ww / 2 + m_], [x + 2 * e, y0, z + ww / 2 + m_]],
+                          [[x + 2 * e, y1 - 0.45 - m_, z], [x + 2 * e, y1 - 0.45 + m_, z],
+                           [x + 2 * e, y1 - 0.45 + m_, z + ww], [x + 2 * e, y1 - 0.45 - m_, z + ww]]):
+                    k.face(q, frc, "window", 2, lw=0.5)["normal"] = np.array([nx, 0, 0.0])
+                k.box(min(x, x + nx * 0.1), y0 - fw - 0.05, z - fw - 0.05, max(x, x + nx * 0.1), y0 - fw,
+                      z + ww + fw + 0.05, frc, "window", 2, 0.6)
     # hanging lamps on the ceiling's middle line
     # evenly spaced from 4 m: the first one inside the picture, the rest shrinking toward the far end
     every = float(o.get("lamp_every") or 4.0)
@@ -864,9 +882,13 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         if f.get("sheen"):
             # a glass pane: a lighter diagonal band
             yy, xx = np.nonzero(mb)
-            ph = ((xx + yy) / (0.06 * S)) % 1.0
-            c = c.copy()
-            c[ph < 0.18] = _mix(col, (255, 255, 255), 0.45)
+            # the sky in the glass: lighter at the top, a soft gradient, and one lighter diagonal band
+            ty = ((yy - yy.min()) / max(1.0, float(np.ptp(yy))))[:, None].astype(np.float32)
+            c = (np.asarray(_mix(col, (255, 255, 255), 0.4), np.float32)[None, :] * (1 - ty) +
+                 np.asarray(_mix(col, (90, 140, 200), 0.15), np.float32)[None, :] * ty)
+            ph = ((xx + yy) / (0.09 * S)) % 1.0
+            band = (ph > 0.15) & (ph < 0.27)
+            c[band] = c[band] * 0.6 + 255 * 0.4
         img[mb] = c
         depth[mb] = t
         rid[mb] = reg(f["region"])
