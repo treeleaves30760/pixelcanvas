@@ -70,3 +70,16 @@ def test_polish_finishes_a_drawn_figure_and_keeps_the_face_sharp(girl):
 def test_polish_motion_needs_a_drawn_figure(girl):
     code, err = girl("polish", "--motion", "nobody")
     assert code == 2 and "EXAMPLE:" in err
+
+
+def test_polish_focus_and_toward_motion_keep_the_figure(girl):
+    from pixelcanvas import draw_finish
+    p = project()
+    before = p.composite_u8("export").astype(float)
+    text = ok(girl("polish", "--focus", "girl", "--motion", "girl:toward", "--no-grade", "--no-rim", "--no-vignette",
+                   "--no-lines", "--no-clean", "--no-strays"))
+    assert "dof:" in text and "radial" in text
+    p = project()
+    after = p.composite_u8("export").astype(float)
+    fig = draw_finish.figure_maps(p)["figs"]["girl"]
+    assert np.abs(after - before)[fig].mean() < 2.0        # the figure itself untouched

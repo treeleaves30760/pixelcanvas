@@ -418,7 +418,7 @@ def depth_of_field(p, img: np.ndarray, fm: dict, focus: str, amount: float) -> T
     zb = np.where(drawn_bg & (fm["z"] < 1e3), fm["z"], zb)
 
     def sig_of(z):
-        return np.clip(np.abs(z - zf) / max(z, 1e-3) / 0.6, 0.0, 1.0) * sig_max
+        return np.clip(np.abs(z - zf) / np.maximum(z, 1e-3) / 0.6, 0.0, 1.0) * sig_max
     bg = ~anyfig
     sb = sig_of(zb)
     out = img.copy()
