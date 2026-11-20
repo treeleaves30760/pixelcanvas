@@ -830,7 +830,7 @@ def cmd_block(ctx, args):
     kind = P3.block_kind(word) if word else (old["type"] if old else P3.block_kind(name))
     if kind is None:
         raise UsageError(f"unknown block kind {word or name!r}; kinds: {', '.join(P3.BLOCK_KINDS)} (or a word like "
-                         f"wall, bench, building, step, stairs, pole, lamp, tree, floor, water, railing, fence)",
+                         f"wall, bench, chair, desk, table, door, window, wainscot, building, step, stairs, pole, lamppost, tree, floor, water, railing, fence)",
                          f"pixelcanvas block {name} box --at 500,800 --size 1.5,0.45,0.45")
     dflt = P3.BLOCK_WORDS.get(word, P3.BLOCK_WORDS.get(name, P3.BLOCK_WORDS[kind if kind != "cylinder" else
                                                                             "cylinder"]))[1]
@@ -840,9 +840,9 @@ def cmd_block(ctx, args):
             raise UsageError("--size is width,depth,height in metres", USAGE["block"])
         size = list(dflt)
         if len(nums) == 1:
-            size = [nums[0], nums[0], nums[0]] if kind != "cylinder" else [nums[0], nums[0], dflt[2]]
+            size = [nums[0], nums[0], nums[0]] if kind not in ("cylinder",) + P3.POST_KINDS else                 [nums[0], nums[0], dflt[2]]
         elif len(nums) == 2:
-            size = [nums[0], nums[0], nums[1]] if kind == "cylinder" else [nums[0], dflt[1], nums[1]]
+            size = [nums[0], nums[0], nums[1]] if kind in ("cylinder",) + P3.POST_KINDS else                 [nums[0], dflt[1], nums[1]]
         else:
             size = nums
     else:
@@ -893,7 +893,7 @@ def cmd_block(ctx, args):
                  (f["rig"].get("targets") or {}).values()]
         if users:
             lines.append(f"re-posed on it: {', '.join(users)}")
-        elif kind in ("box", "stairs"):
+        elif kind in ("box", "stairs", "bench", "chair", "desk"):
             lines.append(f"a figure uses it with pixelcanvas pose <subject> --preset "
                          f"{'sit-stairs' if kind == 'stairs' else 'sit-ledge'} --on {name}   (or --hand-r {name})")
         lines.extend(notes)

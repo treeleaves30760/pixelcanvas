@@ -724,17 +724,23 @@ def lowest(prim) -> Tuple[float, np.ndarray]:
 
 # ============================================================================================ blocks
 
-BLOCK_KINDS = ("box", "stairs", "cylinder", "plane", "railing")
-BLOCK_WORDS = {"wall": ("box", (4.0, 0.3, 1.0)), "bench": ("box", (1.5, 0.45, 0.45)),
+BLOCK_KINDS = ("box", "stairs", "cylinder", "plane", "railing", "bench", "chair", "desk", "door", "window",
+               "lamppost", "tree", "wainscot")
+# furniture and fittings: drawn from several boxes; a figure sits on the seat (bench, chair) or the top (desk)
+POST_KINDS = ("lamppost", "tree")                  # stand on one point like a cylinder
+BLOCK_WORDS = {"wall": ("box", (4.0, 0.3, 1.0)), "bench": ("bench", (1.5, 0.45, 0.45)),
                "building": ("box", (8.0, 6.0, 10.0)), "house": ("box", (7.0, 6.0, 6.0)),
-               "step": ("box", (1.2, 0.3, 0.17)), "table": ("box", (1.2, 0.7, 0.75)),
-               "chair": ("box", (0.45, 0.45, 0.45)), "desk": ("box", (1.2, 0.6, 0.75)), "bed": ("box", (1.0, 2.0, 0.5)),
+               "step": ("box", (1.2, 0.3, 0.17)), "table": ("desk", (1.2, 0.7, 0.75)),
+               "chair": ("chair", (0.45, 0.45, 0.45)), "desk": ("desk", (1.2, 0.6, 0.75)),
+               "door": ("door", (1.0, 0.1, 2.1)), "window": ("window", (1.2, 0.1, 1.3)),
+               "wainscot": ("wainscot", (4.0, 0.2, 2.8)), "wall-panel": ("wainscot", (4.0, 0.2, 2.8)), "bed": ("box", (1.0, 2.0, 0.5)),
                "crate": ("box", (0.6, 0.6, 0.6)), "ledge": ("box", (3.0, 0.4, 0.9)), "box": ("box", (1.0, 1.0, 1.0)),
                "stairs": ("stairs", (1.4, 2.4, 1.2)), "stair": ("stairs", (1.4, 2.4, 1.2)),
                "steps": ("stairs", (1.4, 1.2, 0.6)),
                "cylinder": ("cylinder", (0.3, 0.3, 1.0)), "pole": ("cylinder", (0.1, 0.1, 3.0)),
-               "post": ("cylinder", (0.12, 0.12, 1.2)), "lamp": ("cylinder", (0.14, 0.14, 4.0)),
-               "lamppost": ("cylinder", (0.14, 0.14, 4.0)), "tree": ("cylinder", (0.4, 0.4, 4.0)),
+               "post": ("cylinder", (0.12, 0.12, 1.2)), "lamp": ("lamppost", (0.14, 0.14, 4.0)),
+               "lamppost": ("lamppost", (0.14, 0.14, 4.0)), "streetlight": ("lamppost", (0.14, 0.14, 4.0)),
+               "tree": ("tree", (0.4, 0.4, 5.0)),
                "trunk": ("cylinder", (0.4, 0.4, 4.0)), "column": ("cylinder", (0.6, 0.6, 4.0)),
                "pillar": ("cylinder", (0.6, 0.6, 4.0)),
                "plane": ("plane", (4.0, 4.0, 0.0)), "floor": ("plane", (6.0, 6.0, 0.0)),
@@ -793,6 +799,60 @@ class Block:
             r = w / 2
             out.append({"t": "cyl", "c": self.world([0, h / 2, 0]), "A": R @ np.diag([r, h / 2, r]),
                         "part": self.name, "group": self.name})
+        elif self.kind in ("bench", "chair"):
+            # a seat slab of height h on four legs, a back of boards behind it
+            t = 0.05
+            box([0, h - t / 2, d / 2], [w / 2, t / 2, d / 2], f"{self.name} seat")
+            lg = 0.035
+            for x in (-w / 2 + 2 * lg, w / 2 - 2 * lg):
+                for z in (2 * lg, d - 2 * lg):
+                    box([x, (h - t) / 2, z], [lg, (h - t) / 2, lg], f"{self.name} leg")
+            bh = (0.42 if self.kind == "bench" else 0.45)
+            box([0, h + 0.06 + bh / 2, d - 0.03], [w / 2, bh / 2, 0.025], f"{self.name} back")
+            for x in (-w / 2 + 2 * lg, w / 2 - 2 * lg):
+                box([x, h + bh / 2 + 0.03, d - 0.03], [lg, bh / 2 + 0.03, lg], f"{self.name} back post")
+        elif self.kind == "desk":
+            t = 0.045
+            box([0, h - t / 2, d / 2], [w / 2, t / 2, d / 2], f"{self.name} top")
+            lg = 0.03
+            for x in (-w / 2 + 2 * lg, w / 2 - 2 * lg):
+                for z in (2 * lg, d - 2 * lg):
+                    box([x, (h - t) / 2, z], [lg, (h - t) / 2, lg], f"{self.name} leg")
+            box([0, h - t - 0.09, d / 2], [w / 2 - 3 * lg, 0.09, d / 2 - 3 * lg], f"{self.name} apron")
+        elif self.kind in ("door", "window"):
+            # a frame of four bars round a recessed panel (a door from the ground, a window lifted with --lift)
+            fr = 0.07
+            dd = max(d, 0.06)
+            box([0, h / 2, dd / 2 + 0.02], [w / 2 - fr, h / 2 - (0 if self.kind == "door" else fr), 0.02],
+                f"{self.name} {'panel' if self.kind == 'door' else 'glass'}")
+            for x in (-w / 2 + fr / 2, w / 2 - fr / 2):
+                box([x, h / 2, dd / 2], [fr / 2, h / 2, dd / 2], f"{self.name} frame")
+            box([0, h - fr / 2, dd / 2], [w / 2, fr / 2, dd / 2], f"{self.name} frame")
+            if self.kind == "window":
+                box([0, fr / 2, dd / 2], [w / 2, fr / 2, dd / 2], f"{self.name} frame")
+                box([0, h / 2, dd / 2], [fr / 3, h / 2 - fr, dd / 3], f"{self.name} mullion")
+        elif self.kind == "wainscot":
+            # a wall: the lower third panelled and standing out a little, a rail on top of it
+            wh = min(0.95, 0.4 * h)
+            box([0, wh + (h - wh) / 2, d / 2], [w / 2, (h - wh) / 2, d / 2], f"{self.name} wall")
+            box([0, wh / 2, d / 2 - 0.015], [w / 2, wh / 2, d / 2 + 0.015], f"{self.name} panel")
+            box([0, wh + 0.025, d / 2 - 0.03], [w / 2, 0.025, d / 2 + 0.03], f"{self.name} rail")
+        elif self.kind == "lamppost":
+            r = w / 2
+            out.append({"t": "cyl", "c": self.world([0, h / 2, 0]), "A": R @ np.diag([r, h / 2, r]),
+                        "part": f"{self.name} pole", "group": self.name})
+            out.append({"t": "cyl", "c": self.world([0, 0.15, 0]), "A": R @ np.diag([1.6 * r, 0.15, 1.6 * r]),
+                        "part": f"{self.name} foot", "group": self.name})
+            box([0, h + 0.17, 0], [2.0 * r, 0.17, 2.0 * r], f"{self.name} lamp")
+            box([0, h + 0.37, 0], [2.6 * r, 0.03, 2.6 * r], f"{self.name} cap")
+        elif self.kind == "tree":
+            r = w / 2
+            th = 0.45 * h
+            out.append({"t": "cyl", "c": self.world([0, th / 2, 0]), "A": R @ np.diag([r, th / 2, r]),
+                        "part": f"{self.name} trunk", "group": self.name})
+            cr = max(0.35 * h, 2.5 * r)
+            out.append({"t": "ell", "c": self.world([0, h - 0.55 * cr, 0]), "A": R @ np.diag([cr, 0.62 * cr, cr]),
+                        "part": f"{self.name} crown", "group": self.name})
         elif self.kind == "railing":
             t = max(0.035, min(0.07, d if d > 0 else 0.05))
             box([0, h - t / 2, 0], [w / 2, t / 2, t / 2], f"{self.name} rail")
@@ -814,12 +874,14 @@ class Block:
             return base + (i + 1) * h / n
         if self.kind == "plane":
             return base + 0.008
+        if self.kind in ("door", "window", "wainscot"):
+            return base + h
         return base + h
 
     def contains(self, X: float, Z: float, margin: float = 0.0) -> bool:
         w, d, h = self.size
         q = self.local([X, 0, Z])
-        if self.kind == "cylinder":
+        if self.kind == "cylinder" or self.kind in POST_KINDS:
             return math.hypot(q[0], q[2]) <= w / 2 + margin
         if self.kind == "railing":
             return abs(q[0]) <= w / 2 + margin and abs(q[2]) <= max(d, 0.05) / 2 + margin
@@ -827,7 +889,7 @@ class Block:
 
     def top_centre(self) -> np.ndarray:
         w, d, h = self.size
-        if self.kind in ("cylinder", "railing"):
+        if self.kind in ("cylinder", "railing") or self.kind in POST_KINDS:
             c = self.world([0, 0, 0])
         elif self.kind == "stairs":
             c = self.world([0, 0, d * (self.steps - 0.5) / self.steps])
@@ -839,7 +901,7 @@ class Block:
         """The point of the block nearest P (for a hand or foot reaching to it)."""
         w, d, h = self.size
         q = self.local(P)
-        if self.kind == "cylinder":
+        if self.kind == "cylinder" or self.kind in POST_KINDS:
             r = w / 2
             v = np.array([q[0], 0, q[2]])
             n = float(np.linalg.norm(v))

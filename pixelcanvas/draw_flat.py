@@ -140,7 +140,8 @@ def auto_assign(p, labels, table) -> Dict[int, Tuple[str, str]]:
     if dstate(p).get("drawn2d"):
         from .draw_figure2d import drawn_corrections
         out.update(drawn_corrections(p, labels, table))
-    return out
+    from .scene3d import flat_filter        # a scene under the figures: its areas are not painted over
+    return flat_filter(p, labels, out)
 
 
 def eye_corrections(p, labels, table, assigned) -> Dict[int, Tuple[str, str]]:
