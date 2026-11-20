@@ -822,7 +822,7 @@ def cmd_block(ctx, args):
         return _step(ctx, f"block delete {name}", mutate_del, lines)
     a = parse(args, Spec(USAGE["block"], ["name", "kind"],
                          {"at": "value", "size": "value", "rot": "value", "steps": "value", "lift": "value",
-                          "offset": "value", "color": "value"},
+                          "offset": "value", "color": "value", "front": "flag", "back": "flag"},
                          alias={"rotate": "rot", "turn": "rot", "angle": "rot", "yaw": "rot", "n": "steps", "colour": "color",
                                 "height": "lift", "pos": "at", "move": "offset"}, min_pos=1))
     name = str(a["name"]).lower()
@@ -831,7 +831,7 @@ def cmd_block(ctx, args):
     kind = P3.block_kind(word) if word else (old["type"] if old else P3.block_kind(name))
     if kind is None:
         raise UsageError(f"unknown block kind {word or name!r}; kinds: {', '.join(P3.BLOCK_KINDS)} (or a word like "
-                         f"wall, bench, building, step, stairs, pole, lamp, tree, floor, water, railing, fence)",
+                         f"wall, bench, chair, desk, table, door, window, wainscot, building, step, stairs, pole, lamppost, tree, floor, water, railing, fence)",
                          f"pixelcanvas block {name} box --at 500,800 --size 1.5,0.45,0.45")
     dflt = P3.BLOCK_WORDS.get(word, P3.BLOCK_WORDS.get(name, P3.BLOCK_WORDS[kind if kind != "cylinder" else
                                                                             "cylinder"]))[1]
@@ -841,9 +841,9 @@ def cmd_block(ctx, args):
             raise UsageError("--size is width,depth,height in metres", USAGE["block"])
         size = list(dflt)
         if len(nums) == 1:
-            size = [nums[0], nums[0], nums[0]] if kind != "cylinder" else [nums[0], nums[0], dflt[2]]
+            size = [nums[0], nums[0], nums[0]] if kind not in ("cylinder",) + P3.POST_KINDS else                 [nums[0], nums[0], dflt[2]]
         elif len(nums) == 2:
-            size = [nums[0], nums[0], nums[1]] if kind == "cylinder" else [nums[0], dflt[1], nums[1]]
+            size = [nums[0], nums[0], nums[1]] if kind in ("cylinder",) + P3.POST_KINDS else                 [nums[0], dflt[1], nums[1]]
         else:
             size = nums
     else:
@@ -859,7 +859,8 @@ def cmd_block(ctx, args):
            else (old.get("lift", 0.0) if old else 0.0),
            "offset": [v for v, _, _ in coords._numbers(a["offset"])][:2] if a.get("offset")
            else (old.get("offset") if old else None),
-           "color": str(a["color"]) if a.get("color") else (old.get("color") if old else None)}
+           "color": str(a["color"]) if a.get("color") else (old.get("color") if old else None),
+           "front": True if a.get("front") else (False if a.get("back") else bool(old.get("front")) if old else False)}
     if a.get("color"):
         from .draw_plan import swatch
         swatch(p, a["color"], USAGE["block"])
@@ -894,7 +895,7 @@ def cmd_block(ctx, args):
                  (f["rig"].get("targets") or {}).values()]
         if users:
             lines.append(f"re-posed on it: {', '.join(users)}")
-        elif kind in ("box", "stairs"):
+        elif kind in ("box", "stairs", "bench", "chair", "desk"):
             lines.append(f"a figure uses it with pixelcanvas pose <subject> --preset "
                          f"{'sit-stairs' if kind == 'stairs' else 'sit-ledge'} --on {name}   (or --hand-r {name})")
         lines.extend(notes)
