@@ -206,7 +206,7 @@ figure girl --pose wave --at 330,880 --heads 6.5 --yaw 20 --look camera --wear "
 figure boy --pose arms-crossed --at 680,860 --heads 6.5 --yaw -25 --look left --wear "blazer:#2c3460,shirt:white,pants:#2c3460,shoes:#2a2020" --hair "medium,parted,#4a3020" --face "smug,#305080"
 ```
 
-- `scene list`: corridor, room, classroom, street, platform, outdoor, field, beach, rooftop, stairs, with
+- `scene list`: corridor, room, classroom, bedroom, street, platform, outdoor, field, beach, rooftop, stairs, park, track, studio, sky, with
   `--time day|sunset|night` and a colour per surface.
 - `figure <who>`: `--wear` pieces `piece[:colour][:style]`, `--hair` style, bangs, colour and accessories,
   `--face` expression (18), eye colour and gaze; every other option is a `pose` option: 73 presets

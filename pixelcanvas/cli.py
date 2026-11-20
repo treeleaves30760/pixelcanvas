@@ -586,7 +586,7 @@ HELP_NOTES = {
     "face": ["--expression neutral|smile|open|grin|laugh|shout|angry|sad|crying|teary|surprised|panicked|smug|"
              "embarrassed|sleepy|closed|shut|wink  --eyes <colour>  --gaze center|left|right|up|down|up-left|up-right|"
              "down-left|down-right"],
-    "scene": ["kits: corridor room classroom street platform outdoor field beach rooftop stairs; --time day|sunset|night;"
+    "scene": ["kits: corridor room classroom bedroom street platform outdoor field beach rooftop stairs park track studio sky; --time day|sunset|night;"
               " colours --wall --trim --floor --ceiling --sky --ground ...; --doors/--windows left|right|both|none, "
               "--lamps n; drawn on the paper layer under the figures, from the camera"],
     "polish": ["one finishing pass: strays, clean, coloured lines, depth, grade, soften, rim, dof, motion, glow, "
@@ -603,7 +603,9 @@ HELP_NOTES = {
 }
 
 
-HELP_SYNTAX = {"face": "face <who>   options: --expression --eyes --gaze --weight --keep-eyes   (a 3D figure's face)"}
+HELP_SYNTAX = {"figure": "figure <who>   options: --wear --color --hair --face --expression --eyes --gaze, and every pose "
+                         "option (--pose <preset> --at --heads --yaw --lean --twist --look --arm-r --hand-shape-r ...)",
+               "face": "face <who>   options: --expression --eyes --gaze --weight --keep-eyes   (a 3D figure's face)"}
 HELP_SUBWORDS = {"line": ("redo", "weight", "delete", "list", "close", "move"), "pose": ("list",),
                  "dress": ("list",), "block": ("list",), "stage": ("done",), "region": ("add", "list", "rest"),
                  "change": ("add", "list", "drop", "none"), "palette": ("make", "pick", "set", "map")}
@@ -723,7 +725,7 @@ def cmd_help(ctx: Ctx, args: List[str]) -> Report:
             "highlight  rim  shadow --from <part> --onto <part>  reflect  wet  haze  atmosphere  glow  cloud  "
             "ground  foliage  window  linestyle")
     rep.add("scene:   camera --horizon <y> --eye-height <m>   scene corridor|room|classroom|street|platform|outdoor|"
-            "field|beach|rooftop|stairs [--time day|sunset|night]   figure <who> --pose <preset> --at x,y "
+            "field|beach|rooftop|stairs|... [--time day|sunset|night]   figure <who> --pose <preset> --at x,y "
             "--wear \"blouse,skirt:navy\" --hair \"twintails,pink\" --face \"smile,blue\"   (scene list, pose list)")
     rep.add("3D:      camera --horizon <y> --eye-height <m>   pose <subject> --preset run --at x,y --yaw <deg> "
             "--set \"arm-r: raise 90; knee-l: 60\" [--on <block>] [--hand-r <block|x,y>]   pose list   "

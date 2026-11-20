@@ -88,7 +88,7 @@ pixelcanvas stage done
 
 ![corridor](https://raw.githubusercontent.com/treeleaves30760/pixelcanvas/main/docs/images/corridor.png)
 
-Kits: corridor, room, classroom, street, platform, outdoor, field, beach, rooftop, stairs. 73 pose presets with
+Kits: corridor, room, classroom, bedroom, street, platform, outdoor, field, beach, rooftop, stairs, park, track, studio, sky. 73 pose presets with
 modifiers, 18 expressions, hair styles with accessories; `pixelcanvas help pose,figure,scene` lists the options.
 
 Documentation, the skill and the source: <https://github.com/treeleaves30760/pixelcanvas>. MIT licence.

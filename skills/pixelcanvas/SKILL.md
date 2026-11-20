@@ -250,7 +250,7 @@ pixelcanvas polish --focus girl   # look
 pixelcanvas export final.png --stages stages
 pixelcanvas stage done             # closes every stage: status FINISHED
 ```
-`pixelcanvas scene corridor|room|classroom|street|platform|outdoor|field|beach|rooftop|stairs --time day|sunset|night`
+`pixelcanvas scene corridor|room|classroom|bedroom|street|platform|outdoor|field|beach|rooftop|stairs|park|track|studio|sky --time day|sunset|night`
 draws the place from the camera under the figures. `pixelcanvas figure <who>` poses, dresses, gives hair and a face
 in one line: `new-picture.md` has its syntax.
 

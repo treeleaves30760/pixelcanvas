@@ -194,7 +194,7 @@ figure girl --pose wave --at 330,880 --heads 6.5 --yaw 20 --look camera --wear "
 figure boy --pose arms-crossed --at 680,860 --heads 6.5 --yaw -25 --look left --wear "blazer:#2c3460,shirt:white,pants:#2c3460,shoes:#2a2020" --hair "medium,parted,#4a3020" --face "smug,#305080"
 ```
 
-- `scene list`：corridor、room、classroom、street、platform、outdoor、field、beach、rooftop、stairs，可加
+- `scene list`：corridor、room、classroom、bedroom、street、platform、outdoor、field、beach、rooftop、stairs、park、track、studio、sky，可加
   `--time day|sunset|night` 與各個表面的顏色。
 - `figure <who>`：`--wear` 衣物 `piece[:顏色][:款式]`，`--hair` 髮型、瀏海、顏色與飾品，`--face` 表情（18 種）、眼睛顏色與視線；
   其餘選項都是 `pose` 的選項：73 個預設姿勢（`pixelcanvas pose list`）、`--lean --twist --bend`、`--look`、`--arm-r`、

@@ -7,7 +7,7 @@ commands.
 
 ### Places
 - `scene <kit>` draws a finished background in the camera's perspective, under the figures: corridor, room,
-  classroom, street, platform, outdoor, field, beach, rooftop, stairs. `--time day|sunset|night` (night and sunset
+  classroom, bedroom, street, platform, outdoor, field, beach, rooftop, stairs, park, track, studio, sky. `--time day|sunset|night` (night and sunset
   light the figures too), colours per surface (`--wall --trim --floor --sky --ground --sea ...`), doors, windows,
   lamps with light pools, an arch at the corridor's end, contact shadows on its floor. `scene list` shows the kits.
 - Blocks for furniture (benches, desks, lamp posts, trees) draw in their own colours and areas.
