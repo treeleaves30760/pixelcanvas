@@ -474,3 +474,39 @@ def test_moving_presets_keep_four_separate_limbs_round_the_figure():
         for yaw in (0, 35, -35, 90):
             res = P3.solve_figure({"preset": name, "at": [500, 900], "yaw": yaw}, cam, {}, {})
             assert not P3.silhouette_lines(res, cam), (name, yaw)
+
+
+def test_look_left_right_follow_the_picture_even_in_profile():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    for yaw in (0, 90, -90, 160):
+        for word, sign in (("left", -1), ("right", 1)):
+            res = P3.solve_figure({"preset": "stand", "at": [500, 900], "yaw": yaw, "mods": {"look": word}},
+                                  cam, {}, {})
+            assert sign * res["F"]["head"][0, 2] > 0.5, (yaw, word)
+
+
+def test_lean_presets_fit_the_block_height():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    g = cam.ground_point(500, 900)
+    for name, kind, size in (("lean-railing", "railing", (2.0, 0.06, 0.95)), ("lean-elbow", "box", (0.7, 0.7, 1.1))):
+        blk = P3.Block("w", kind, g + [0.45, 0, 0], size)
+        res = P3.solve_figure({"preset": name, "on": "w", "at": [500, 900], "yaw": 0}, cam, {"w": blk}, {})
+        assert abs(res["contact_gap"]) < 0.06, (name, res["contact_gap"])
+
+
+def test_two_figures_hold_hands_and_lean_back_to_back():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    girl = P3.solve_figure({"preset": "walk-together", "at": [350, 900]}, cam, {}, {})
+    hand = girl["J"]["hand-l"]
+    spot = cam.project_units([np.array([hand[0] + 0.3, 0.0, hand[2]])])[0]
+    boy = P3.solve_figure({"preset": "stand", "at": [float(spot[0]), float(spot[1])],
+                           "targets": {"hand-r": "girl:hand-l"}}, cam, {}, {"girl": girl})
+    grip = boy["J"]["wrist-r"] + P3.unit(boy["J"]["hand-r"] - boy["J"]["wrist-r"]) * 0.45 * boy["body"].Lh
+    assert np.linalg.norm(grip - hand) < 0.08, boy["ik"]
+    assert any("girl's hand-l" in ln for ln in boy["ik"])
+    carry = P3.solve_figure({"preset": "stand", "at": [600, 900], "targets": {"hand-l": "girl:back"}},
+                            cam, {}, {"girl": girl})
+    assert any("girl's back" in ln for ln in carry["ik"])
+    bad = P3.solve_figure({"preset": "stand", "at": [600, 900], "targets": {"hand-l": "girl:tail"}},
+                          cam, {}, {"girl": girl})
+    assert any("has no" in ln for ln in bad["ik"])

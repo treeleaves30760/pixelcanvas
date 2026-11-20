@@ -808,6 +808,14 @@ def gesture(E: dict, pre: dict) -> dict:
         _add(E, "head", "tilt", 5)
     if not _has(E, "head", "turn") and not _has(E, "neck", "turn"):
         _add(E, "head", "turn", 6)
+    for s in "rl":                              # an arm hanging straight gets a soft elbow and a little swing
+        if s in (pre.get("reach") or {}):
+            continue
+        a, e = E.get(f"arm-{s}", {}), E.get(f"elbow-{s}", {})
+        if abs(a.get("forward", 0)) < 12 and a.get("raise", 0) < 25 and e.get("bend", 0) < 22:
+            _add(E, f"elbow-{s}", "bend", 10 if s == "r" else 16)
+            _add(E, f"arm-{s}", "forward", 5 if s == "r" else 8)
+            _add(E, f"arm-{s}", "raise", 3)
     if E.get("arm-r") == E.get("arm-l") and E.get("elbow-r") == E.get("elbow-l") and not pre.get("reach"):
         _add(E, "arm-l", "forward", 9)
         _add(E, "elbow-l", "bend", 14)
@@ -1670,18 +1678,18 @@ def _look_edits(E: dict, look, J, F, cam: Camera) -> dict:
             for j in ("neck", "head"):
                 E.setdefault(j, {})["turn"] = 0.0
         return E
-    if look in ("left", "right"):
-        d = float(np.dot(F["chest"][:, 0], cam.right))
-        sgn = (1.0 if d >= 0 else -1.0) * (1 if look == "left" else -1)
-        turn, nod = 55.0 * sgn, float(E.get("head", {}).get("nod", 0.0))
-        E.setdefault("neck", {})["turn"] = 0.4 * turn
-        E.setdefault("head", {})["turn"] = 0.6 * turn
-        return E
-    if isinstance(look, (list, tuple)):
+    keep_nod = None
+    if look in ("left", "right"):              # the picture's left / right, a little toward the viewer
+        side = -1.0 if look == "left" else 1.0
+        T = J["head"] + cam.right * 4.0 * side - cam.fwd * 1.5
+        keep_nod = float(E.get("head", {}).get("nod", 0.0))
+    elif isinstance(look, (list, tuple)):
         T = cam.point_at_depth(look[0], look[1], float(cam.to_cam(J["head"])[0, 2]))
     else:                                           # camera / back: at the viewer
         T = cam.C
     turn, nod = _look_angles(J, F, T)
+    if keep_nod is not None:
+        nod = keep_nod / 0.6
     if look == "back" or abs(turn) > 100:          # far round: the chest turns too (over the shoulder)
         extra = float(np.clip(abs(turn) - 95, 0, 45)) * (1 if turn > 0 else -1)
         if look == "back":
@@ -1718,9 +1726,30 @@ def solve_figure(spec: dict, cam: Camera, blocks: Dict[str, Block], others: Dict
     look = mods.get("look")
     E0, clamps = clamp_edits(E)
     res = _place(spec, pk, pre, E0, reach, cam, blocks, others)
+    contact = pre.get("contact")
+    if contact in ("forearms", "elbow-l", "elbow-r") and spec.get("on") in blocks:
+        # lean onto the block: bend at the hips (forearms) or to the side (an elbow) until the arm meets its top
+        body = res["body"]
+        for _ in range(5):
+            gap = res.get("contact_gap", 0.0)
+            if abs(gap) < 0.03:
+                break
+            d = math.degrees(math.atan2(gap, 0.45 * body.Ht))
+            if contact == "forearms":
+                _add(E, "spine", "bend", 0.7 * d)
+                _add(E, "pelvis", "bend", 0.3 * d)
+            else:
+                _add(E, "spine", "side", d * (1 if contact == "elbow-l" else -1))
+            E0, clamps = clamp_edits(E)
+            res = _place(spec, pk, pre, E0, reach, cam, blocks, others)
+        res["ik"] = [ln for ln in res["ik"] if "the top of" not in ln] + \
+            ([f"the {contact} stay {abs(res['contact_gap']):.2f} m {'above' if res['contact_gap'] > 0 else 'below'} "
+              f"the top of {spec['on']} at the body's limits"] if abs(res.get("contact_gap", 0)) > 0.06 else [])
     if look not in (None, "up", "down"):
         E1, clamps = clamp_edits(_look_edits(E, look, res["J"], res["F"], cam))
+        gap = res.get("contact_gap")
         res = _place(spec, pk, pre, E1, reach, cam, blocks, others)
+        res["contact_gap"] = res.get("contact_gap", gap)
     res["clamps"] = clamps
     res["check"] = check_pose(res, blocks) + view_check(res, cam) + silhouette_lines(res, cam)
     return res
@@ -1847,6 +1876,7 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
     if on and blk is None:
         notes.append(f"there is no block {on!r} (blocks: {', '.join(blocks) or 'none'}): standing on the ground")
     contact = pre.get("contact") if blk is not None else None
+    contact_gap = 0.0
     stand_blk = None if contact else blk            # a lean contact stands on the ground beside the block
     at = spec.get("at")
     # where the figure stands: --at seen on the support's top plane, or the block's top centre
@@ -1955,7 +1985,9 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
         for k in J:
             J[k] = J[k] + d
         if contact in ("forearms", "elbow-l", "elbow-r"):
-            gap = float(P[1] - Q[1])
+            top = float(blk.top_centre()[1])
+            gap = float(P[1] - top) if contact != "forearms" else float(P[1] - top - 0.04)
+            contact_gap = gap
             if abs(gap) > 0.06:
                 ik_lines.append(f"the {contact} are {abs(gap):.2f} m {'above' if gap > 0 else 'below'} the top of "
                                 f"{on} (block {on} --size w,d,h changes its height)")
@@ -1996,7 +2028,8 @@ def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:
         bal += f" (hips moved {shifted:.2f} m over the feet)"
     return {"J": J, "F": F, "body": body, "prims": prims, "preset": pk, "edits": E, "clamps": [], "notes": notes,
             "ik": ik_lines, "contacts": cts, "balance": bal, "yaw": yaw, "support": on if blk is not None else "ground",
-            "sup_y": sup_y, "lift": lift, "targets": dict(spec.get("targets") or {}), "reach": dict(reach)}
+            "sup_y": sup_y, "lift": lift, "targets": dict(spec.get("targets") or {}), "reach": dict(reach),
+            "contact_gap": contact_gap}
 
 
 def check_pose(res: dict, blocks: Dict[str, Block]) -> List[str]:
@@ -2046,7 +2079,7 @@ def check_pose(res: dict, blocks: Dict[str, Block]) -> List[str]:
     E = res["edits"]
     turn = E.get("neck", {}).get("turn", 0) + E.get("head", {}).get("turn", 0) + \
         E.get("chest", {}).get("twist", 0) + E.get("spine", {}).get("twist", 0)
-    if abs(turn) > 155:
+    if abs(turn) > 160:
         out.append(f"the head turns {abs(turn):.0f} deg from the hips: too far round")
     return out
 
@@ -2066,6 +2099,24 @@ def _target_point(limb_name, tgt, J, cam: Camera, blocks, others):
         else:
             q = b.closest(root)
         return q, f"the {name}"
+    if ":" in name and name.split(":")[0] in others:
+        who, part = name.split(":", 1)
+        oJ, oF = others[who]["J"], others[who]["F"]
+        part = {"hand": "hand-r", "shoulder": "shoulder-r", "waist": "pelvis", "hip": "pelvis"}.get(part, part)
+        if part in ("back", "chest-back"):
+            q = oJ["chest"] - oF["chest"][:, 2] * 0.13
+        elif part in ("front", "chest"):
+            q = oJ["chest"] + oF["chest"][:, 2] * 0.13
+        elif part == "pelvis":
+            q = oJ["pelvis"] + oF["pelvis"][:, 1] * 0.05
+        elif part == "knees":
+            q = (oJ["knee-r"] + oJ["knee-l"]) / 2
+        elif part in oJ:
+            q = oJ[part]
+        else:
+            return None, f"{who} has no {part!r} (hand-r, hand-l, shoulder-r, shoulder-l, elbow-r, knee-l, head, " \
+                         f"back, chest, waist, knees)"
+        return q, f"{who}'s {part}"
     if name in others:
         o = others[name]["J"]
         cands = [o["hand-r"], o["hand-l"]]
