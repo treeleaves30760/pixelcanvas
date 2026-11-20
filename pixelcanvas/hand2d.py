@@ -302,9 +302,15 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
         grp = np.isin(_finger_of(lb), [3, 4, 5]).astype(np.uint8)
         rg = int(max(2, round((0.11 if small else 0.07) * gL)))
         gk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * rg + 1, 2 * rg + 1))
-        covm = np.maximum(covm, cv2.morphologyEx(grp, cv2.MORPH_CLOSE, gk))
+        gclosed = cv2.morphologyEx(grp, cv2.MORPH_CLOSE, gk)
+        gap = (gclosed > 0) & ~cover                        # the wedges between the grouped fingers: finger lines
+        covm = np.maximum(covm, gclosed)
+    else:
+        gap = np.zeros(cover.shape, bool)
     thr = 0.6 * FINGER_R[1] * L
-    edges = _edges(zb, lb, covm > 0, thr, max_sep=True, margin=int(max(2, round(0.05 * gL))))
+    mg = int(max(2, round(0.025 * gL)))
+    edges = _edges(zb, lb, covm > 0, thr, max_sep=True, margin=mg)
+    edges |= gap & (cv2.erode(covm, np.ones((2 * mg + 1, 2 * mg + 1), np.uint8)) > 0)
     lines = _trace(edges, 0.16 * GRID / (ext / L))
     if name in ("fist", "point", "peace", "grip") and len(lines) < 2:
         # the curled fingers' fold: a curve through the middle knuckles (the line every drawn fist has)
@@ -319,6 +325,20 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
                   and inner[int(q[1]), int(q[0])]]
             if len(ok) >= 2 and np.linalg.norm(ok[-1] - ok[0]) > 0.12 * gL:
                 lines.insert(0, np.array(ok))
+    if not lines and name not in ("fist", "point", "grip"):
+        # no edge to read (a hand seen from its side): the separation between the index and the middle finger
+        def chain(i):
+            cs = [pc for pc in pieces if pc["kind"] == "cap" and pc["label"] >= 20 and (pc["label"] - 20) // 4 == i]
+            return np.array([cs[0]["a"]] + [c["b"] for c in cs])
+        mid = 0.5 * (chain(0) + chain(1))
+        mid = np.array([mid[0] + (mid[1] - mid[0]) * f for f in (0.3, 0.7)] + list(mid[1:]))
+        g, _ = pl.xy(mid)
+        g = (g - lo) * px
+        inner = cv2.erode(covm, np.ones((3, 3), np.uint8)) > 0
+        ok = [q for q in g if 0 <= int(q[1]) < inner.shape[0] and 0 <= int(q[0]) < inner.shape[1]
+              and inner[int(q[1]), int(q[0])]]
+        if len(ok) >= 2 and np.linalg.norm(ok[-1] - ok[0]) > 0.12 * gL:
+            lines.append(np.array(ok))
     lines = lines[:1] if small else lines[:4]
 
     def outline(m):
