@@ -1017,13 +1017,17 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
     from .render3d import light_world
     lab, tb = mp["lab"], mp["table"]
     block_ids = [k for k, t in enumerate(tb) if t.get("block")]
-    if not block_ids:
+    from .scene3d import floor_mask
+    sfl = floor_mask(p)                     # the floor of a scene kit (pixelcanvas scene) takes shadows too
+    if not block_ids and sfl is None:
         return []
     cam = DP.camera_of(p)
     L = light_world(cam, dc.light_vec(dc.dstate(p)))
     off = np.array([-L[0], 0.0, -L[2]])
     off = off / max(1e-6, float(np.linalg.norm(off))) if np.linalg.norm(off) > 1e-3 else np.zeros(3)
     blocks = cv2.resize(np.isin(lab, block_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
+    if sfl is not None:
+        blocks |= sfl[0]
     out = []
     for el in DP.figures(p):
         if el["subject"] not in subjects:
@@ -1053,8 +1057,11 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
             continue
         cx, cy = np.round(q.mean(0)).astype(int)
         k0 = lab[int(np.clip(cy * mp["s"], 0, lab.shape[0] - 1)), int(np.clip(cx * mp["s"], 0, lab.shape[1] - 1))]
-        t0 = tb[k0] if k0 >= 0 and tb[k0].get("block") else tb[block_ids[0]]
-        out.append(Fill(mask_rle=mask_to_rle(sh), color=_block_shadow(tuple(t0["rgb"])), feather=0.8))
+        if k0 >= 0 and tb[k0].get("block") or (block_ids and sfl is None):
+            rgb0 = tuple(tb[k0]["rgb"] if k0 >= 0 and tb[k0].get("block") else tb[block_ids[0]]["rgb"])
+        else:
+            rgb0 = sfl[1](cx, cy)
+        out.append(Fill(mask_rle=mask_to_rle(sh), color=_block_shadow(rgb0), feather=0.8))
     return out
 
 

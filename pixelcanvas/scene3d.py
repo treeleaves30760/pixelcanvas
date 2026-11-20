@@ -73,6 +73,7 @@ class Kit:
         self.ground: Optional[dict] = None                    # an infinite ground plane under the horizon
         self.clouds: List[Tuple[float, float, float]] = []    # (x, y, size) in 0-1000 units, above the horizon
         self.far: List[dict] = []                             # far silhouettes (hills, skyline, trees) in 2D units
+        self.floor_y: Optional[float] = None                  # a floor that mirrors the lamps (polished)
 
     def col(self, key: str) -> np.ndarray:
         return _rgb(self.o.get(key) or DEFAULTS[key])
@@ -126,6 +127,7 @@ def kit_corridor(k: Kit) -> None:
     z0 = 0.3
     wall, trim, floor, ceil = k.col("wall"), k.col("trim"), k.col("floor"), k.col("ceiling")
     wh = 0.95                                   # the wainscot's height
+    k.floor_y = 0.0
     k.face([[xl, 0, z0], [xr, 0, z0], [xr, 0, D], [xl, 0, D]], floor, "floor", 0)
     k.face([[xl, Hc, z0], [xl, Hc, D], [xr, Hc, D], [xr, Hc, z0]], ceil, "ceiling", 0)
     for x, nx in ((xl, 1), (xr, -1)):
@@ -213,6 +215,15 @@ def _hanging_lamp(k: Kit, x: float, top: float, z: float, drop: float, r: float 
     f["normal"] = np.array([0, 0, -1.0])
     f["billboard"] = True
     k.lamps.append((np.array([x, y, z]), 2.6))
+    if k.o.get("polish", True) and k.floor_y is not None:
+        # a polished floor mirrors the lamp: the same shape upside down under the floor, faint, no outline
+        fy = k.floor_y
+        ref = [[x + (px - x) * 0.8, fy - (py - fy - (y - fy)) * 0.0 - (y - fy) - (py - y) * 3.0, pz]
+               for px, py, pz in pts]
+        g = k.face(ref, _mix(k.col("floor"), k.col("lamp"), 0.6), "floor", 1, outline=False)
+        g["normal"] = np.array([0, 0, -1.0])
+        g["billboard"] = True
+        g["glow"] = 0.45
 
 
 def kit_room(k: Kit, classroom: bool = False) -> None:
@@ -586,6 +597,7 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
     lw0 = 0.0021 * S
     ink = np.asarray(_rgb(o.get("line") or DEFAULTS["line"]), float)
     strokes = []                                       # face outlines: drawn after their face
+    glows = []
 
     def fog(z):
         return np.clip(1.0 - np.exp(-np.asarray(z, float) / float(o.get("haze_m") or (22.0 if indoor else 70.0))),
@@ -653,6 +665,10 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
             col = base * mult * (1.0 if lam > -0.05 else 0.84)
             if abs(nrm[1]) > 0.9 and nrm[1] < 0:              # an underside: in shadow
                 col = base * mult * 0.8
+        if f.get("glow"):
+            # a soft glint (a lamp mirrored in a polished floor): blurred and laid over later
+            glows.append((mb, np.asarray(col, np.float32), float(f["glow"])))
+            continue
         c = np.broadcast_to(col, (int(mb.sum()), 3)).astype(np.float32)
         if f.get("sheen"):
             # a glass pane: a lighter diagonal band
@@ -667,6 +683,9 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
             strokes.append(None)
             for i in range(len(P)):
                 draw_seg(P[i], P[(i + 1) % len(P)], f["lw"] * (0.8 if f["emit"] else 1.0), ink)
+    for mb, col, k_g in glows:
+        a_ = cv2.GaussianBlur(mb.astype(np.float32), (0, 0), 0.006 * S)[..., None] * k_g
+        img[:] = img * (1 - a_) + col[None, None, :] * a_
     # depth haze and the lamps' light pools, per pixel, on every surface (not the sky)
     surf = depth < 1e3
     if surf.any():
@@ -681,7 +700,7 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
                 # a pool on the floor under the lamp and on the walls beside it; nothing above the lamp
                 d2 = ((Pw - Lp[None, :]) ** 2)
                 dist = np.sqrt(d2[:, 0] + 0.25 * d2[:, 1] + d2[:, 2])
-                below = (Pw[:, 1] < Lp[1] - 0.05).astype(np.float32)
+                below = np.clip((Lp[1] - Pw[:, 1]) / 0.6, 0, 1).astype(np.float32)
                 pool = np.maximum(pool, below * np.exp(-(dist / reach) ** 2))
             lamp_rgb = np.asarray(_rgb(o.get("lamp") or DEFAULTS["lamp"]), float)
             glow = np.asarray(_mix(lamp_rgb, (255, 170, 70), 0.35 if night else 0.1), np.float32)
@@ -819,7 +838,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
             "line", "steps", "at", "platform", "roof", "sea", "sand", "hill", "tree", "fence", "concrete",
             "pavement", "board", "desk", "stairs", "haze"]
     spec = {v: "value" for v in vals}
-    spec.update({"arch": "flag", "no-arch": "flag"})
+    spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag"})
     a = parse(args, Spec(USAGE["scene"], ["kit"], spec, alias={"colour": "color", "tod": "time"}, min_pos=0))
     kit = str(a.get("kit") or "").lower()
     o = {}
@@ -842,6 +861,10 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
         o["arch"] = False
     elif a.get("arch"):
         o["arch"] = True
+    if a.get("no-polish"):
+        o["polish"] = False
+    elif a.get("polish"):
+        o["polish"] = True
     return kit, o
 
 
@@ -916,8 +939,8 @@ def cmd_scene(ctx, args):
     rep.step = step
     rep.add(f"step {step}  scene {kit}: drawn in the camera's perspective on the paper layer (under the figures; "
             f"draw all / flat auto / shade all keep it)")
-    rep.add("options: " + (" ".join(f"--{k_} {v}" for k_, v in o.items() if k_ != "arch") or "defaults") +
-            (" --arch" if o.get("arch") else ""))
+    rep.add("options: " + (" ".join(f"--{k_} {v}" for k_, v in o.items() if k_ not in ("arch", "polish")) or "defaults") +
+            (" --arch" if o.get("arch") else "") + (" --no-polish" if o.get("polish") is False else ""))
     rep.add("regions: " + ", ".join(sorted(m for m, v in masks.items() if v.any())))
     rep.add("change: pixelcanvas scene --wall #hex --time night ...  (only the options you give change); "
             "recolor <region> works on the regions")
@@ -953,3 +976,28 @@ def flat_filter(p, labels, auto: dict) -> dict:
             continue
         out[n] = v
     return out
+
+
+FLOORS = ("floor", "ground", "road", "pavement", "platform", "sand", "concrete", "stairs", "edge-line", "road-mark")
+
+
+def floor_mask(p):
+    """(mask of the scene's floor regions [H,W], colour at a pixel (x, y) -> rgb) or None without a scene."""
+    if scene_rec(p) is None:
+        return None
+    m = np.zeros((p.H, p.W), bool)
+    for n in FLOORS:
+        if n in p.state.get("regions", {}) and p.state["regions"][n].get("how") == "scene":
+            try:
+                m |= p.region_mask(n)
+            except Exception:  # noqa: BLE001
+                pass
+    if not m.any():
+        return None
+    paper = p.layer("paper")
+
+    def colour(x, y):
+        x = int(np.clip(x, 0, p.W - 1))
+        y = int(np.clip(y, 0, p.H - 1))
+        return tuple(int(round(v * 255)) for v in paper[y, x, :3])
+    return m, colour
