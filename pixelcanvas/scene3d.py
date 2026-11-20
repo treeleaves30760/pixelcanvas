@@ -501,13 +501,20 @@ def _seg_near(a, b, cam, near: float = 0.25):
     return a, b
 
 
-def render(kit: Kit, cam, W: int, H: int, light_left: bool = True) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
-    """(RGB uint8 [H,W,3], region masks) of the kit seen by ``cam``."""
+def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool = False):
+    """(RGB uint8 [H,W,3], region masks) of the kit seen by ``cam``. With ``split`` (and a time other than day) the
+    surfaces keep their day colours and a third array is returned: the light as a multiply map [H,W,3] 0..1 (the
+    time's tint, warm pools round the lamps, 1 on the sky and the lamps), laid over figures and scene alike."""
     o = kit.o
     sky_top, sky_hor, mult, haze_w, lamp_k = _opts_time(o)
     night = str(o.get("time") or "day") == "night"
     mult = np.asarray(mult, float)
-    Ws, Hs = W * SS, H * SS
+    split = bool(split) and str(o.get("time") or "day") != "day"
+    tint = mult.copy()
+    if split:
+        mult = np.ones(3)
+    ss = SS if max(W, H) <= 2000 else 1          # a large canvas is fine enough as it is
+    Ws, Hs = W * ss, H * ss
     cs = cam.resized(Ws, Hs)
     S = float(max(Ws, Hs))
     img = np.zeros((Hs, Ws, 3), np.float32)
@@ -544,7 +551,7 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True) -> Tuple[np.n
                 x, y = int(rng.uniform(0, Ws)), int(rng.uniform(0, max(1, hz * 0.8)))
                 cv2.circle(img, (x, y), max(1, int(S * 0.0009)), (230, 230, 210), -1, cv2.LINE_AA)
         _clouds(kit, img, rid, reg("cloud"), cs, hz, sky_hor, night)
-        _far(kit, img, rid, reg, cs, hz, haze, mult)
+        _far(kit, img, rid, reg, cs, hz, haze, tint)
     if kit.ground is not None:
         below = (vv > hz + 0.5)
         dy = rays[..., 1]
@@ -679,6 +686,10 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True) -> Tuple[np.n
             lamp_rgb = np.asarray(_rgb(o.get("lamp") or DEFAULTS["lamp"]), float)
             glow = np.asarray(_mix(lamp_rgb, (255, 170, 70), 0.35 if night else 0.1), np.float32)
             add = (pool * lamp_k)[:, None]
+            if split:
+                pool_img = np.zeros((Hs, Ws), np.float32)
+                pool_img[surf] = np.clip(pool * lamp_k, 0, 1)
+                add = add * 0.0
             col = col * (1 - 0.55 * add) + glow[None, :] * (0.55 * add) + (glow[None, :] * 0.25 * add if night else 0)
         col = col * (1 - k) + np.asarray(haze, np.float32)[None, :] * k
         isem = np.isin(rid[surf], emit_ids)
@@ -694,10 +705,31 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True) -> Tuple[np.n
             cv2.circle(halo, (int(q[0, 0]), int(q[0, 1])), max(2, int(r * 1.6)), 1.0, -1)
         halo = cv2.GaussianBlur(halo, (0, 0), 0.02 * S)
         img = img + halo[..., None] * np.array([255, 200, 120], np.float32)[None, None, :] * 0.35
+    else:
+        halo = None
+    if split:
+        # the sky and far things are drawn in the time's own colours: the paper holds them divided by the tint,
+        # so the light layer (the tint everywhere) gives them back and darkens a figure in front of them alike
+        far_ids = [regions.index(r) for r in ("sky", "cloud", "skyline", "hill", "tree", "sea") if r in regions]
+        fm = np.isin(rid, far_ids)
+        img[fm] = img[fm] / np.maximum(tint.astype(np.float32), 0.05)[None, :]
     out = cv2.resize(np.clip(img, 0, 255), (W, H), interpolation=cv2.INTER_AREA).astype(np.uint8)
     rsmall = cv2.resize(rid, (W, H), interpolation=cv2.INTER_NEAREST)
     masks = {name: rsmall == i for i, name in enumerate(regions)}
-    return out, masks
+    if not split:
+        return out, masks
+    lt = np.broadcast_to(tint.astype(np.float32), (Hs, Ws, 3)).copy()
+    if kit.lamps and "pool_img" in locals():
+        lamp_rgb = np.asarray(_rgb(o.get("lamp") or DEFAULTS["lamp"]), float) / 255.0
+        warm = np.asarray(_mix(lamp_rgb, (1.0, 0.72, 0.4), 0.45), np.float32)
+        a = cv2.GaussianBlur(pool_img, (0, 0), 0.01 * S)[..., None]
+        lt = lt * (1 - a) + warm[None, None, :] * a
+    if halo is not None:
+        lt = lt * (1 - np.clip(halo, 0, 1)[..., None]) + np.clip(halo, 0, 1)[..., None]
+    keep = np.isin(rid, [regions.index(r) for r in ("lamp",) if r in regions])
+    lt[keep] = 1.0
+    light = cv2.resize(lt, (W, H), interpolation=cv2.INTER_AREA)
+    return out, masks, np.clip(light, 0, 1)
 
 
 def _clouds(kit: Kit, img, rid, rk: int, cs, hz: float, sky_hor, night: bool) -> None:
@@ -819,10 +851,17 @@ def paint(p, rec: dict) -> Dict[str, np.ndarray]:
     cam = DP.camera_of(p)
     kit = build_kit(rec["kit"], rec["opts"])
     light_left = str(rec["opts"].get("light") or "left").lower().startswith("l")
-    rgb, masks = render(kit, cam, p.W, p.H, light_left)
+    res = render(kit, cam, p.W, p.H, light_left, split=True)
+    rgb, masks = res[0], res[1]
     arr = np.ones((p.H, p.W, 4), np.float32)
     arr[..., :3] = rgb.astype(np.float32) / 255.0
     p._write_layer_file("paper", arr)
+    _light_layer(p)
+    la = np.zeros((p.H, p.W, 4), np.float32)
+    if len(res) == 3:
+        la[..., :3] = res[2]
+        la[..., 3] = 1.0
+    p._write_layer_file("light", la if len(res) == 3 else None)
     d = dc.dstate(p)
     from .regions import clean_name
     for name, m in masks.items():
@@ -835,6 +874,16 @@ def paint(p, rec: dict) -> Dict[str, np.ndarray]:
         ys, xs = np.nonzero(m)
         d["palette"]["swatches"].setdefault(rn, dc.to_hex(tuple(int(v) for v in np.median(rgb[ys, xs], 0))))
     return masks
+
+
+def _light_layer(p) -> None:
+    """The scene's light: a multiply layer under the line art, over the scene and the figures (night, sunset)."""
+    names = [e["name"] for e in p.state["layers"]]
+    if "light" in names:
+        return
+    at = names.index("line") if "line" in names else len(names)
+    p.state["layers"].insert(at, {"name": "light", "mode": "multiply", "opacity": 1.0, "visible": True,
+                                  "clip": False, "alpha_lock": False, "empty": True})
 
 
 def cmd_scene(ctx, args):
@@ -854,7 +903,7 @@ def cmd_scene(ctx, args):
     rec = {"kit": kit, "opts": o}
     before = dc.composite_u8(p, "view")
     names = [f"regions/{n}.png" for n in p.state.get("regions", {})]
-    step = p.begin_step(["layers/paper.png"] + names + [f"regions/{n}.png" for n in
+    step = p.begin_step(["layers/paper.png", "layers/light.png"] + names + [f"regions/{n}.png" for n in
                                                         ("wall", "floor", "ceiling", "sky", "ground")])
     try:
         d["scene3d"] = rec
