@@ -502,6 +502,17 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                               open_start=True, n_rings=16, n_pts=24, bias=bias)
             out.append(body_part)
             body_part["details"] += _waist_folds(F, tor, ease + 0.004 * h)
+            if g in ("blouse", "shirt", "blazer", "jacket", "coat") and (g == inner_top or not inner_top):
+                # the collar wraps the neck: a band round the neck base, set back so the neck stays in front and
+                # the band shows at its sides and behind it
+                rn = NECK * h * k
+                Yn = unit(J["neck-top"] - J["neck"])
+                b0 = J["neck"] - Yn * 0.01 * h
+                band = _tube(f"{g}-collar-band", g if g == inner_top else "collar", subj, "clothes",
+                             [b0, b0 + Yn * 0.075 * h], [rn * 1.5, rn * 1.38], {"collar": None},
+                             round_start=False, round_end=False, open_end=True, open_start=True, n_rings=4,
+                             bias=0.5 * rn + 0.004 * h)
+                out.append(band)
             # sleeves
             sleeve = str(o.get("sleeve") or ("short" if g == "dress" else "long"))
             trim = g in ("blazer", "coat") and o.get("trim", True) is not False
