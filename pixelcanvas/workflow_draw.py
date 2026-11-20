@@ -801,7 +801,7 @@ def next_action(p, comparison=None) -> Tuple[str, str]:
         if sf:
             return sf
     if stage == "plan":
-        if not d.get("subjects"):
+        if not d.get("subjects") and not guide_route(st):
             return ("no reference: first say what the picture shows, one box per subject (0-1000, leave room "
                     "around it)", "pixelcanvas plan subject <name> --box x0,y0,x1,y1")
     if d.get("render") and stage not in ("plan", "sketch"):

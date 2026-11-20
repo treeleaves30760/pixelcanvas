@@ -308,6 +308,9 @@ def unfilled_holes(p, stage: str) -> List[dict]:
     d = dstate(p)
     if not d["lines"]:
         return []
+    from .scene3d import scene_rec
+    if scene_rec(p):
+        return []               # a scene kit paints the whole paper under the figures: no bare area is left
     labels, table, _ = draw_flat.compute_areas(p)
     un = [r for r in draw_flat.unfilled(p, labels, table) if r["share"] > 0.0004]
     if not un or (stage != "flat" and sum(r["share"] for r in un) <= 0.01):

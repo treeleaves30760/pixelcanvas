@@ -41,7 +41,7 @@ pixelcanvas help pose,figure,scene     # options and values of several commands 
 ```
 
 `pixelcanvas scene corridor --time day --wall "#e6dcc4" --floor "#b07a4a" --lamps 4` draws the place from the
-camera under the figures (kits: corridor room classroom street platform outdoor field beach rooftop stairs).
+camera under the figures (kits: corridor room classroom bedroom street platform park track outdoor field beach rooftop stairs studio sky; `pixelcanvas scene list` prints each kit with its options, `--weather rain|snow`, `--time day|sunset|night`).
 
 `pixelcanvas figure` sets a whole figure in one line:
 
