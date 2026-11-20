@@ -594,7 +594,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
             if g == "dress":
                 out += _shell_parts(F3.garment_prims(rig, "x", "skirt", {"length": o.get("length", "knee"),
                                                                        "style": "flared"}, motion, hands, grips),
-                                    g, subj, tor, h, bias + 0.002 * h)
+                                    g, subj, tor, h, bias + 0.002 * h, legs=_legs_of(J, h, k))
             if g == "hoodie":
                 for pr in F3.garment_prims(rig, "x", g, o, motion, hands, grips):
                     if pr["piece"] == "hood":
@@ -603,7 +603,8 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                 out += _shell_parts(F3.garment_prims(rig, "x", "coat", o, motion, hands, grips), g, subj, tor, h,
                                     bias + 0.002 * h, only="coat-tails")
         elif g == "skirt":
-            out += _shell_parts(F3.garment_prims(rig, "x", "skirt", o, motion, hands, grips), g, subj, tor, h, bias)
+            out += _shell_parts(F3.garment_prims(rig, "x", "skirt", o, motion, hands, grips), g, subj, tor, h, bias,
+                                legs=_legs_of(J, h, k))
         elif g in ("pants", "shorts"):
             ax, a, dr, fr = tor.tube(3.0, 5.0, ease * 0.6, n=5)
             out.append(_tube(g, g, subj, "clothes", ax, a, {"hip-r": J["hip-r"], "hip-l": J["hip-l"],
@@ -688,6 +689,11 @@ def _slim_prim(pr: dict, tor: Torso) -> dict:
     return out
 
 
+def ndi_gauss(x: np.ndarray, sigma: float) -> np.ndarray:
+    from scipy.ndimage import gaussian_filter1d
+    return gaussian_filter1d(np.asarray(x, float), sigma, mode="wrap")
+
+
 def _fan_samples(poly3: np.ndarray, normal: np.ndarray, n: int = 6) -> Tuple[np.ndarray, np.ndarray]:
     """Samples inside a small 3D polygon (a fan from its middle) with one normal."""
     c = poly3.mean(0)
@@ -703,10 +709,41 @@ def _fan_samples(poly3: np.ndarray, normal: np.ndarray, n: int = 6) -> Tuple[np.
     return P, np.repeat(unit(normal)[None], len(P), 0)
 
 
+def _legs_of(J, h: float, k: float) -> List[tuple]:
+    """The drawn thighs as capsules (start, knee, start radius, knee radius) for the cloth to lie on."""
+    out = []
+    for s in "rl":
+        A = J.get(f"top-thigh-{s}", J[f"hip-{s}"])
+        out.append((np.asarray(A, float), np.asarray(J[f"knee-{s}"], float), THIGH[0][1] * h * k,
+                    THIGH[-1][1] * h * k))
+    return out
+
+
+def _drape(P: np.ndarray, legs: List[tuple], margin: float) -> np.ndarray:
+    """Cloth points pushed out of the thighs onto their surface (a skirt lies on a raised or seated thigh instead of
+    the thigh poking through it)."""
+    P = np.asarray(P, float).copy()
+    for A, B, ra, rb in legs:
+        d = B - A
+        L2 = float(d @ d)
+        if L2 < 1e-12:
+            continue
+        t = np.clip(((P - A) @ d) / L2, 0.0, 1.0)
+        Q = A + t[:, None] * d
+        v = P - Q
+        dist = np.linalg.norm(v, axis=1)
+        r = ra + (rb - ra) * t + margin
+        hit = dist < r
+        if hit.any():
+            P[hit] = Q[hit] + v[hit] / np.maximum(dist[hit], 1e-9)[:, None] * r[hit, None]
+    return P
+
+
 def _shell_parts(prims: List[dict], mat: str, subj: str, tor: Torso, h: float, bias: float,
-                 only: Optional[str] = None) -> List[dict]:
+                 only: Optional[str] = None, legs: Optional[List[tuple]] = None) -> List[dict]:
     """A skirt (or coat tails) from the 3D cloth shell: rings from the waist to the hem, narrowed at the waist to
-    the drawn trunk, with pleat lines on the front."""
+    the drawn trunk, with pleat lines on the front. With ``legs`` the cloth flares less and lies on the thighs (it
+    lifts over a raised thigh and drapes over the lap when seated)."""
     out = []
     for pr in prims:
         if pr["t"] != "shell" or (only and pr["piece"] != only):
@@ -718,6 +755,8 @@ def _shell_parts(prims: List[dict], mat: str, subj: str, tor: Torso, h: float, b
         waist_a = tor.at(3.4)[3] + 0.02 * h
         f = waist_a / max(r0, 1e-6)
         flare = max(0.0, hem_r / max(r0 * f, 1e-6) - 1)
+        if legs:
+            flare = min(flare, 0.75)
         Ax = A[:, 0] * f
         Az = A[:, 2] * f
         Ay = A[:, 1]
@@ -741,6 +780,10 @@ def _shell_parts(prims: List[dict], mat: str, subj: str, tor: Torso, h: float, b
             y = y_hem * fy
             rr = (1 + flare * np.abs(y)) * (1 + 0.1 * fy * fy * tri)
             P = c[None] + np.outer(rr * cs, Ax) + np.outer(y, Ay) + np.outer(rr * sn, Az)
+            if legs and kk:
+                D = _drape(P, legs, 0.012 * h) - P
+                D = np.stack([ndi_gauss(D[:, q], 1.5) for q in range(3)], 1)
+                P = P + D
             rings.append((P.mean(0), P))
         part = _part(pr["piece"], "tube", mat, subj, "clothes", {"waist": None, "hip-r": None, "hip-l": None},
                      rad=hem_r, rings=rings, open_end=True, bias=bias)
@@ -752,6 +795,8 @@ def _shell_parts(prims: List[dict], mat: str, subj: str, tor: Torso, h: float, b
                 ys = np.linspace(-0.3, yh * 0.985, 6)
                 rr = (1 + flare * np.abs(ys)) * (1 + 0.1 * (ys / yh) ** 2)
                 pts = c[None] + np.outer(rr * math.cos(a_), Ax) + np.outer(ys, Ay) + np.outer(rr * math.sin(a_), Az)
+                if legs:
+                    pts = _drape(pts, legs, 0.014 * h)
                 part["details"].append({"pts": pts, "w": 0.42, "nrm": unit(np.outer(math.cos(a_), Ax) + np.outer(math.sin(a_), Az)).repeat(len(pts), 0)})
         out.append(part)
     return out
