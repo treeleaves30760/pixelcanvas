@@ -287,7 +287,7 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
         W = J[f"wrist-{s}"]
         hmat = "gloves" if "gloves" in garments else "skin"
         if eye is not None:
-            parts.append(_hand2d(rig, s, hands.get(s, "relaxed"), hmat, subj, eye, h, k, cam))
+            parts += _hand2d(rig, s, hands.get(s, "relaxed"), hmat, subj, eye, h, k, cam, grips.get(s))
             hprims = []
         else:
             hprims = F3.hand_prims(rig, "x", s, hands.get(s, "relaxed"), grips.get(s), mat=hmat)
@@ -693,75 +693,11 @@ def _clumps(rig, locks: Dict[str, list], style: str, h: float) -> List[Tuple[np.
     return out
 
 
-# hand silhouettes in the hand's own frame: x from the wrist toward the fingertips, y toward the thumb (lengths in
-# hand lengths); details: finger separation, knuckle and thumb lines
-HANDS = {
-    "open": ([(0, -0.15), (0.42, -0.21), (0.92, -0.18), (1.0, -0.1), (1.02, 0.0), (0.97, 0.1), (0.6, 0.17),
-              (0.5, 0.2), (0.62, 0.4), (0.6, 0.47), (0.5, 0.45), (0.3, 0.28), (0, 0.15)],
-             [[(0.6, -0.09), (0.97, -0.1)], [(0.6, 0.0), (0.99, 0.0)], [(0.58, 0.09), (0.93, 0.1)]]),
-    "relaxed": ([(0, -0.15), (0.42, -0.2), (0.78, -0.18), (0.86, -0.1), (0.88, 0.0), (0.84, 0.1), (0.6, 0.16),
-                 (0.48, 0.2), (0.55, 0.32), (0.5, 0.36), (0.3, 0.26), (0, 0.15)],
-                [[(0.58, -0.09), (0.82, -0.1)], [(0.6, 0.02), (0.85, 0.02)]]),
-    "fist": ([(0, -0.15), (0.15, -0.21), (0.52, -0.23), (0.64, -0.15), (0.66, 0.0), (0.62, 0.15), (0.52, 0.21),
-              (0.34, 0.25), (0.18, 0.21), (0, 0.15)],
-             [[(0.48, -0.2), (0.52, 0.0), (0.49, 0.17)], [(0.22, 0.17), (0.5, 0.1)],
-              [(0.52, -0.1), (0.63, -0.1)], [(0.53, 0.04), (0.65, 0.04)]]),
-    "point": ([(0, -0.15), (0.15, -0.21), (0.52, -0.23), (0.64, -0.15), (0.66, 0.02), (1.02, 0.06), (1.05, 0.12),
-               (1.01, 0.17), (0.6, 0.19), (0.34, 0.25), (0.18, 0.21), (0, 0.15)],
-              [[(0.48, -0.2), (0.52, -0.02)], [(0.22, 0.17), (0.5, 0.12)]]),
-    "peace": ([(0, -0.15), (0.15, -0.21), (0.52, -0.23), (0.62, -0.12), (0.64, -0.04), (0.98, -0.08),
-               (1.01, -0.02), (0.97, 0.04), (0.66, 0.05), (1.0, 0.16), (1.0, 0.23), (0.95, 0.24), (0.6, 0.2),
-               (0.34, 0.25), (0.18, 0.21), (0, 0.15)],
-              [[(0.48, -0.2), (0.5, -0.06)], [(0.22, 0.17), (0.48, 0.12)]]),
-}
-HANDS["grip"] = HANDS["fist"]
-HANDS["cup"] = HANDS["relaxed"]
-# a small hand on the canvas: a mitten (the fingers one mass, a thumb) and one or two lines
-MITTENS = {
-    "open": ([(0, -0.15), (0.45, -0.2), (0.86, -0.17), (0.97, -0.06), (0.95, 0.08), (0.62, 0.16), (0.54, 0.34),
-              (0.44, 0.38), (0.28, 0.25), (0, 0.15)], [[(0.5, 0.12), (0.78, 0.1)]]),
-    "relaxed": ([(0, -0.15), (0.42, -0.2), (0.76, -0.16), (0.84, -0.04), (0.8, 0.08), (0.58, 0.16), (0.5, 0.3),
-                 (0.4, 0.33), (0.27, 0.24), (0, 0.15)], [[(0.48, 0.11), (0.7, 0.09)]]),
-    "fist": ([(0, -0.15), (0.2, -0.21), (0.5, -0.22), (0.63, -0.1), (0.62, 0.1), (0.5, 0.21), (0.3, 0.24),
-              (0.14, 0.2), (0, 0.15)], [[(0.47, -0.17), (0.5, 0.02), (0.47, 0.15)]]),
-}
-MITTENS["grip"] = MITTENS["fist"]
-MITTENS["cup"] = MITTENS["point"] = MITTENS["peace"] = MITTENS["relaxed"]
-MITTEN_PX = 0.035          # a hand shorter than this share of the canvas is drawn as a mitten
-
-
 def _hand2d(rig, s: str, shape: str, mat: str, subj: str, eye: np.ndarray, h: float, k: float,
-            cam=None) -> dict:
-    """An anime hand: a simple silhouette for its shape in the plane facing the viewer that holds the hand's
-    direction (so it foreshortens with the hand), with finger separation and knuckle lines; a mitten with one or
-    two lines when the hand is small on the canvas (``cam`` measures it)."""
-    W, u, t, n = F3.hand_frame(rig, s)
-    L = 0.5 * h * min(k, 1.15)
-    small = False
-    if cam is not None:
-        z = float(cam.project(np.asarray([W]))[1][0])
-        small = z > 1e-6 and cam.f * L / z < MITTEN_PX * max(cam.W, cam.H)
-    view = unit(np.asarray(eye, float) - W)
-    v = np.cross(u, view)
-    if np.linalg.norm(v) < 1e-6:
-        v = t
-    v = unit(v)
-    thumb = 1.0 if float(t @ v) >= 0 else -1.0
-    poly, lines = (MITTENS if small else HANDS).get(shape, (MITTENS if small else HANDS)["relaxed"])
-
-    def to3(xy):
-        xy = np.asarray(xy, float)
-        return W + np.outer(xy[:, 0] * L, u) + np.outer(xy[:, 1] * L * thumb, v) + view * 0.01 * h
-    P3 = to3(poly)
-    # a smooth closed outline through the points
-    from .shape2d import _catmull
-    Q = np.vstack([P3, P3[:2]])
-    P3s = _catmull(Q, 8 * len(poly))[:-8]
-    part = _part(f"hand-{s}", "blob", mat, subj, f"hand-{s}", {f"wrist-{s}": W}, rad=0.12 * h,
-                 flat3=P3s, normal=view, bias=-0.004 * h, mitten=small)
-    for ln in lines:
-        part["details"].append({"pts": to3(ln), "w": 0.4})
-    return part
+            cam=None, grip_r: Optional[float] = None) -> List[dict]:
+    """The drawn hand of side s (see hand2d): one part, or two for a hand gripping a prop."""
+    from .hand2d import hand_parts
+    return hand_parts(rig, s, shape, mat, subj, eye, h, k, cam, grip_r)
 
 
 def _canopy2d(pr: dict, name: str, mat: str, subj: str) -> dict:

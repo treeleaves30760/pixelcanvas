@@ -58,7 +58,7 @@ TRIM_COLOUR = "#d4a83c"
 LAYER = {"socks": 0, "thigh-highs": 0, "gloves": 0, "shirt": 1, "blouse": 1, "pants": 1, "shorts": 1, "dress": 1,
          "skirt": 2, "tie": 3, "ribbon": 3, "shoes": 3, "boots": 3, "blazer": 4, "jacket": 4, "hoodie": 4,
          "coat": 5, "scarf": 6}
-HAND_SHAPES = ("relaxed", "fist", "open", "point", "grip", "peace", "cup")
+HAND_SHAPES = ("relaxed", "fist", "open", "point", "grip", "peace", "cup", "spread", "flat", "reach")
 HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "bun")
 BANGS = ("blunt", "side", "parted", "none")
 
@@ -222,8 +222,11 @@ _CURL = {  # bends (deg) of the three joints, index to pinky
     "point": [(0, 2, 2), (92, 100, 70), (92, 100, 70), (92, 100, 70)],
     "peace": [(0, 2, 2), (0, 2, 2), (92, 100, 70), (92, 100, 70)],
     "cup": [(28, 22, 14)] * 4,
+    "spread": [(2, 3, 2)] * 4,
+    "flat": [(0, 2, 1)] * 4,
+    "reach": [(10, 14, 8), (12, 16, 9), (15, 18, 10), (18, 22, 12)],
 }
-_SPREAD = {"open": (10, 3, -4, -12), "peace": (11, -9, 0, 0), "relaxed": (4, 1, -2, -6)}
+_SPREAD = {"open": (10, 3, -4, -12), "spread": (18, 4, -9, -24), "reach": (11, 2, -5, -12), "peace": (11, -9, 0, 0), "relaxed": (4, 1, -2, -6)}
 
 
 def hand_frame(rig: Rig, s: str):
@@ -280,7 +283,8 @@ def hand_prims(rig: Rig, owner: str, s: str, shape: str, grip_r: Optional[float]
     tb = W + u * 0.2 * lp + t * 0.42 * wp + n * 0.25 * th
     dirs = {"open": (0.55, 0.85, 0.0), "relaxed": (0.8, 0.45, 0.35), "cup": (0.75, 0.3, 0.55),
             "fist": (0.55, 0.05, 0.85), "point": (0.6, 0.05, 0.8), "peace": (0.55, -0.1, 0.85),
-            "grip": (0.45, 0.1, 0.9)}[shape]
+            "grip": (0.45, 0.1, 0.9), "spread": (0.3, 0.95, 0.0), "flat": (0.72, 0.62, 0.0),
+            "reach": (0.5, 0.78, 0.3)}[shape]
     d1 = unit(dirs[0] * u + dirs[1] * t + dirs[2] * n)
     m = tb + d1 * 0.27 * Lh
     d2 = unit(d1 + (u * 0.3 - t * 0.5 if shape in ("fist", "point", "peace", "grip") else u * 0.2))
