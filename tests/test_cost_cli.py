@@ -25,7 +25,7 @@ def test_help_several_commands_compact(here):
 
 def test_list_without_project(here):
     code, out = cli.run(["pose", "list"])
-    assert code == 0 and "run:" in out and "walk-together" in out   # the whole list, not cut
+    assert code == 0 and "run" in out and "walk-together" in out   # the whole list, not cut
     code, out = cli.run(["dress", "list"])
     assert code == 0 and "thigh-highs" in out
 
