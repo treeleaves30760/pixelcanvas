@@ -623,6 +623,7 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
         S = float(max(p.W, p.H))
         eps = 0.0016 * S
         over = 0.0035 * S
+        wscale = _line_scales(p)
         for st in sts:
             pt = st["part"]
             pts = st["pts"]
@@ -640,7 +641,8 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
             path, _ = draw_line.fit(p, ctrl_u, closed=st["closed"], snap=False, join=False, bow=0.0)
             if len(path) < 2 or dc.path_length(path) < 3:
                 continue
-            rec = draw_line.make_record(p, path, ctrl_u, weight=st["w"], taper="none" if st["closed"] else "both",
+            rec = draw_line.make_record(p, path, ctrl_u, weight=st["w"] * wscale.get(pt["subj"], 1.0),
+                                        taper="none" if st["closed"] else "both",
                                         color="line", closed=st["closed"], src=f"draw {pt['subj']} {pt['name']}")
             rec["d2d"] = pt["subj"]
             rec["d2d_group"] = pt["group"]
@@ -653,7 +655,8 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
             P = fl["px"]
             if len(P) < 2 or dc.path_length(P) < 3:
                 continue
-            rec = draw_line.make_record(p, P, dc.px2u(p, P[[0, -1]]), weight=fl["weight"], taper=fl["taper"],
+            rec = draw_line.make_record(p, P, dc.px2u(p, P[[0, -1]]), weight=fl["weight"] * wscale.get(subj, 1.0),
+                                        taper=fl["taper"],
                                         color="line", closed=fl["closed"], src=f"face {fl['name']}")
             rec["d2d"], rec["d2d_group"], rec["d2d_part"] = subj, "face", fl["name"]
             rec["even"] = True
@@ -714,6 +717,21 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
     cli_draw._tail(ctx, rep)
     rep.summary = f"draw {n_lines} strokes"
     return rep
+
+
+def _line_scales(p) -> Dict[str, float]:
+    """subject -> line weight factor from the figure's size on the canvas: a figure whose head is a tenth of the
+    canvas draws at 1; a far, small figure draws thinner lines, a close-up a little heavier."""
+    out: Dict[str, float] = {}
+    S = float(max(p.W, p.H))
+    for el in DP.figures(p):
+        try:
+            hj = dc.u2px(p, [el["j2d"]["head-top"], el["j2d"]["chin"]])
+            r = float(np.linalg.norm(hj[0] - hj[1])) / S
+        except Exception:  # noqa: BLE001
+            continue
+        out[el["subject"]] = float(np.clip(math.sqrt(max(r, 1e-4) / 0.10), 0.55, 1.2))
+    return out
 
 
 def _gap_line(p, sc: dict, subjects: List[str]) -> str:
@@ -879,6 +897,16 @@ def do_cel_shade(ctx, who: str = "all"):
         ns /= np.maximum(np.linalg.norm(ns, axis=-1, keepdims=True), 1e-4)
         lh = (ns * lv[None, None, :].astype(np.float32)).sum(-1)
         lam_hair[hm] = lh[hm]
+    # one light, simple shapes: the lighting is smoothed inside each part before it is cut, so the terminator
+    # runs as one calm curve along a limb or the torso (no wobble from the tube's facets, no patches)
+    # the cut uses a raking version of the plan light (an illustrator's light comes from the side, so every form
+    # gets a readable shadow side; a light from the front alone leaves the limbs flat)
+    lv_c = np.array([lv[0], lv[1], min(float(lv[2]), 0.3)], np.float64)
+    lv_c /= max(1e-6, float(np.linalg.norm(lv_c)))
+    lam_c = (nrm * lv_c[None, None, :].astype(np.float32)).sum(-1)
+    lam_s = _part_smoothed(lam_c, lab, [k for k, t in enumerate(tb) if t["subj"] in keep and t["drawn"]
+                                      and not t.get("block") and t["mat"] != "hair"], max(1.0, 0.012 * max(Hl, Wl)))
+    far_parts = _far_limbs(lab, z, tb, subjects)
     shade_parts: Dict[str, Tuple[np.ndarray, np.ndarray, Tuple[int, int, int]]] = {}
     for k, t in enumerate(tb):
         if t["subj"] not in keep or not t["drawn"]:
@@ -887,6 +915,11 @@ def do_cel_shade(ctx, who: str = "all"):
         m = lab == k
         if not m.any():
             continue
+        if k in far_parts and t["mat"] != "hair" and t["group"] != "head":
+            if rn not in shade_parts:
+                shade_parts[rn] = (np.zeros_like(m), np.zeros_like(m), tuple(t["rgb"]))
+            shade_parts[rn][0][...] |= m            # the far leg: in shadow as one shape
+            continue
         if rn not in shade_parts:
             shade_parts[rn] = (np.zeros_like(m), np.zeros_like(m), tuple(t["rgb"]))
         sm, dm, _ = shade_parts[rn]
@@ -894,19 +927,21 @@ def do_cel_shade(ctx, who: str = "all"):
             if float(np.median(lam[m])) < 0.12:
                 sm |= m
             continue
-        thr = -0.05 if t["mat"] == "skin" else 0.12
+        thr = 0.05                               # one terminator for skin and cloth alike: one consistent light
         if t["mat"] == "hair":
             sm |= m & ((lam_hair < thr) | near)     # the hair: one mass, short cast shadows (bangs on the cap)
             dm |= m & (lam_hair < thr - 0.45)
+        elif t["group"].startswith("hand"):
+            sm |= m & ((lam_s < -0.25) | cast | near)   # a hand's normals are flat: no half-shaded fist
         elif t["group"] == "head":
             sm |= m & ((lam < -0.35) | near)        # the face stays lit: its far side, the shadow under bangs and chin
         else:
-            sm |= m & ((lam < thr) | cast | near)
+            sm |= m & ((lam_s < thr) | cast | near)
     files = ["layers/shade.png", "draw/r3d/shade2d.npz"]
     step = p.begin_step(files)
     try:
-        r_px = 0.004 * S
-        min_a = (0.012 * S) ** 2
+        r_px = 0.005 * S
+        min_a = (0.016 * S) ** 2
         for rn, (sm, dm, rgb) in shade_parts.items():
             for mm, depth in ((sm, 1.0), (dm, 1.6)):
                 if not mm.any():
@@ -948,6 +983,56 @@ def do_cel_shade(ctx, who: str = "all"):
     cli_draw._tail(ctx, rep)
     rep.summary = f"shade {len(ops)} shapes"
     return rep
+
+
+def _part_smoothed(val: np.ndarray, lab: np.ndarray, ks: List[int], sig: float) -> np.ndarray:
+    """``val`` blurred inside each part ``k`` of ``ks`` on its own (no value crosses a part's contour)."""
+    out = val.copy()
+    pad = int(3 * sig) + 2
+    H, W = lab.shape
+    for k in ks:
+        m = lab == k
+        if m.sum() < 4:
+            continue
+        ys, xs = np.nonzero(m)
+        y0, y1 = max(0, ys.min() - pad), min(H, ys.max() + 1 + pad)
+        x0, x1 = max(0, xs.min() - pad), min(W, xs.max() + 1 + pad)
+        mm = m[y0:y1, x0:x1].astype(np.float32)
+        num = cv2.GaussianBlur(val[y0:y1, x0:x1].astype(np.float32) * mm, (0, 0), sig)
+        den = cv2.GaussianBlur(mm, (0, 0), sig)
+        sub = out[y0:y1, x0:x1]
+        sel = mm > 0
+        sub[sel] = (num / np.maximum(den, 1e-4))[sel]
+    return out
+
+
+def _far_limbs(lab: np.ndarray, z: np.ndarray, tb: List[dict], subjects: List[str]) -> set:
+    """Part ids of each figure's far leg (and foot): the leg clearly behind the other one is shaded as a whole, as
+    an illustrator separates the two legs."""
+    out: set = set()
+    for subj in subjects:
+        zs = {}
+        ids = {}
+        for side in "rl":
+            ks = [k for k, t in enumerate(tb) if t["subj"] == subj and t["group"] in (f"leg-{side}", f"foot-{side}")
+                  and not t.get("block")]
+            m = np.isin(lab, ks)
+            if m.sum() < 20:
+                break
+            zs[side] = float(np.median(z[m]))
+            ids[side] = ks
+        if len(zs) < 2:
+            continue
+        hm = np.isin(lab, [k for k, t in enumerate(tb) if t["subj"] == subj and t["group"] == "head"])
+        if not hm.any():
+            continue
+        ys, xs = np.nonzero(hm)
+        head = float(max(np.ptp(ys), np.ptp(xs), 1))
+        far, near_ = ("r", "l") if zs["r"] > zs["l"] else ("l", "r")
+        # depth in scene units; a clear step only (legs side by side stay lit alike)
+        if zs[far] - zs[near_] > 0.12:
+            out |= set(ids[far])
+    return out
 
 
 def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
@@ -1008,22 +1093,34 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
     return out
 
 
+def _ground_shadow_colour(rgb) -> Tuple[int, int, int]:
+    """A contact shadow on the ground: the ground's own hue, clearly darker and a little cooler (never grey)."""
+    L, C, h = dc.rgb_to_lch(tuple(int(v) for v in rgb))
+    from .draw_scene import _toward
+    return dc.lch_to_rgb(max(6.0, L - 16.0 - 0.08 * L), C * 1.1 + 4.0, _toward(h, 285.0, 0.25) if C > 4 else 285.0)
+
+
 def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
-    """One compact flat contact shadow on the floor under each figure: an ellipse about as wide as the shoulders
-    round the feet, a little off toward the side away from the light, smaller the higher the figure is off the
-    floor."""
+    """One compact contact shadow on the ground under each figure: a dark core ellipse round the feet with a soft
+    edge, about as wide as the shoulders, a little off toward the side away from the light. A figure off the
+    ground (a jump) gets a detached shadow on the ground below it, smaller and lighter the higher it is. With
+    blocks the shadow lies on them; with no blocks it lies on the ground behind the figure (never over a figure)."""
     from .draw_render import _block_shadow
     from .ops import Fill, mask_to_rle
     from .render3d import light_world
     lab, tb = mp["lab"], mp["table"]
     block_ids = [k for k, t in enumerate(tb) if t.get("block")]
-    if not block_ids:
-        return []
     cam = DP.camera_of(p)
     L = light_world(cam, dc.light_vec(dc.dstate(p)))
     off = np.array([-L[0], 0.0, -L[2]])
     off = off / max(1e-6, float(np.linalg.norm(off))) if np.linalg.norm(off) > 1e-3 else np.zeros(3)
-    blocks = cv2.resize(np.isin(lab, block_ids).astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
+    up = cv2.resize(lab, (p.W, p.H), interpolation=cv2.INTER_NEAREST)
+    figure_px = (up >= 0) & ~np.isin(up, block_ids)
+    blocks = np.isin(up, block_ids) if block_ids else None
+    try:
+        flat = p.layer("flat", create=False)
+    except Exception:  # noqa: BLE001
+        flat = None
     out = []
     for el in DP.figures(p):
         if el["subject"] not in subjects:
@@ -1031,15 +1128,23 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
         J = {k: np.asarray(v, float) for k, v in el["j3d"].items()}
         feet = [J[f"heel-{s_}"] for s_ in "rl"] + [J[f"foot-{s_}"] for s_ in "rl"]
         lift = max(0.0, min(f[1] for f in feet))
-        if lift > 1.2:
+        if block_ids and lift > 1.2:
+            continue                    # sitting on a block: the block carries it
+        if lift > 4.0:
             continue
         fc = np.mean([[f[0], 0.0, f[2]] for f in feet], 0)
         shoulders = float(np.linalg.norm((J["shoulder-r"] - J["shoulder-l"])[[0, 2]]))
         shoulders = max(shoulders, 0.12 * float(J["head-top"][1] - min(f[1] for f in feet)))
-        sc_ = 1.0 / (1.0 + 1.8 * lift)
-        spread = float(np.ptp([f[0] for f in feet]))
-        rx = max(0.65 * shoulders, 0.5 * spread + 0.08) * sc_
-        rz = max(0.28 * shoulders, 0.5 * float(np.ptp([f[2] for f in feet])) + 0.05) * sc_
+        sc_ = 1.0 / (1.0 + 2.0 * lift)
+        spread = float(np.ptp([f[0] for f in feet])) * (0.4 if lift > 0.05 else 1.0)
+        rx = max(0.6 * shoulders, 0.5 * spread + 0.08) * sc_
+        rz = (0.26 * shoulders if lift > 0.05 else max(0.26 * shoulders, 0.5 * float(np.ptp([f[2] for f in feet]))
+                                                              + 0.05)) * sc_
+        if lift > 0.05:
+            rx = 0.6 * shoulders * sc_
+        if lift > 0.05:
+            fc = np.array([J["pelvis"][0] if "pelvis" in J else fc[0], 0.0, J["pelvis"][2] if "pelvis" in J
+                           else fc[2]]) * 0.5 + fc * 0.5
         c = fc + off * 0.25 * rx
         ang = np.linspace(0, 2 * math.pi, 48, endpoint=False)
         ring = np.stack([c[0] + rx * np.cos(ang), np.zeros_like(ang), c[2] + rz * np.sin(ang)], 1)
@@ -1048,13 +1153,33 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
             continue
         m = np.zeros((p.H, p.W), np.uint8)
         cv2.fillPoly(m, [np.round(q).astype(np.int32)], 1)
-        sh = (m > 0) & blocks
+        ell = m > 0
+        ground = blocks if blocks is not None else ~figure_px
+        sh = ell & ground
         if sh.sum() < 10:
             continue
         cx, cy = np.round(q.mean(0)).astype(int)
-        k0 = lab[int(np.clip(cy * mp["s"], 0, lab.shape[0] - 1)), int(np.clip(cx * mp["s"], 0, lab.shape[1] - 1))]
-        t0 = tb[k0] if k0 >= 0 and tb[k0].get("block") else tb[block_ids[0]]
-        out.append(Fill(mask_rle=mask_to_rle(sh), color=_block_shadow(tuple(t0["rgb"])), feather=0.8))
+        if ground is blocks:
+            k0 = up[int(np.clip(cy, 0, p.H - 1)), int(np.clip(cx, 0, p.W - 1))]
+            t0 = tb[k0] if k0 >= 0 and tb[k0].get("block") else tb[block_ids[0]]
+            base = tuple(t0["rgb"])
+            col = _ground_shadow_colour(base)
+        else:
+            if flat is not None and (flat[..., 3][sh] > 0.5).any():
+                base = tuple(int(v) for v in np.median(flat[..., :3][sh & (flat[..., 3] > 0.5)], 0) * 255)
+            else:
+                base = (225, 220, 205)
+            col = _ground_shadow_colour(base)
+        ry_px = max(2.0, float(np.ptp(q[:, 1])) / 2.0)
+        op = float(np.clip(1.0 - 0.45 * lift, 0.45, 1.0))
+        # a soft outer shadow and a darker, crisp core where the feet touch
+        out.append(Fill(mask_rle=mask_to_rle(sh), color=col, feather=max(1.2, 0.15 * ry_px), opacity=0.4 * op))
+        core = np.zeros((p.H, p.W), np.uint8)
+        qc = (q - q.mean(0)) * 0.62 + q.mean(0)
+        cv2.fillPoly(core, [np.round(qc).astype(np.int32)], 1)
+        core = (core > 0) & ground
+        if core.sum() >= 6:
+            out.append(Fill(mask_rle=mask_to_rle(core), color=col, feather=max(0.8, 0.08 * ry_px), opacity=0.75 * op))
     return out
 
 
