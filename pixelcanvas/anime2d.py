@@ -488,7 +488,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
         if g in TOPS:
             outer = g in OUTER
             # a blazer or jacket ends at the hip bone, a hoodie at the hips, a coat below the crotch
-            t1 = {"blazer": 4.55, "jacket": 4.45, "hoodie": 4.3, "coat": 5.3}.get(g, 3.0 if g == "dress" else 4.6)
+            t1 = {"blazer": 4.15, "jacket": 4.05, "hoodie": 4.1, "coat": 5.3}.get(g, 3.0 if g == "dress" else 4.6)
             extra = []
             if g == "coat":
                 c, X, Z, a, b = tor.at(5.0)
@@ -556,8 +556,8 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                                                             [sg * 0.95, sg * 0.82, sg * 0.04], lift, 0.5))
                     body_part["details"].append(_front_line(tor, [0.55, 0.8], [sg * 0.86, sg * 0.6], lift, 0.42))
                     # hip pockets: a flap line on each side
-                    if t1 > 4.2:
-                        body_part["details"].append(_front_line(tor, [3.85, 3.9], [sg * 0.28, sg * 0.72], lift,
+                    if t1 > 3.9:
+                        body_part["details"].append(_front_line(tor, [3.55, 3.6], [sg * 0.3, sg * 0.72], lift,
                                                                 0.42))
                 # a breast pocket on her left
                 body_part["details"].append(_front_line(tor, [1.45, 1.42], [-0.32, -0.66], lift, 0.42))
@@ -618,7 +618,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                 out[-1]["details"].append(_front_line(tor, [3.3, 3.8, 4.3, 4.55], [0.12, 0.13, 0.1, 0.02], lift_p,
                                                       0.42))
             for s in "rl":
-                t1 = 0.45 if g == "shorts" else 1.0
+                t1 = 0.55 if g == "shorts" else 1.0
                 axs, rs, js = _limb_cover(J, s, "thigh", 0.0, t1, ease * (0.7 if g == "shorts" else 1.0), h, k, 1.06)
                 th = _tube(f"{g}-{s}", g, subj, f"leg-{s}", axs, rs, js, round_end=False, open_end=g == "shorts",
                            bias=bias - 0.002 * h)
