@@ -49,3 +49,12 @@ def test_gaze_moves_both_irises_the_same_way():
         assert lf[n][0] > c[n][0]                  # head frame +x is the picture's left when she faces you
         assert up[n][1] > c[n][1]
     assert FC.gaze_key("0.5,-1") is not None and FC.gaze_key("sideways") is None
+
+
+def test_eye_shapes_change_the_eye():
+    def lash(shape):
+        return next(s for s in FC.features("neutral", shape=shape) if s["name"] == "lash-r")["pts"]
+    r, n = lash("round"), lash("narrow")
+    assert np.ptp(n[:, 1]) < np.ptp(r[:, 1])            # a narrower eye opening
+    assert any(s["name"] == "lashfill-r" for s in FC.features("neutral"))
+    assert set(FC.EYE_SHAPES) == {"round", "narrow", "droopy", "sharp"}
