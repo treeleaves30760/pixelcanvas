@@ -59,7 +59,7 @@ LAYER = {"socks": 0, "thigh-highs": 0, "gloves": 0, "shirt": 1, "blouse": 1, "pa
          "skirt": 2, "tie": 3, "ribbon": 3, "shoes": 3, "boots": 3, "blazer": 4, "jacket": 4, "hoodie": 4,
          "coat": 5, "scarf": 6}
 HAND_SHAPES = ("relaxed", "fist", "open", "point", "grip", "peace", "cup")
-HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "bun", "buns")
+HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "braids", "bun", "buns")
 BANGS = ("blunt", "side", "parted", "none")
 
 # hand shapes a preset implies (her right, her left)
@@ -721,7 +721,7 @@ def _hair_accessories(rig: Rig, owner: str, hair: dict) -> List[dict]:
     for a in acc:
         if a == "hairband":
             ts = np.linspace(-1.5, 1.5, 13)
-            P = [rig.cr_c + A @ unit(np.array([math.sin(t), math.cos(t), 0.35])) for t in ts]
+            P = [rig.cr_c + A @ unit(np.array([math.sin(t), math.cos(t), 0.6])) for t in ts]
             for p0, p1 in zip(P[:-1], P[1:]):
                 out.append(_P(rcone(p0, p1, 0.045 * h, 0.045 * h), owner, "hairband", "bow", group="hair"))
         elif a == "hairpin":
@@ -767,7 +767,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     r0 = 0.1 * h
     k = 0
     lens = {"long": 3.3, "medium": 1.75, "bob": 1.0, "short": 0.55, "spiky": 0.5, "ponytail": 0.5,
-            "twintails": 0.62, "braid": 0.55, "bun": 0.45, "buns": 0.45}
+            "twintails": 0.62, "braid": 0.55, "braids": 0.55, "bun": 0.45, "buns": 0.45}
     Lb = lens.get(style, 1.5) * h
     # bangs: a row of locks over the forehead
     if bangs != "none":
@@ -856,18 +856,31 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             ties = [(2.05, 0.38, 3.0), (-2.05, 0.38, 3.0)]
         elif style == "braid":
             ties = [(math.pi, 0.05, 2.4)]
+        elif style == "braids":
+            ties = [(2.1, -0.1, 2.1), (-2.1, -0.1, 2.1)]
         for ph, y, L in ties:
             root, nrm = _cap_point(rig, ph, y, 1.1)
-            if style == "braid":
+            if style in ("braid", "braids"):
+                # overlapping heart-shaped segments (two lobes in a V), smaller toward a tied, pointed tip
                 p = root
                 d = unit(-Hd[:, 1] * 0.8 + nrm * 0.4)
-                for i in range(9):
+                ns = 9
+                for i in range(ns):
                     d = unit(d * 0.5 + unit(gvec) * 0.5)
-                    q = _push_out(p + d * L * h / 9, col)
-                    out.append(_P(ell_prim((p + q) / 2, _frame(Hd[:, 0], q - p),
-                                           (0.075 * h * (1 - 0.04 * i), 0.62 * float(np.linalg.norm(q - p)),
-                                            0.06 * h)), owner, f"braid{i}", "hair", seam="always", group="hair"))
+                    q = _push_out(p + d * L * h / ns, col)
+                    seg = float(np.linalg.norm(q - p))
+                    w = 0.075 * h * (1 - 0.05 * i)
+                    x = unit(np.cross(q - p, nrm)) if np.linalg.norm(np.cross(q - p, nrm)) > 1e-6 else Hd[:, 0]
+                    for sg in (1.0, -1.0):
+                        ax = unit((q - p) + x * sg * 0.6 * seg)
+                        c = (p + q) / 2 + x * sg * 0.38 * w
+                        out.append(_P(ell_prim(c, _frame(np.cross(ax, nrm), ax), (0.5 * w, 0.62 * seg, 0.05 * h)),
+                                      owner, f"braid{k}-{i}", "hair", seam="always", group="hair"))
                     p = q
+                out.append(_P(ell_prim(p, _frame(x, d), (0.04 * h, 0.025 * h, 0.04 * h)), owner, f"tie{len(out)}",
+                              "hair-tie"))
+                out += _lock(rig, owner, k, p, d, 0.3 * h, 0.05 * h, gvec, col, nseg=3, stiff=0.5, tip=0.05)
+                k += 1
                 continue
             # a bundle of locks from the tie, fanned a little so the tail is full
             side = unit(nrm * np.array([1, 0, 1.0]))

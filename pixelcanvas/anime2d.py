@@ -655,7 +655,7 @@ def _lock_frames(rig, pts, bang: bool):
 
 
 CLUMPS = {"long": 9, "medium": 8, "bob": 7, "short": 11, "ponytail": 7, "twintails": 10, "braid": 6, "bun": 6,
-          "buns": 6}
+          "buns": 6, "braids": 6}
 
 
 def _resample_chain(P: np.ndarray, r: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
