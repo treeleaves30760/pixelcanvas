@@ -59,7 +59,7 @@ LAYER = {"socks": 0, "thigh-highs": 0, "gloves": 0, "shirt": 1, "blouse": 1, "pa
          "skirt": 2, "tie": 3, "ribbon": 3, "shoes": 3, "boots": 3, "blazer": 4, "jacket": 4, "hoodie": 4,
          "coat": 5, "scarf": 6}
 HAND_SHAPES = ("relaxed", "fist", "open", "point", "grip", "peace", "cup", "spread", "flat", "reach")
-HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "bun")
+HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "braids", "bun", "buns")
 BANGS = ("blunt", "side", "parted", "none")
 
 # hand shapes a preset implies (her right, her left)
@@ -712,6 +712,37 @@ def _lock(rig: Rig, owner: str, k: int, root, d0, length: float, r0: float, grav
     return out
 
 
+HAIR_ACCESSORIES = ("hairband", "hairpin", "bow", "ribbon")
+
+
+def _hair_accessories(rig: Rig, owner: str, hair: dict) -> List[dict]:
+    """Hairband over the crown from ear to ear, a crossed hairpin above the temple, a bow (or ribbon) on the side of
+    the head; all in the ``bow`` material (``--bows`` colours them)."""
+    acc = hair.get("accessories") or []
+    h, Hd = rig.h, rig.Hd
+    out: List[dict] = []
+    A = rig.cr_A * 1.27
+    for a in acc:
+        if a == "hairband":
+            ts = np.linspace(-1.5, 1.5, 13)
+            P = [rig.cr_c + A @ unit(np.array([math.sin(t), math.cos(t), 0.6])) for t in ts]
+            for p0, p1 in zip(P[:-1], P[1:]):
+                out.append(_P(rcone(p0, p1, 0.045 * h, 0.045 * h), owner, "hairband", "bow", group="hair"))
+        elif a == "hairpin":
+            root, nrm = _cap_point(rig, 0.8, 0.55, 1.22)
+            for sg in (1.0, -1.0):
+                d = unit(Hd[:, 1] * 0.6 + Hd[:, 2] * 0.6 * sg)
+                out.append(_P(rcone(root - d * 0.1 * h, root + d * 0.1 * h, 0.014 * h, 0.014 * h), owner,
+                              "hairpin", "bow", group="hair"))
+        elif a in ("bow", "ribbon"):
+            root, nrm = _cap_point(rig, 0.95, 0.7, 1.3)
+            up = unit(Hd[:, 1] - nrm * float(Hd[:, 1] @ nrm))
+            x = unit(np.cross(up, nrm))
+            out += _bow(owner, root + nrm * 0.02 * h, np.stack([x, up, nrm], 1), 0.22 * h, "bow", "hair-bow",
+                        tails=a == "ribbon")
+    return out
+
+
 def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: bool) -> List[dict]:
     J, F, h = rig.J, rig.F, rig.h
     Hd = rig.Hd
@@ -740,7 +771,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     r0 = 0.1 * h
     k = 0
     lens = {"long": 3.3, "medium": 1.75, "bob": 1.0, "short": 0.55, "spiky": 0.5, "ponytail": 0.5,
-            "twintails": 0.62, "braid": 0.55, "bun": 0.45}
+            "twintails": 0.62, "braid": 0.55, "braids": 0.55, "bun": 0.45, "buns": 0.45}
     Lb = lens.get(style, 1.5) * h
     # bangs: a row of locks over the forehead
     if bangs != "none":
@@ -749,52 +780,67 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             ph = -0.95 + 1.9 * i / (n - 1)
             if bangs == "side":
                 ph = -0.75 + 1.6 * i / (n - 1)
-            root, nrm = _cap_point(rig, ph, 0.72, 1.06)
+            # roots on the front of the crown, the locks lying down the forehead curve (no visor from the side)
+            root, nrm = _cap_point(rig, ph * 0.9, 0.62, 1.02)
             sweep = 0.0
             if bangs == "side":
                 sweep = -0.45
             elif bangs == "parted":
                 sweep = 0.5 if ph > 0 else -0.5
             down = -Hd[:, 1]
-            d0 = unit(Hd[:, 2] * 0.9 + down * 0.4 + Hd[:, 0] * sweep)
+            d0 = unit(Hd[:, 2] * 0.3 + down * 0.9 + Hd[:, 0] * sweep)
             # blunt bangs end at the brows; side and parted bangs reach a little lower on one side
             length = 0.4 * h * (1.0 if bangs == "blunt" else (0.85 + 0.4 * (i / (n - 1))))
             if style == "spiky":
                 length *= 0.85
+            def hug(i_):
+                return -Hd[:, 2] * 0.12 if i_ >= 2 else 0      # the tips turn in toward the brow, not out
+
             out += _lock(rig, owner, k, root, d0, length, r0 * 1.2, gvec * 0.6 + Hd[:, 0] * sweep * 0.5, col,
-                         nseg=5, stiff=0.55, tip=0.14)
+                         nseg=5, stiff=0.75, tip=0.14, curl=hug)
             k += 1
     # side locks in front of the ears
     if style not in ("spiky",):
         for sg in (1.0, -1.0):
             root, nrm = _cap_point(rig, sg * 1.25, 0.25, 1.08)
-            ln = {"short": 0.55, "bob": 0.9}.get(style, 1.25) * h
+            ln = {"short": 0.42, "bob": 0.9}.get(style, 1.25) * h
             out += _lock(rig, owner, k, root, unit(-Hd[:, 1] + 0.3 * nrm), ln, r0 * 0.9, gvec, col, nseg=6, tip=0.1)
             k += 1
     # the back and the crown
     if style in ("long", "medium", "bob", "short", "spiky"):
         rows = [(0.6, 11, 0.82), (0.1, 13, 1.0), (-0.35, 9, 0.97)] if style in ("long", "medium", "bob") else \
-            [(0.75, 9, 1.0), (0.3, 11, 1.0), (-0.15, 9, 0.9)]
+            [(0.8, 7, 1.0), (0.45, 9, 0.85), (0.05, 7, 0.6)] if style == "spiky" else \
+            [(0.75, 9, 0.9), (0.3, 11, 0.8), (-0.15, 9, 0.7)]
         for y, n, lf in rows:
             for i in range(n):
                 ph = (1.25 + (2 * math.pi - 2.5) * i / (n - 1))
                 root, nrm = _cap_point(rig, ph, y, 1.06)
                 if style == "spiky":
-                    d0 = unit(nrm * 1.0 + Hd[:, 1] * 0.15 - Hd[:, 2] * 0.45)
-                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.95 + 0.4 * ((i * 7) % 5) / 4), r0 * 0.95,
+                    # spikes sweep up and back from the crown; the lower rows are shorter
+                    d0 = unit(nrm * 0.75 + Hd[:, 1] * 0.35 - Hd[:, 2] * 0.6)
+                    out += _lock(rig, owner, k, root, d0, 0.75 * Lb * lf * (0.8 + 0.35 * ((i * 7) % 5) / 4), r0 * 1.1,
                                  gvec * 0.35, col, nseg=3, stiff=0.85, tip=0.03)
                 else:
-                    d0 = unit(nrm * 0.5 - Hd[:, 1] * 0.8)
+                    d0 = unit(nrm * (0.15 if style == "short" else 0.5) - Hd[:, 1] * 0.8)
                     curl = None
                     if style == "bob":
                         def curl(i_, nn=nrm):
                             return -nn * 0.35 if i_ >= 4 else 0
-                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.94 + 0.12 * ((i * 5) % 3) / 2), r0 * 1.45,
+                    out += _lock(rig, owner, k, root, d0, Lb * lf * (0.94 + 0.12 * ((i * 5) % 3) / 2),
+                                 r0 * (1.0 if style == "short" else 1.45),
                                  gvec, col, nseg=8 if style == "long" else 6, curl=curl, tip=0.18)
                 k += 1
         if style in ("short", "spiky"):
             for i in range(5):
                 ph = -0.9 + 1.8 * i / 4
+                if style == "short":
+                    # a boy's cut: crown locks lie on the skull, combed forward and down over the front
+                    root, nrm = _cap_point(rig, ph * 1.2, 0.8, 1.0)
+                    d0 = unit(Hd[:, 2] * 0.85 - Hd[:, 1] * 0.35 + nrm * 0.1 + Hd[:, 0] * 0.25 * ph)
+                    out += _lock(rig, owner, k, root, d0, 0.5 * h, r0 * 0.85, gvec, col, nseg=4, stiff=0.6,
+                                 tip=0.05)
+                    k += 1
+                    continue
                 root, nrm = _cap_point(rig, ph, 0.92, 1.04)
                 d0 = unit(nrm + (Hd[:, 2] * 0.6 if style == "short" else Hd[:, 1] * 0.2 - Hd[:, 2] * 0.5))
                 out += _lock(rig, owner, k, root, d0, 0.45 * h, r0 * 0.9, gvec * (0.4 if style == "short" else 0.15),
@@ -814,18 +860,31 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
             ties = [(2.05, 0.38, 3.0), (-2.05, 0.38, 3.0)]
         elif style == "braid":
             ties = [(math.pi, 0.05, 2.4)]
+        elif style == "braids":
+            ties = [(2.1, -0.1, 2.1), (-2.1, -0.1, 2.1)]
         for ph, y, L in ties:
             root, nrm = _cap_point(rig, ph, y, 1.1)
-            if style == "braid":
+            if style in ("braid", "braids"):
+                # overlapping heart-shaped segments (two lobes in a V), smaller toward a tied, pointed tip
                 p = root
                 d = unit(-Hd[:, 1] * 0.8 + nrm * 0.4)
-                for i in range(9):
+                ns = 9
+                for i in range(ns):
                     d = unit(d * 0.5 + unit(gvec) * 0.5)
-                    q = _push_out(p + d * L * h / 9, col)
-                    out.append(_P(ell_prim((p + q) / 2, _frame(Hd[:, 0], q - p),
-                                           (0.075 * h * (1 - 0.04 * i), 0.62 * float(np.linalg.norm(q - p)),
-                                            0.06 * h)), owner, f"braid{i}", "hair", seam="always", group="hair"))
+                    q = _push_out(p + d * L * h / ns, col)
+                    seg = float(np.linalg.norm(q - p))
+                    w = 0.075 * h * (1 - 0.05 * i)
+                    x = unit(np.cross(q - p, nrm)) if np.linalg.norm(np.cross(q - p, nrm)) > 1e-6 else Hd[:, 0]
+                    for sg in (1.0, -1.0):
+                        ax = unit((q - p) + x * sg * 0.6 * seg)
+                        c = (p + q) / 2 + x * sg * 0.38 * w
+                        out.append(_P(ell_prim(c, _frame(np.cross(ax, nrm), ax), (0.5 * w, 0.62 * seg, 0.05 * h)),
+                                      owner, f"braid{k}-{i}", "hair", seam="always", group="hair"))
                     p = q
+                out.append(_P(ell_prim(p, _frame(x, d), (0.04 * h, 0.025 * h, 0.04 * h)), owner, f"tie{len(out)}",
+                              "hair-tie"))
+                out += _lock(rig, owner, k, p, d, 0.3 * h, 0.05 * h, gvec, col, nseg=3, stiff=0.5, tip=0.05)
+                k += 1
                 continue
             # a bundle of locks from the tie, fanned a little so the tail is full
             side = unit(nrm * np.array([1, 0, 1.0]))
@@ -849,10 +908,17 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
                 R = np.stack([R[:, 0], R[:, 1], nrm], 1)
                 out += _bow(owner, root + nrm * 0.03 * h + Hd[:, 1] * 0.06 * h, R, 0.17 * h, "bow", f"bow{k}")
         if style == "bun":
-            root, nrm = _cap_point(rig, math.pi * 0.95, 0.6, 1.15)
-            out.append(_P(ell_prim(root + nrm * 0.12 * h, np.eye(3), (0.26 * h,) * 3), owner, "bun", "hair",
+            root, nrm = _cap_point(rig, math.pi * 0.95, 0.72, 1.1)
+            out.append(_P(ell_prim(root + nrm * 0.08 * h, np.eye(3), (0.19 * h,) * 3), owner, "bun", "hair",
                           seam="always", group="hair"))
-    if hair.get("ahoge", True) and style not in ("spiky",):
+        elif style == "buns":
+            # two buns high on the sides of the crown (odango)
+            for sg in (1.0, -1.0):
+                root, nrm = _cap_point(rig, sg * 1.6, 0.78, 1.08)
+                out.append(_P(ell_prim(root + nrm * 0.08 * h, np.eye(3), (0.17 * h,) * 3), owner, "bun", "hair",
+                              seam="always", group="hair"))
+    out += _hair_accessories(rig, owner, hair)
+    if hair.get("ahoge", False) and style not in ("spiky",):
         root, nrm = _cap_point(rig, 0.25, 0.97, 1.08)
 
         def up_curl(i_):

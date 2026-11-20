@@ -430,7 +430,7 @@ def test_hands_hair_clumps_and_umbrella_are_2d_shapes():
     assert by["hand-r"]["flat3"] is not None and (len(by["hand-r"]["details"]) +
                                                     len(by.get("fingers-r", {"details": []})["details"])) >= 1
     clumps = [pt for pt in parts if pt["name"].startswith("clump")]
-    assert 6 <= len(clumps) <= 14 and all(2 <= len(c["details"]) <= 4 for c in clumps if len(c["details"]))
+    assert 6 <= len(clumps) <= 14 and all(1 <= len(c["details"]) <= 2 for c in clumps if len(c["details"]))
     can = next(pt for pt in parts if pt.get("canopy") is not None)
     from pixelcanvas import draw_figure2d as DF
     o = DF._canopy_outline(cam, can)
@@ -487,3 +487,29 @@ def test_floor_shadow_is_compact_and_blur_leaves_no_halo(draw):
     assert diff[line].max() < 4                                          # the line art stays sharp
     assert np.percentile(toward[ring], 99) < 6                           # no halo of his colours beside him
     assert diff[region].max() > 0                                        # the blur did run inside
+
+
+def test_hair_clumps_taper_to_points_and_accessories_on_request():
+    from pixelcanvas import anime2d as A2
+    _, rs, ps = _fig(look={"hair": {"style": "short"}})
+    pieces = {pr["piece"] for pr in ps}
+    assert not any(p_.startswith("hairband") or p_ == "hair-bow" for p_ in pieces)
+    # no ahoge unless asked: the short cut has no lock standing above the crown
+    rig = F3.Rig(rs["body"], rs["J"], rs["F"])
+    top = rig.cr_c[1] + float(np.abs(rig.cr_A[1]).sum()) * 1.12
+    assert max(float(pr["b"][1]) for pr in ps if pr["piece"].startswith("lock")) < top + 0.02
+    _, _, pa = _fig(look={"hair": {"style": "long", "ahoge": True, "accessories": ["hairband", "hairpin", "bow"]}})
+    pieces = {pr["piece"] for pr in pa}
+    assert {"hairband", "hairpin", "hair-bow"} <= pieces
+    # every drawn clump ends in a point: tip radius a small share of its root radius
+    t = np.linspace(0, 1, 8)
+    w = A2._taper(t)
+    assert w[-1] < 0.05 * w[0] and w.max() <= 1.2
+
+
+def test_hair3d_accessory_option(draw):
+    _scene(draw)
+    out = ok(draw("hair3d", "girl", "--style", "bob", "--accessory", "hairband,bow", "--bows", "navy"))
+    assert "hairband and bow" in out
+    code, out = draw("hair3d", "girl", "--accessory", "crown")
+    assert code != 0 and "--accessory" in out

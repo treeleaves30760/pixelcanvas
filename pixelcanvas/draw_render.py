@@ -607,13 +607,16 @@ def cmd_hair3d(ctx, args):
     p = ctx.project
     a = parse(args, Spec(USAGE["hair3d"], ["subject"],
                          {"style": "value", "bangs": "value", "color": "value", "wind": "value", "bows": "value",
-                          "ahoge": "value", "remove": "flag"},
-                         alias={"colour": "color", "cut": "style", "fringe": "bangs", "bow": "bows"}, min_pos=1))
+                          "ahoge": "value", "accessory": "value", "remove": "flag"},
+                         alias={"colour": "color", "cut": "style", "fringe": "bangs", "bow": "bows",
+                                "accessories": "accessory", "acc": "accessory"}, min_pos=1))
     el = figure_of(p, a["subject"], USAGE["hair3d"])
     lk = look_of(el)
     hair = dict(lk.get("hair") or {})
     if a.get("style"):
-        st = str(a["style"]).lower().replace("twin-tails", "twintails").replace("pigtails", "twintails")
+        st = str(a["style"]).lower().replace("twin-tails", "twintails").replace("pigtails", "twintails").replace(
+            "odango", "buns").replace("double-bun", "buns").replace(
+            "twin-braids", "braids")
         if st not in F3.HAIR_STYLES:
             raise UsageError(f"--style is one of {', '.join(F3.HAIR_STYLES)}", USAGE["hair3d"])
         hair["style"] = st
@@ -641,6 +644,15 @@ def cmd_hair3d(ctx, args):
             hair["wind"] = [float(nums[0]), float(nums[1])]
     if a.get("ahoge"):
         hair["ahoge"] = str(a["ahoge"]).lower() not in ("no", "off", "false", "0", "none")
+    if a.get("accessory"):
+        acc = [v.strip().replace("headband", "hairband").replace("clip", "hairpin")
+               for v in str(a["accessory"]).lower().split(",") if v.strip()]
+        if acc == ["none"]:
+            acc = []
+        bad = [v for v in acc if v not in F3.HAIR_ACCESSORIES]
+        if bad:
+            raise UsageError(f"--accessory is a list of {', '.join(F3.HAIR_ACCESSORIES)} (or none)", USAGE["hair3d"])
+        hair["accessories"] = acc
 
     def mutate():
         if a.get("remove"):
@@ -648,7 +660,8 @@ def cmd_hair3d(ctx, args):
             return [f"{el['subject']}: hair removed"]
         lk["hair"] = hair
         out = [f"{el['subject']}'s hair: {hair['style']}, bangs {hair.get('bangs', 'default')}, "
-               f"{hair.get('color', 'dark brown')}" + (f", bows {hair['bows']}" if hair.get("bows") else "")]
+               f"{hair.get('color', 'dark brown')}" + (f", bows {hair['bows']}" if hair.get("bows") else "")
+               + (f", {' and '.join(hair['accessories'])}" if hair.get("accessories") else "")]
         mv, fl = F3.motion_of(el["rig"], DP._fig_state(el)[2])
         out.append("the locks hang with gravity" + (", trail behind the motion" if np.linalg.norm(mv) > 0.2 else "")
                    + (", float (she is lifted)" if fl else "") + (", blown by --wind" if hair.get("wind") else ""))
