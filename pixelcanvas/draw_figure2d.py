@@ -617,6 +617,9 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         if m.sum() < 3:
             continue
         col = tuple(int(c) for c in (sp["fill"] if sp.get("fill") is not None else skin))
+        if sp["kind"] in ("white", "shine") and sp["name"].split("-")[0] in ("white", "shine"):
+            # the eye whites and catch-lights stay bright under a scene's night / sunset light
+            sc["eye_glow"] = m if sc.get("eye_glow") is None else (sc["eye_glow"] | m)
         if sp["kind"] in ("iris", "pupil", "shine", "white", "skin", "teeth", "tongue", "lashfill"):
             fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.5))
         elif sp["kind"] == "blush":
@@ -858,6 +861,10 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
         a0 = arr.copy()
         if face_fills:
             brush.apply_ops(arr, face_fills)
+        if sc.get("eye_glow") is not None:
+            (p.root / "draw" / "r3d").mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(p.root / "draw" / "r3d" / "eyes.npz", m=np.packbits(sc["eye_glow"]),
+                                shape=np.array(sc["eye_glow"].shape))
         _snapshot(p, "paint2d", a0, arr)
         p._write_layer_file("paint", arr)
         # areas: one region per material of each figure, one per block
