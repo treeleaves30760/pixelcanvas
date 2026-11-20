@@ -116,3 +116,14 @@ def test_depth_map_for_any_kit(draw):
     p = Project.find("w.pixelcanvas")
     z = S3.depth_map(p, (100, 75))
     assert z.shape == (100, 75) and z.max() <= 60.0 and z[-1].mean() < z[10].mean()
+
+
+def test_waterline_on_a_figure_in_water(draw):
+    _scene(draw)
+    ok(draw("camera", "--horizon", "450", "--eye-height", "1.4"))
+    ok(draw("scene", "beach", "--water"))
+    ok(draw("pose", "girl", "--preset", "stand", "--at", "500,930"))
+    ok(draw("draw", "all"))
+    from PIL import Image
+    w = np.asarray(Image.open("w.pixelcanvas/layers/weather.png"))
+    assert (w[..., 3] > 100).any()

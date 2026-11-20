@@ -1104,7 +1104,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
             "shift", "light", "side", "far", "sky", "ground", "road", "building", "door", "window", "lamp",
             "line", "steps", "at", "platform", "roof", "sea", "sand", "hill", "tree", "fence", "concrete",
             "pavement", "board", "desk", "stairs", "haze", "lamp-every", "shore", "bed", "curtain", "track",
-            "weather", "flowers"]
+            "weather", "flowers", "level"]
     spec = {v: "value" for v in vals}
     spec.update({"arch": "flag", "no-arch": "flag", "polish": "flag", "no-polish": "flag", "blossom": "flag", "slope": "flag", "water": "flag"})
     a = parse(args, Spec(USAGE["scene"], ["kit"], spec, alias={"colour": "color", "tod": "time"}, min_pos=0))
@@ -1113,7 +1113,7 @@ def _parse(args: List[str], notes: List[str]) -> Tuple[str, dict]:
     for v in vals:
         if a.get(v) is not None:
             o[v] = str(a[v])
-    for v in ("depth", "width", "height", "shift", "lamps", "steps", "at", "shore"):
+    for v in ("depth", "width", "height", "shift", "lamps", "steps", "at", "shore", "level"):
         if v in o:
             o[v] = float(coords.parse_float(o[v], v, -100, 1000, notes))
     if "lamps" in o:
@@ -1270,7 +1270,11 @@ def _figure_light(p, la: np.ndarray) -> np.ndarray:
 
 
 def relight(p) -> None:
-    """After ``draw``: the light layer again from the kept scene light, with the figures where they are now."""
+    """After ``draw``: the light layer again from the kept scene light, with the figures where they are now (and
+    the water line on figures standing in water)."""
+    rec = scene_rec(p)
+    if rec is not None and rec["opts"].get("water"):
+        _weather_front(p, rec["opts"])
     f = p.root / LIGHT_NPZ
     if scene_rec(p) is None or not f.exists():
         return
@@ -1288,7 +1292,7 @@ def _weather_front(p, o: dict) -> None:
     """Rain or snow in front of everything: a sparse layer above the line art (a few streaks or flakes)."""
     w = str(o.get("weather") or "clear")
     names = [e["name"] for e in p.state["layers"]]
-    if w not in ("rain", "snow"):
+    if w not in ("rain", "snow") and not o.get("water"):
         if "weather" in names:
             p._write_layer_file("weather", None)
         return
@@ -1306,12 +1310,57 @@ def _weather_front(p, o: dict) -> None:
             L = rng.uniform(0.04, 0.08) * S
             cv2.line(a, (int(x), int(y)), (int(x + 0.18 * L), int(y + L)), (0.86, 0.9, 0.96, 0.55),
                      max(1, int(0.0015 * S)), cv2.LINE_AA)
-    else:
+    elif w == "snow":
         for _ in range(int(0.00002 * W * H * (1000.0 / S) ** 2 * 5)):
             x, y = rng.uniform(0, W), rng.uniform(0, H)
             cv2.circle(a, (int(x), int(y)), max(1, int(rng.uniform(0.004, 0.008) * S)), (1.0, 1.0, 1.0, 0.9), -1,
                        cv2.LINE_AA)
+    if o.get("water"):
+        _waterline(p, a, o)
     p._write_layer_file("weather", a)
+
+
+def _waterline(p, a: np.ndarray, o: dict) -> None:
+    """Figures standing in shallow water: below the water level (``--level`` m, default 0.3) the figure is covered by
+    the water's tint, a light line and a ripple ring round the legs mark the surface."""
+    from . import draw_pose as DP
+    from .draw_figure2d import load_maps
+    mp = load_maps(p)
+    if mp is None:
+        return
+    level = float(o.get("level") or 0.3)
+    lab, tb, zl, s = mp["lab"], mp["table"], mp["z"], mp["s"]
+    Hl, Wl = lab.shape
+    cam = DP.camera_of(p).resized(Wl, Hl)
+    vv, uu = np.mgrid[0:Hl, 0:Wl].astype(np.float32)
+    Y = cam.C[1] + cam.rays(uu + 0.5, vv + 0.5)[..., 1] * zl
+    sea = np.asarray(_rgb(o.get("sea") or DEFAULTS["sea"]), np.float32) / 255.0
+    tint = np.clip(sea * 0.8 + 0.2, 0, 1)
+    S = float(max(p.W, p.H))
+    for el in DP.figures(p):
+        ids = [k for k, t in enumerate(tb) if t["subj"] == el["subject"]]
+        fm = np.isin(lab, ids) & (zl < 1e3)
+        under = fm & (Y < level)
+        if not under.any():
+            continue
+        ub = cv2.resize(under.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
+        ub = cv2.GaussianBlur(ub.astype(np.float32), (0, 0), 0.0015 * S)
+        a[..., :3] = a[..., :3] * (1 - ub[..., None]) + tint[None, None, :] * ub[..., None]
+        a[..., 3] = np.maximum(a[..., 3], ub * 0.75)
+        # the ripple ring round the figure at the water level
+        J = {k: np.asarray(v, float) for k, v in el["j3d"].items()}
+        feet = [J[f"ankle-{q}"] for q in "rl"]
+        c = np.mean(feet, 0)
+        rr = 0.25 + 0.5 * float(np.linalg.norm((feet[0] - feet[1])[[0, 2]]))
+        cam2 = DP.camera_of(p)
+        for k_, (rad, wgt) in enumerate(((rr, 1.0), (rr * 1.6, 0.6))):
+            ang = np.linspace(math.pi, 2 * math.pi, 40)            # the near half: the far half is behind the legs
+            ring = np.stack([c[0] + rad * np.cos(ang), np.full_like(ang, level), c[2] + 0.55 * rad * np.sin(ang)], 1)
+            q, zz = cam2.project(ring)
+            if (zz <= 0.1).any():
+                continue
+            pts = np.round(q * 16).astype(np.int32)
+            cv2.polylines(a, [pts], False, (1.0, 1.0, 1.0, 0.85 * wgt), max(1, int(0.0025 * S * wgt)), cv2.LINE_AA, 4)
 
 
 def _light_layer(p) -> None:
@@ -1406,8 +1455,8 @@ FLOORS = ("floor", "ground", "road", "pavement", "platform", "sand", "concrete",
 
 def floor_mask(p):
     """(mask of the scene's floor regions [H,W], colour at a pixel (x, y) -> rgb) or None without a scene."""
-    if scene_rec(p) is None:
-        return None
+    if scene_rec(p) is None or scene_rec(p)["opts"].get("water"):
+        return None                         # standing in water: the ripple ring stands for the contact shadow
     m = np.zeros((p.H, p.W), bool)
     for n in FLOORS:
         if n in p.state.get("regions", {}) and p.state["regions"][n].get("how") == "scene":
