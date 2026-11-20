@@ -1151,6 +1151,9 @@ def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
                                                               + 0.05)) * sc_
         if lift > 0.05:
             rx = 0.6 * shoulders * sc_
+        # compact: a stride or a kneel never spreads it past the shoulders' width
+        rx = min(rx, 1.0 * shoulders * sc_)
+        rz = min(rz, 0.45 * shoulders * sc_)
         if lift > 0.05:
             fc = np.array([J["pelvis"][0] if "pelvis" in J else fc[0], 0.0, J["pelvis"][2] if "pelvis" in J
                            else fc[2]]) * 0.5 + fc * 0.5

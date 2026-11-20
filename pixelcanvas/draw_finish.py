@@ -558,7 +558,7 @@ def cmd_polish(ctx, args: List[str]):
     amt_soft = cli._num(a, "soften", soft_default, 0.0, 1.0, ctx.notes, u)
     fm = figure_maps(p)
     fig_default = 1.0 if fm is not None else 0.0
-    amt_rim = cli._num(a, "rim", 0.5 * fig_default, 0.0, 1.0, ctx.notes, u)
+    amt_rim = cli._num(a, "rim", 0.35 * fig_default, 0.0, 1.0, ctx.notes, u)
     # shallow focus when asked for (--focus <figure> or --dof): a picture is sharp throughout by default
     amt_dof = cli._num(a, "dof", 0.6 * fig_default if a.get("focus") else 0.0, 0.0, 1.0, ctx.notes, u)
     amt_glow = cli._num(a, "glow", 0.5, 0.0, 1.0, ctx.notes, u)
