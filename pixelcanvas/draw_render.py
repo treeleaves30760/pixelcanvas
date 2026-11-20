@@ -559,7 +559,8 @@ def cmd_dress(ctx, args):
                          ("sleeve", ("none", "short", "long")),
                          ("style", ("pleated", "flared", "pencil", "open", "closed"))):
         if a.get(key) and str(a[key]).lower() not in allowed:
-            raise UsageError(f"--{key} is one of {', '.join(allowed)}", USAGE["dress"])
+            ctx.notes.append(f"--{key} {a[key]} left out (it is one of {', '.join(allowed)})")
+            a[key] = None
     for key in ("color", "trim", "skin"):
         if a.get(key):
             from .draw_plan import swatch
