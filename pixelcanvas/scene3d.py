@@ -190,6 +190,9 @@ def kit_corridor(k: Kit) -> None:
                 fr = 0.07
                 k.face([[x + 2 * e, dh, z - fr], [x + 2 * e, dh + fr, z - fr], [x + 2 * e, dh + fr, z + dw + fr],
                         [x + 2 * e, dh, z + dw + fr]], trim, "door", 1)["normal"] = np.array([nx, 0, 0.0])
+                for za, zb in ((z - fr, z), (z + dw, z + dw + fr)):       # the side posts of the frame
+                    k.face([[x + 2 * e, 0, za], [x + 2 * e, dh, za], [x + 2 * e, dh, zb], [x + 2 * e, 0, zb]],
+                           _mix(trim, (0, 0, 0), 0.1), "door", 1)["normal"] = np.array([nx, 0, 0.0])
                 k.line([x + 2 * e, 0.06, z + 0.12], [x + 2 * e, dh - 0.12, z + 0.12], 2, 0.4)
                 k.line([x + 2 * e, 0.06, z + dw - 0.12], [x + 2 * e, dh - 0.12, z + dw - 0.12], 2, 0.4)
                 k.line([x + 2 * e, 1.0, z + dw - 0.14], [x + 2 * e, 1.0, z + dw - 0.22], 2, 1.6,

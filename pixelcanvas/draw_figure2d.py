@@ -85,12 +85,41 @@ def _clip_rect(P: np.ndarray, x0: float, y0: float, x1: float, y1: float) -> np.
     return np.asarray(poly) if poly else np.zeros((0, 2))
 
 
+_PART_TONES = {"trunk": "#7a5a40", "crown": "#4f8a4a", "pole": "#4a4e56", "foot": "#4a4e56", "cap": "#3e424a",
+               "lamp": "#fff1c8", "glass": "#bcd6ea", "mullion": "#f0ece4", "panel": "#7c5034", "rail": "#5e3c26",
+               "wall": "#e8dcc2"}
+
+
+def _block_tone(el: dict, kind: str, part: str):
+    """The colour of one piece of a furniture block (a tree's trunk and crown, a lamp post's pole and lamp, a
+    window's glass, a wall's wainscot), or None for the block's own colour. A colour given with --color goes to the
+    main piece (the crown, the pole, the frame, the wall)."""
+    from .coords import parse_colour
+    word = part.split()[-1] if part else ""
+    given = el.get("color")
+    main = {"tree": "crown", "lamppost": "pole", "window": "frame", "wainscot": "wall", "door": "panel"}.get(kind)
+    if word in ("leg", "post") and kind in ("bench", "chair", "desk"):
+        return None
+    if word == main or (kind == "lamppost" and word in ("foot", "cap")):
+        if given:
+            return None
+        return parse_colour(_PART_TONES[word]) if word in _PART_TONES else None
+    if kind == "door" and word == "frame":
+        return parse_colour("#5e3c26")
+    if kind == "window" and word in ("frame", "mullion"):
+        return None if given else parse_colour("#f0ece4")
+    if kind in ("tree", "lamppost", "window", "wainscot") and word in _PART_TONES:
+        return parse_colour(_PART_TONES[word])
+    return None
+
+
 def block_parts(p, cam) -> List[dict]:
     from .render3d import corners as _corners  # noqa: F401
     out = []
     for el in DP.blocks_rec(p):
         if el.get("pos") is None:
             continue
+        n0 = len(out)
         for k, pr in enumerate(DP._block(el).prims(el["id"])):
             if pr["t"] == "box":
                 A = np.asarray(pr["A"], float)
@@ -115,7 +144,16 @@ def block_parts(p, cam) -> List[dict]:
                 P_, N_ = _prim_samples(pr, 300)
                 out.append({"name": f"{el['name']}-{k}", "kind": "blob", "mat": el["name"], "subj": "@" + el["name"],
                             "group": "scene", "joints": {}, "rad": 0.3, "details": [], "bias": 0.0, "line": True,
-                            "pts": P_, "nrm": N_, "hull": True, "block": el["name"]})
+                            "pts": P_, "nrm": N_, "hull": True, "block": el["name"], "piece": pr.get("part", "")})
+        prs = DP._block(el).prims(el["id"])
+        for pt in out[n0:]:
+            if "piece" not in pt:
+                k_ = int(pt["name"][len(el["name"]) + 1:].split("-")[0])
+                pt["piece"] = prs[k_].get("part", "")
+            tone = _block_tone(el, el["type"], str(pt["piece"]))
+            if tone is not None:
+                pt["tone"] = tuple(int(v) for v in tone)
+                pt["subregion"] = f"{el['name']}-{str(pt['piece']).split()[-1]}"     # its own area and swatch
     return out
 
 
@@ -486,6 +524,8 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
 
 def region_of(p, pt: dict) -> str:
     from .draw_render import region_name
+    if pt.get("subregion"):
+        return pt["subregion"]
     if pt.get("block"):
         return pt["block"]
     if str(pt["mat"]).startswith("prop:"):
@@ -495,6 +535,8 @@ def region_of(p, pt: dict) -> str:
 
 def colour_of(p, pt: dict, cache: dict) -> Tuple[int, int, int]:
     from .draw_render import _col, block_colour, material_colours
+    if pt.get("tone") is not None:
+        return pt["tone"]                       # one piece of a furniture block in its own colour
     if pt.get("block"):
         el = next((b for b in DP.blocks_rec(p) if b["name"] == pt["block"]), None)
         return block_colour(p, el) if el else (200, 192, 180)
