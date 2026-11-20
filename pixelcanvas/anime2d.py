@@ -16,10 +16,10 @@ from . import figure3d as F3
 from .shape2d import chain_tube, ell_samples, perp_basis, ring, unit
 
 # radius profiles along each limb, in head heights (t from the near joint to the far one)
-UPPER = [(0.0, 0.122), (0.2, 0.118), (0.55, 0.102), (1.0, 0.09)]
-FORE = [(0.0, 0.09), (0.22, 0.092), (0.65, 0.07), (1.0, 0.056)]
-THIGH = [(0.0, 0.2), (0.35, 0.182), (0.8, 0.138), (1.0, 0.122)]
-SHIN = [(0.0, 0.12), (0.27, 0.133), (0.62, 0.098), (0.9, 0.066), (1.0, 0.064)]
+UPPER = [(0.0, 0.122), (0.22, 0.124), (0.6, 0.1), (1.0, 0.084)]
+FORE = [(0.0, 0.084), (0.2, 0.092), (0.65, 0.066), (1.0, 0.05)]
+THIGH = [(0.0, 0.21), (0.4, 0.19), (0.8, 0.14), (1.0, 0.118)]
+SHIN = [(0.0, 0.112), (0.1, 0.108), (0.3, 0.13), (0.6, 0.094), (0.88, 0.06), (1.0, 0.06)]
 NECK = 0.108
 HAND_SCALE = 0.86
 
@@ -116,8 +116,8 @@ MALE_WORDS = ("boy", "man", "male", "guy", "father", "dad", "king", "prince", "k
 TEMPLATE = {
     "child": {"girl": {"shoulder": 0.6, "chest": 0.48, "waist": 0.42, "hip": 0.5, "neck": 0.1},
               "boy": {"shoulder": 0.64, "chest": 0.5, "waist": 0.44, "hip": 0.48, "neck": 0.105}},
-    "teen": {"girl": {"shoulder": 0.64, "chest": 0.52, "waist": 0.38, "hip": 0.58, "neck": 0.1},
-             "boy": {"shoulder": 0.74, "chest": 0.6, "waist": 0.47, "hip": 0.52, "neck": 0.115}},
+    "teen": {"girl": {"shoulder": 0.66, "chest": 0.55, "waist": 0.36, "hip": 0.6, "neck": 0.1},
+             "boy": {"shoulder": 0.82, "chest": 0.64, "waist": 0.45, "hip": 0.52, "neck": 0.118}},
 }
 
 
@@ -165,7 +165,7 @@ class Torso:
         sh = 0.5 * (J["shoulder-r"] + J["shoulder-l"])
         lv = [  # (centre, X, Z, a, b)
             (J["neck"] + C[:, 1] * 0.02 * h, C[:, 0], C[:, 2], tpl["neck"] * h, tpl["neck"] * h),
-            (sh - C[:, 1] * 0.03 * h, C[:, 0], C[:, 2], (tpl["shoulder"] - 0.07) * h, 0.22 * h),
+            (sh - C[:, 1] * 0.07 * h, C[:, 0], C[:, 2], (tpl["shoulder"] - 0.07) * h, 0.22 * h),
             (sh + (J["spine"] - sh) * 0.42, C[:, 0], C[:, 2], tpl["chest"] * h, 0.27 * h),
             (J["spine"], S[:, 0], S[:, 2], tpl["waist"] * h, 0.22 * h),
             (J["pelvis"] + P[:, 1] * 0.02 * h, P[:, 0], P[:, 2], tpl["hip"] * h, 0.26 * h),
@@ -221,6 +221,32 @@ def _fold_lines(A, M, B, r: float, n: int, side_len: float) -> List[np.ndarray]:
     return out
 
 
+def _band(c, T, r: float, eye=None, n: int = 11, lift: float = 0.0) -> dict:
+    """A line around a limb or trunk at ``c`` (a cuff, a seam, a waistband): the half ring that faces the viewer
+    (``eye``), else the whole ring with its normals so only the front half is drawn."""
+    c = np.asarray(c, float)
+    T = unit(T)
+    if eye is not None:
+        tw = np.asarray(eye, float) - c
+        z = unit(tw - T * float(tw @ T))
+        x = unit(np.cross(T, z))
+        th = np.linspace(0.08, math.pi - 0.08, n)
+        pts = c + np.outer(np.cos(th) * r, x) + np.outer(np.sin(th) * r, z) + z * lift
+        return {"pts": pts}
+    x, z = perp_basis(T)
+    th = np.linspace(0, 2 * math.pi, 2 * n)
+    off = np.outer(np.cos(th), x) + np.outer(np.sin(th), z)
+    return {"pts": c + off * r, "nrm": off}
+
+
+def _front_line(tor: "Torso", ts, xs, lift: float, w: float = 0.45) -> dict:
+    """A line on the front of the trunk (a lapel, a pocket, a waistband) that is drawn only where the front faces the
+    viewer."""
+    pts = np.array([tor.front(t, x, lift) for t, x in zip(ts, xs)])
+    nrm = np.array([tor.at(t)[2] for t in ts])
+    return {"pts": pts, "w": w, "nrm": nrm}
+
+
 def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[List[dict]] = None,
                  eye: Optional[np.ndarray] = None, cam=None) -> List[dict]:
     """Every part of one posed figure (body, hands, feet, clothes, hair, held props). ``eye`` (the camera's
@@ -232,6 +258,7 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
     rig = F3.Rig(body, J, F)
     garments = (look or {}).get("garments") or {}
     tor = Torso(body, J, F, h, k, tpl)
+    _limb_tops(J, F, tpl, h, k)
     parts: List[dict] = []
     rig_spec = el.get("rig") or {}
     motion, floating = F3.motion_of(rig_spec, F)
@@ -280,9 +307,13 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
                                    ("thigh", THIGH, f"hip-{s}", f"knee-{s}"),
                                    ("shin", SHIN, f"knee-{s}", f"ankle-{s}")):
             t, r = _prof(prof, h, k)
-            A0 = J[A_] - F["chest"][:, 1] * 0.06 * h if kind == "upperarm" else J[A_]
+            A0 = J[f"top-{kind}-{s}"] if kind in ("upperarm", "thigh") else J[A_]
             parts.append(_tube(f"{kind}-{s}", "skin", subj, ("arm-" if kind in ("upperarm", "forearm") else "leg-") + s,
                                _limb_axis(A0, J[B_], t), r, {A_: J[A_], B_: J[B_]}))
+            if kind == "shin":
+                kh = _knee_hint(J, s, float(r[0]), eye)
+                if kh:
+                    parts[-1]["details"].append(kh)
         # hands: an anime hand silhouette for the hand shape, turned to the viewer, foreshortened with the hand
         W = J[f"wrist-{s}"]
         hmat = "gloves" if "gloves" in garments else "skin"
@@ -314,17 +345,32 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
             ("socks" if "socks" in garments else "thigh-highs" if "thigh-highs" in garments else "skin")
         fr_ = 1.15 if shoe else 1.0
         tip = toe - (toe - heel) * (0.2 if shoe else 0.22)
-        parts.append(_tube(f"foot-{s}", fmat, subj, f"foot-{s}", [ank, ball, tip],
-                           [0.068 * h * k * fr_, 0.062 * h * k * fr_, (0.042 if shoe else 0.03) * h * k * fr_],
-                           {f"ankle-{s}": ank}, point_end=not shoe, round_end=shoe, n_rings=10,
-                           bias=-0.012 * h if shoe else 0.0))
         if shoe:
-            parts[-1]["details"].append({"pts": np.array([J[f"heel-{s}"] + (toe - heel) * 0.05, ball,
-                                                          toe + (toe - heel) * 0.04]), "w": 0.5})
+            # a shoe: the instep from the ankle down to the ball and a sole from behind the heel to a round toe, one
+            # closed outline (the union of the solids), a sole line along its bottom
+            from .render3d import rcone
+            fw = unit(toe - heel)
+            upf = rig.F[f"foot-{s}"][:, 1]
+            r_sole = 0.05 * h * k
+            back = heel - fw * 0.02 * h
+            tipc = toe - fw * 0.04 * h
+            prims = [rcone(ank, ball, 0.07 * h * k, 0.064 * h * k),
+                     rcone(back + upf * 0.01 * h, ball, r_sole, 0.064 * h * k),
+                     rcone(ball, tipc, 0.064 * h * k, 0.048 * h * k)]
+            parts.append(_solid(f"foot-{s}", fmat, subj, f"foot-{s}", prims, {f"ankle-{s}": ank},
+                                rad=0.07 * h, bias=-0.012 * h))
+            low = -upf * 0.62 * r_sole
+            sole = np.array([back + low, heel + fw * 0.3 * float(np.linalg.norm(toe - heel)) + low * 1.05,
+                             ball + low * 1.2, tipc + fw * 0.5 * 0.048 * h * k - upf * 0.35 * 0.048 * h * k])
+            parts[-1]["details"].append({"pts": sole, "w": 0.5})
+        else:
+            parts.append(_tube(f"foot-{s}", fmat, subj, f"foot-{s}", [ank, ball, tip],
+                               [0.068 * h * k, 0.062 * h * k, 0.03 * h * k],
+                               {f"ankle-{s}": ank}, point_end=True, round_end=False, n_rings=10, bias=0.0))
         _ = sock
 
     # ---- clothes
-    parts += _clothes(el, body, J, F, h, k, tor, garments, motion, hands, grips, rig, subj)
+    parts += _clothes(el, body, J, F, h, k, tor, garments, motion, hands, grips, rig, subj, eye=eye)
 
     # ---- hair
     hair = (look or {}).get("hair")
@@ -354,6 +400,47 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
 
 # ============================================================================================ clothes
 
+def _knee_hint(J, s: str, r: float, eye) -> Optional[dict]:
+    """A straight leg's kneecap: a short arc just below the knee on the side toward the viewer."""
+    if eye is None:
+        return None
+    K, A, H_ = J[f"knee-{s}"], J[f"ankle-{s}"], J[f"hip-{s}"]
+    d1, d2 = unit(K - H_), unit(A - K)
+    if math.degrees(math.acos(float(np.clip(d1 @ d2, -1, 1)))) > 30:
+        return None
+    b = _band(K + d2 * r * 0.55, d2, r * 0.45, eye, n=7)
+    return {"pts": b["pts"][1:6] + unit(np.asarray(eye, float) - K) * r * 0.55, "w": 0.38}
+
+
+def _waist_folds(F, tor: "Torso", lift: float) -> List[dict]:
+    """Where the trunk bends sideways (the shoulder line against the hip line): two short folds at the waist on the
+    compressed side."""
+    C, P = F["chest"], F["pelvis"]
+    side = float(C[:, 1] @ P[:, 0])                  # the chest leans toward +X: that side compresses
+    if abs(side) < math.sin(math.radians(8)):
+        return []
+    sg = 1.0 if side > 0 else -1.0
+    out = []
+    for t0 in (2.75, 3.15):
+        out.append(_front_line(tor, [t0 - 0.08, t0, t0 + 0.06], [sg * 0.97, sg * 0.82, sg * 0.66], lift, 0.4))
+    return out
+
+
+def _limb_tops(J, F, tpl: Dict[str, float], h: float, k: float) -> None:
+    """Where the drawn upper arm and thigh start (``top-upperarm-<s>``, ``top-thigh-<s>`` in J): the arm's round
+    top sits a little below the shoulder line, so the trunk's shoulder runs into a deltoid instead of a ball above
+    it; the thigh starts inside the hip, so the thigh's outer edge continues the hip line instead of bulging out
+    of it. The knees and elbows stay as posed."""
+    C, P = F["chest"], F["pelvis"]
+    r_th = THIGH[0][1] * h * k
+    for s in "rl":
+        J[f"top-upperarm-{s}"] = J[f"shoulder-{s}"] - C[:, 1] * 0.14 * h
+        H = J[f"hip-{s}"]
+        cur = float((H - J["pelvis"]) @ P[:, 0])
+        want = math.copysign(max(0.12 * h, min(abs(cur), tpl["hip"] * h - 0.92 * r_th)), cur if cur else 1.0)
+        J[f"top-thigh-{s}"] = H + P[:, 0] * (want - cur) - P[:, 1] * 0.03 * h
+
+
 def _limb_cover(J, s, kind, t0, t1, ease, h, k, scale=1.08):
     prof = {"upperarm": UPPER, "forearm": FORE, "thigh": THIGH, "shin": SHIN}[kind]
     A_, B_ = {"upperarm": ("shoulder", "elbow"), "forearm": ("elbow", "wrist"), "thigh": ("hip", "knee"),
@@ -361,13 +448,12 @@ def _limb_cover(J, s, kind, t0, t1, ease, h, k, scale=1.08):
     tt, rr = _prof(prof, h, k)
     ts = np.linspace(t0, t1, 6)
     r = np.interp(ts, tt, rr) * scale + ease
-    A0 = J[f"{A_}-{s}"]
-    if kind == "upperarm":
-        A0 = A0 - unit(J["neck"] - 0.5 * (J["hip-r"] + J["hip-l"])) * 0.06 * h
+    A0 = J.get(f"top-{kind}-{s}", J[f"{A_}-{s}"])
     return _limb_axis(A0, J[f"{B_}-{s}"], ts), r, {f"{A_}-{s}": J[f"{A_}-{s}"], f"{B_}-{s}": J[f"{B_}-{s}"]}
 
 
-def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, grips, rig, subj) -> List[dict]:
+def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, grips, rig, subj,
+             eye=None) -> List[dict]:
     out: List[dict] = []
     order = sorted(garments, key=lambda g: F3.LAYER.get(g, 3))
     inner_top = next((g for g in ("blouse", "shirt", "dress") if g in garments), None)
@@ -395,6 +481,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                               frames=fr, depth_ratio=dr, round_start=False, round_end=False, open_end=True,
                               open_start=True, n_rings=16, n_pts=24, bias=bias)
             out.append(body_part)
+            body_part["details"] += _waist_folds(F, tor, ease + 0.004 * h)
             # sleeves
             sleeve = str(o.get("sleeve") or ("short" if g == "dress" else "long"))
             trim = g in ("blazer", "coat") and o.get("trim", True) is not False
@@ -416,6 +503,14 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                 for fl in _fold_lines(J[f"shoulder-{s}"], J[f"elbow-{s}"], J[f"wrist-{s}"], float(rs[-1]), 3,
                                       0.18 * h):
                     lo["details"].append({"pts": fl, "w": 0.45})
+                # the shoulder seam (the sleeve sets into the trunk with a clear line) and a cuff band at the wrist
+                ua = unit(axs[-1] - axs[0])
+                seam = _band(axs[0] + ua * 0.16 * float(np.linalg.norm(axs[-1] - axs[0])), ua, float(rs[1]) * 1.02,
+                             eye)
+                up["details"].append(dict(seam, w=0.5))
+                fa = unit(axf[-1] - axf[0])
+                cuff = _band(axf[0] + (axf[-1] - axf[0]) * 0.8, fa, float(rf[-2]) * 1.03, eye)
+                lo["details"].append(dict(cuff, w=0.55))
                 out += [up, lo]
                 if trim:
                     axc, rc, jc = _limb_cover(J, s, "forearm", 0.88, 0.96, ease * 1.15 + 0.003 * h, h, k, sc * 1.05)
@@ -424,20 +519,42 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                                      n_rings=5))
             # the front: an open V shows the shirt; lapels, buttons; a blouse collar
             if outer and g != "hoodie":
-                style = str(o.get("style") or ("open" if g == "jacket" else "closed"))
+                # a jacket over nothing named closes over a white shirt (never a bare chest)
+                style = str(o.get("style") or ("open" if g == "jacket" and inner_top else "closed"))
                 apex_t = 1.9 if style == "closed" else 4.4
                 lift = ease + 0.006 * h
                 vpts = [tor.front(0.15, 0.62, lift), tor.front(0.15, -0.62, lift)]
                 vpts += [tor.front(apex_t * f + 0.15 * (1 - f), -0.62 * (1 - f), lift) for f in np.linspace(0.2, 1, 5)]
                 vpts += [tor.front(apex_t * f + 0.15 * (1 - f), 0.62 * (1 - f), lift) for f in np.linspace(1, 0.2, 5)[1:]]
-                inner_mat = inner_top or "skin"
+                inner_mat = inner_top or "collar"
                 P_, N_ = _fan_samples(np.array(vpts), tor.at(1.5)[2])
                 out.append(_blob(f"{g}-v", inner_mat, subj, "clothes", P_, N_, {"neck": J["neck"]}, rad=0.1 * h,
                                  hull=False, poly3=np.array(vpts), decal=[g]))
                 for sg in (1.0, -1.0):
-                    lap = [tor.front(0.25, sg * 0.95, lift), tor.front(0.9, sg * 0.82, lift),
-                           tor.front(apex_t * 0.98, sg * 0.04, lift)]
-                    body_part["details"].append({"pts": np.array(lap), "w": 0.5})
+                    # the lapel: from the collar's back down the V to the top button, its notch line across
+                    body_part["details"].append(_front_line(tor, [0.25, 0.9, apex_t * 0.98],
+                                                            [sg * 0.95, sg * 0.82, sg * 0.04], lift, 0.5))
+                    body_part["details"].append(_front_line(tor, [0.55, 0.8], [sg * 0.86, sg * 0.6], lift, 0.42))
+                    # hip pockets: a flap line on each side
+                    if t1 > 4.2:
+                        body_part["details"].append(_front_line(tor, [3.85, 3.9], [sg * 0.28, sg * 0.72], lift,
+                                                                0.42))
+                # a breast pocket on her left
+                body_part["details"].append(_front_line(tor, [1.45, 1.42], [-0.32, -0.66], lift, 0.42))
+                if style == "closed":
+                    # the front edge from the top button to the hem, a little off the middle
+                    ts_ = np.linspace(apex_t, min(t1, 5.0) - 0.05, 6)
+                    body_part["details"].append(_front_line(tor, ts_, [0.04 + 0.03 * (tt - apex_t) / 3 for tt in ts_],
+                                                            lift, 0.5))
+                if not inner_top:
+                    # the shirt's collar points inside the V
+                    for sg in (1.0, -1.0):
+                        cpts = np.array([tor.front(0.1, sg * 0.6, lift * 0.9), tor.front(0.75, sg * 0.42, lift * 0.9),
+                                         tor.front(0.5, sg * 0.05, lift * 0.9), tor.front(0.12, sg * 0.04, lift * 0.9)])
+                        P_, N_ = _fan_samples(cpts, tor.at(0.5)[2])
+                        out.append(_blob(f"{g}-shirt-collar-{'r' if sg > 0 else 'l'}", "collar", subj, "clothes", P_,
+                                         N_, {"collar": None}, rad=0.08 * h, poly3=cpts,
+                                         decal=[g, f"{g}-v"]))
                 if style == "closed":
                     for tt in (apex_t + 0.35, apex_t + 1.1):
                         if tt < 5.0:
@@ -452,7 +569,7 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                                      tor.front(0.55, sg * 0.08, ease + 0.012 * h), tor.front(0.05, sg * 0.05, ease + 0.01 * h)])
                     P_, N_ = _fan_samples(cpts, tor.at(0.5)[2])
                     out.append(_blob(f"{g}-collar-{'r' if sg > 0 else 'l'}", g, subj, "clothes", P_, N_,
-                                     {"neck": J["neck"]}, rad=0.08 * h, poly3=cpts,
+                                     {"collar": None}, rad=0.08 * h, poly3=cpts,
                                      decal=[g] + [f"{x}-v" for x in OUTER] + list(OUTER)))
             if g == "dress":
                 out += _shell_parts(F3.garment_prims(rig, "x", "skirt", {"length": o.get("length", "knee"),
@@ -473,6 +590,13 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                                                              "waist": J["spine"]},
                              frames=fr, depth_ratio=dr, round_start=False, round_end=True, n_rings=8, n_pts=20,
                              bias=bias))
+            # the waistband and the fly (drawn only where nothing covers them)
+            lift_p = ease * 0.6 + 0.004 * h
+            xs_ = np.linspace(-0.92, 0.92, 9)
+            out[-1]["details"].append(_front_line(tor, [3.28] * 9, xs_, lift_p, 0.45))
+            if g == "pants":
+                out[-1]["details"].append(_front_line(tor, [3.3, 3.8, 4.3, 4.55], [0.12, 0.13, 0.1, 0.02], lift_p,
+                                                      0.42))
             for s in "rl":
                 t1 = 0.45 if g == "shorts" else 1.0
                 axs, rs, js = _limb_cover(J, s, "thigh", 0.0, t1, ease * (0.7 if g == "shorts" else 1.0), h, k, 1.06)
@@ -481,10 +605,23 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                 out.append(th)
                 if g == "pants":
                     axl, rl, jl = _limb_cover(J, s, "shin", 0.0, 0.98, ease * 1.2, h, k, 1.12)
+                    # the hem widens a little and breaks over the shoe
+                    rl = rl.copy()
+                    rl[-1] *= 1.18
+                    rl[-2] *= 1.06
                     lo = _tube(f"{g}-shin-{s}", g, subj, f"leg-{s}", axl, rl, jl, round_end=False, open_end=True,
                                bias=bias - 0.003 * h)
                     for fl in _fold_lines(J[f"hip-{s}"], J[f"knee-{s}"], J[f"ankle-{s}"], float(rl[0]), 3, 0.22 * h):
                         lo["details"].append({"pts": fl, "w": 0.45})
+                    sa = unit(axl[-1] - axl[0])
+                    brk = _band(axl[0] + (axl[-1] - axl[0]) * 0.9, sa, float(rl[-2]) * 1.02, eye, n=9)
+                    if eye is not None:
+                        q = brk["pts"][2:7].copy()
+                        q[1:4] -= sa * float(rl[-2]) * np.array([0.25, 0.45, 0.25])[:, None]
+                        lo["details"].append({"pts": q, "w": 0.42})
+                    kh = _knee_hint(J, s, float(rl[0]), eye)
+                    if kh:
+                        lo["details"].append(kh)
                     out.append(lo)
         elif g in ("socks", "thigh-highs"):
             for s in "rl":
@@ -496,8 +633,11 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                 else:
                     t0 = 0.42
                 axs, rs, js = _limb_cover(J, s, "shin", t0, 1.0, ease, h, k, 1.0)
+                kh = _knee_hint(J, s, float(rs[0]), eye) if g == "thigh-highs" else None
                 out.append(_tube(f"{g}-{s}", g, subj, f"leg-{s}", axs, rs, js, round_start=g == "thigh-highs",
                                  open_start=g == "socks", bias=bias))
+                if kh:
+                    out[-1]["details"].append(kh)
         elif g == "boots":
             for s in "rl":
                 axs, rs, js = _limb_cover(J, s, "shin", 0.5, 1.0, 0.03 * h, h, k, 1.1)
@@ -562,27 +702,35 @@ def _shell_parts(prims: List[dict], mat: str, subj: str, tor: Torso, h: float, b
         Az = A[:, 2] * f
         Ay = A[:, 1]
         tilt = np.asarray(pr.get("hem_tilt", [0.0, 0.0]), float)
-        n = 24
+        pleated = bool(int(pr.get("pleats", 0)) or mat == "skirt")
+        m_ = max(8, int(pr.get("pleats", 0)) or 12)
+        n = 8 * m_ if pleated else 24
         th = np.linspace(0, 2 * math.pi, n, endpoint=False)
         cs, sn = np.cos(th), np.sin(th)
         y_hem = -1.0 + np.maximum(0.0, tilt[0] * cs + tilt[1] * sn)
+        # pleats: each fold edge (where a pleat line runs) stands out a little and hangs a little lower, so the hem
+        # reads as a row of pleats instead of one smooth curve
+        tri = np.zeros(n)
+        if pleated:
+            u = th * m_ / (2 * math.pi) - 0.5
+            tri = 1.0 - 2.0 * np.abs(u - np.round(u))
+            y_hem = y_hem - 0.07 * tri
         rings = []
         for kk in range(10):
             fy = kk / 9.0
             y = y_hem * fy
-            rr = 1 + flare * np.abs(y)
+            rr = (1 + flare * np.abs(y)) * (1 + 0.1 * fy * fy * tri)
             P = c[None] + np.outer(rr * cs, Ax) + np.outer(y, Ay) + np.outer(rr * sn, Az)
             rings.append((P.mean(0), P))
         part = _part(pr["piece"], "tube", mat, subj, "clothes", {"waist": None, "hip-r": None, "hip-l": None},
                      rad=hem_r, rings=rings, open_end=True, bias=bias)
         # pleats: lines from below the waist band to the hem
-        if int(pr.get("pleats", 0)) or mat == "skirt":
-            m_ = max(8, int(pr.get("pleats", 0)) or 12)
+        if pleated:
             for j in range(m_):
                 a_ = 2 * math.pi * (j + 0.5) / m_
-                yh = -1.0 + max(0.0, tilt[0] * math.cos(a_) + tilt[1] * math.sin(a_))
-                ys = np.linspace(-0.3, yh, 6)
-                rr = 1 + flare * np.abs(ys)
+                yh = -1.0 + max(0.0, tilt[0] * math.cos(a_) + tilt[1] * math.sin(a_)) - 0.07
+                ys = np.linspace(-0.3, yh * 0.985, 6)
+                rr = (1 + flare * np.abs(ys)) * (1 + 0.1 * (ys / yh) ** 2)
                 pts = c[None] + np.outer(rr * math.cos(a_), Ax) + np.outer(ys, Ay) + np.outer(rr * math.sin(a_), Az)
                 part["details"].append({"pts": pts, "w": 0.42, "nrm": unit(np.outer(math.cos(a_), Ax) + np.outer(math.sin(a_), Az)).repeat(len(pts), 0)})
         out.append(part)
