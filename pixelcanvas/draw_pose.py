@@ -825,7 +825,8 @@ def _pose_report(p, el, res) -> List[str]:
         out.append(f"check: {line}")
     mods = rig.get("mods") or {}
     if mods:
-        out.append("modifiers: " + ", ".join(f"--{k} {v[0]:g},{v[1]:g}" if isinstance(v, list) else f"--{k} {v}"
+        out.append("modifiers: " + ", ".join(f"--{k} {v[0]:g},{v[1]:g}" if isinstance(v, list) else
+                                            f"--{k} {v:g}" if isinstance(v, float) else f"--{k} {v}"
                                             for k, v in mods.items()))
     if res["support"] == "ground" and P3.PRESETS[res["preset"]]["rest"] == "seat" and \
             not any(n == "seat" for n, _, _ in cts):
