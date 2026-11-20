@@ -361,7 +361,7 @@ PRESETS: Dict[str, dict] = {
         "leg-r": {"forward": 100, "raise": 8}, "knee-r": {"bend": 128}, "foot-r": {"point": 25},
         "leg-l": {"forward": -14, "raise": 6}, "knee-l": {"bend": 8}, "foot-l": {"point": 50},
         "arm-l": {"forward": 45, "raise": 50}, "elbow-l": {"bend": 70},
-        "arm-r": {"forward": -50, "raise": 32}, "elbow-r": {"bend": 90}}),
+        "arm-r": {"forward": -50, "raise": 32}, "elbow-r": {"bend": 90}}, yaw=35),
     "sprint": _P("flat-out sprint: deep forward lean, high knee, long push-off", {
         "body": {"lean": 30}, "pelvis": {"twist": 14}, "chest": {"twist": -16}, "head": {"nod": -28},
         "leg-r": {"forward": 100, "raise": 12}, "knee-r": {"bend": 125}, "foot-r": {"point": 30},
@@ -1897,6 +1897,26 @@ def _solve_figure(spec: dict, cam: Camera, blocks: Dict[str, Block], others: Dic
         E0, clamps = clamp_edits(E)
         res = _place(spec, pk, pre, E0, reach, cam, blocks, others)
         del body
+    # an arm lost behind the torso (a three-quarter back view, an arm swung across): it swings out until it shows
+    user_arms = {k.split("-")[1] for k in (spec.get("edits") or {}) if k.startswith(("arm-", "elbow-"))}
+    anchored = set(reach) | {k.split("-")[1] for k in (spec.get("targets") or {})}
+    opened = []
+    together = float(np.linalg.norm(res["J"]["hand-r"] - res["J"]["hand-l"])) < 0.3 * res["body"].Ht / 1.6
+    for _ in range(4):
+        cov = silhouette(res, cam)
+        lost = [s for s in "rl" if cov.get(f"arm-{s}", 0) > SIL_LIMIT["arm"] and s not in user_arms and
+                s not in anchored and not together and not str(pre["desc"]).startswith(("holding", "carrying"))]
+        if not lost:
+            break
+        for s in lost:
+            _add(E, f"arm-{s}", "raise", 16)
+            fw = E.get(f"arm-{s}", {}).get("forward", 0.0)
+            _add(E, f"arm-{s}", "forward", 8 if fw >= 0 else -8)
+            opened.append(s)
+        E0, clamps = clamp_edits(E)
+        res = _place(spec, pk, pre, E0, reach, cam, blocks, others)
+    if opened:
+        res["ik"].append("swung out to show past the torso: " + ", ".join(f"arm-{s}" for s in sorted(set(opened))))
     res["clamps"] = clamps
     at = spec.get("at")
     res["at_units"] = list(at) if at else None
