@@ -798,7 +798,8 @@ def gesture(E: dict, pre: dict) -> dict:
                 _add(E, "chest", "side", 7)
             if not _has(E, "chest", "twist"):
                 _add(E, "chest", "twist", -7)
-    if not _has(E, "spine", "bend") and not _has(E, "chest", "bend") and abs(E.get("body", {}).get("lean", 0)) < 60:
+    if not _has(E, "spine", "bend") and not _has(E, "chest", "bend") and abs(E.get("body", {}).get("lean", 0)) < 60 \
+            and not pre.get("dynamic"):
         _add(E, "spine", "bend", -4)                 # the small of the back arches, the chest comes over: an S
         _add(E, "chest", "bend", 5)
     if _has(E, "pelvis", "twist") and not _has(E, "chest", "twist"):
