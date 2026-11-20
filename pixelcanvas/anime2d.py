@@ -258,6 +258,7 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
     rig = F3.Rig(body, J, F)
     garments = (look or {}).get("garments") or {}
     tor = Torso(body, J, F, h, k, tpl)
+    _limb_tops(J, F, tpl, h, k)
     parts: List[dict] = []
     rig_spec = el.get("rig") or {}
     motion, floating = F3.motion_of(rig_spec, F)
@@ -306,7 +307,7 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
                                    ("thigh", THIGH, f"hip-{s}", f"knee-{s}"),
                                    ("shin", SHIN, f"knee-{s}", f"ankle-{s}")):
             t, r = _prof(prof, h, k)
-            A0 = J[A_] - F["chest"][:, 1] * 0.06 * h if kind == "upperarm" else J[A_]
+            A0 = J[f"top-{kind}-{s}"] if kind in ("upperarm", "thigh") else J[A_]
             parts.append(_tube(f"{kind}-{s}", "skin", subj, ("arm-" if kind in ("upperarm", "forearm") else "leg-") + s,
                                _limb_axis(A0, J[B_], t), r, {A_: J[A_], B_: J[B_]}))
         # hands: an anime hand silhouette for the hand shape, turned to the viewer, foreshortened with the hand
@@ -380,6 +381,21 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
 
 # ============================================================================================ clothes
 
+def _limb_tops(J, F, tpl: Dict[str, float], h: float, k: float) -> None:
+    """Where the drawn upper arm and thigh start (``top-upperarm-<s>``, ``top-thigh-<s>`` in J): the arm's round
+    top sits a little below the shoulder line, so the trunk's shoulder runs into a deltoid instead of a ball above
+    it; the thigh starts inside the hip, so the thigh's outer edge continues the hip line instead of bulging out
+    of it. The knees and elbows stay as posed."""
+    C, P = F["chest"], F["pelvis"]
+    r_th = THIGH[0][1] * h * k
+    for s in "rl":
+        J[f"top-upperarm-{s}"] = J[f"shoulder-{s}"] - C[:, 1] * 0.14 * h
+        H = J[f"hip-{s}"]
+        cur = float((H - J["pelvis"]) @ P[:, 0])
+        want = math.copysign(max(0.12 * h, min(abs(cur), tpl["hip"] * h - 0.92 * r_th)), cur if cur else 1.0)
+        J[f"top-thigh-{s}"] = H + P[:, 0] * (want - cur) - P[:, 1] * 0.03 * h
+
+
 def _limb_cover(J, s, kind, t0, t1, ease, h, k, scale=1.08):
     prof = {"upperarm": UPPER, "forearm": FORE, "thigh": THIGH, "shin": SHIN}[kind]
     A_, B_ = {"upperarm": ("shoulder", "elbow"), "forearm": ("elbow", "wrist"), "thigh": ("hip", "knee"),
@@ -387,9 +403,7 @@ def _limb_cover(J, s, kind, t0, t1, ease, h, k, scale=1.08):
     tt, rr = _prof(prof, h, k)
     ts = np.linspace(t0, t1, 6)
     r = np.interp(ts, tt, rr) * scale + ease
-    A0 = J[f"{A_}-{s}"]
-    if kind == "upperarm":
-        A0 = A0 - unit(J["neck"] - 0.5 * (J["hip-r"] + J["hip-l"])) * 0.06 * h
+    A0 = J.get(f"top-{kind}-{s}", J[f"{A_}-{s}"])
     return _limb_axis(A0, J[f"{B_}-{s}"], ts), r, {f"{A_}-{s}": J[f"{A_}-{s}"], f"{B_}-{s}": J[f"{B_}-{s}"]}
 
 
@@ -530,6 +544,13 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                                                              "waist": J["spine"]},
                              frames=fr, depth_ratio=dr, round_start=False, round_end=True, n_rings=8, n_pts=20,
                              bias=bias))
+            # the waistband and the fly (drawn only where nothing covers them)
+            lift_p = ease * 0.6 + 0.004 * h
+            xs_ = np.linspace(-0.92, 0.92, 9)
+            out[-1]["details"].append(_front_line(tor, [3.28] * 9, xs_, lift_p, 0.45))
+            if g == "pants":
+                out[-1]["details"].append(_front_line(tor, [3.3, 3.8, 4.3, 4.55], [0.12, 0.13, 0.1, 0.02], lift_p,
+                                                      0.42))
             for s in "rl":
                 t1 = 0.45 if g == "shorts" else 1.0
                 axs, rs, js = _limb_cover(J, s, "thigh", 0.0, t1, ease * (0.7 if g == "shorts" else 1.0), h, k, 1.06)
@@ -538,10 +559,20 @@ def _clothes(el, body, J, F, h, k, tor: Torso, garments: dict, motion, hands, gr
                 out.append(th)
                 if g == "pants":
                     axl, rl, jl = _limb_cover(J, s, "shin", 0.0, 0.98, ease * 1.2, h, k, 1.12)
+                    # the hem widens a little and breaks over the shoe
+                    rl = rl.copy()
+                    rl[-1] *= 1.18
+                    rl[-2] *= 1.06
                     lo = _tube(f"{g}-shin-{s}", g, subj, f"leg-{s}", axl, rl, jl, round_end=False, open_end=True,
                                bias=bias - 0.003 * h)
                     for fl in _fold_lines(J[f"hip-{s}"], J[f"knee-{s}"], J[f"ankle-{s}"], float(rl[0]), 3, 0.22 * h):
                         lo["details"].append({"pts": fl, "w": 0.45})
+                    sa = unit(axl[-1] - axl[0])
+                    brk = _band(axl[0] + (axl[-1] - axl[0]) * 0.9, sa, float(rl[-2]) * 1.02, eye, n=9)
+                    if eye is not None:
+                        q = brk["pts"][2:7].copy()
+                        q[1:4] -= sa * float(rl[-2]) * np.array([0.25, 0.45, 0.25])[:, None]
+                        lo["details"].append({"pts": q, "w": 0.42})
                     out.append(lo)
         elif g in ("socks", "thigh-highs"):
             for s in "rl":
