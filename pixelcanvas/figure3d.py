@@ -717,11 +717,11 @@ def _hair_accessories(rig: Rig, owner: str, hair: dict) -> List[dict]:
     acc = hair.get("accessories") or []
     h, Hd = rig.h, rig.Hd
     out: List[dict] = []
-    A = rig.cr_A * 1.2
+    A = rig.cr_A * 1.27
     for a in acc:
         if a == "hairband":
             ts = np.linspace(-1.5, 1.5, 13)
-            P = [rig.cr_c + A @ unit(np.array([math.sin(t), math.cos(t), 0.2])) for t in ts]
+            P = [rig.cr_c + A @ unit(np.array([math.sin(t), math.cos(t), 0.35])) for t in ts]
             for p0, p1 in zip(P[:-1], P[1:]):
                 out.append(_P(rcone(p0, p1, 0.045 * h, 0.045 * h), owner, "hairband", "bow", group="hair"))
         elif a == "hairpin":
@@ -731,10 +731,10 @@ def _hair_accessories(rig: Rig, owner: str, hair: dict) -> List[dict]:
                 out.append(_P(rcone(root - d * 0.1 * h, root + d * 0.1 * h, 0.014 * h, 0.014 * h), owner,
                               "hairpin", "bow", group="hair"))
         elif a in ("bow", "ribbon"):
-            root, nrm = _cap_point(rig, 1.05, 0.72, 1.12)
+            root, nrm = _cap_point(rig, 0.95, 0.7, 1.3)
             up = unit(Hd[:, 1] - nrm * float(Hd[:, 1] @ nrm))
             x = unit(np.cross(up, nrm))
-            out += _bow(owner, root + nrm * 0.02 * h, np.stack([x, up, nrm], 1), 0.16 * h, "bow", "hair-bow",
+            out += _bow(owner, root + nrm * 0.02 * h, np.stack([x, up, nrm], 1), 0.22 * h, "bow", "hair-bow",
                         tails=a == "ribbon")
     return out
 

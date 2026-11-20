@@ -602,7 +602,7 @@ def _hair(rig, hair: dict, motion, floating: bool, subj: str, h: float) -> List[
                               bias=-0.004 * h))
         elif pr["t"] == "rcone" and pr["mat"] == "hair":
             locks.setdefault(pr["piece"], []).append(pr)
-        elif pr["piece"] in ("hairband", "hairpin"):
+        elif pr["piece"] in ("hairband", "hairpin", "hair-bow", "hair-bow-knot"):
             acc.setdefault(pr["piece"], []).append(pr)      # one solid: a band, not a row of beads
         elif pr["t"] in ("ell", "rcone", "cyl"):
             out.append(_solid(pr["piece"], pr["mat"], subj, "hair", [pr], rad=0.05 * h, bias=-0.006 * h))
