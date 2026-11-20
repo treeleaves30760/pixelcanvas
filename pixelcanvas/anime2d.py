@@ -171,6 +171,13 @@ class Torso:
             (J["pelvis"] + P[:, 1] * 0.02 * h, P[:, 0], P[:, 2], tpl["hip"] * h, 0.26 * h),
             (J["pelvis"] - P[:, 1] * 0.17 * h, P[:, 0], P[:, 2], 0.78 * tpl["hip"] * h, 0.2 * h),
         ]
+        # a sideways bend (the chest leaning over the hips): the waist moves toward the compressed side, so that side
+        # pinches in and the stretched side runs as one long curve from the ribs to the hip
+        side = float(np.clip(C[:, 1] @ P[:, 0], -0.35, 0.35))
+        if abs(side) > 0.05:
+            d = np.clip(side * 3.0, -1.0, 1.0) * max(0.0, 0.5 * (tpl["chest"] + tpl["hip"]) - tpl["waist"]) * h * 0.8
+            c3, X3, Z3, a3, b3 = lv[3]
+            lv[3] = (c3 + P[:, 0] * d, X3, Z3, a3, b3)
         self.lv = lv
         self.h, self.k = h, k
 
