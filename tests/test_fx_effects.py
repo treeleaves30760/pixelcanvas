@@ -231,4 +231,4 @@ def test_finish_stage_hints_mention_the_finishing_commands(tmp_path):
     out = ok("next")
     assert out.splitlines()[-1].startswith("NEXT: pixelcanvas export final.png")
     out = ok("help", "fx")
-    assert "fx <glow|grain" in out and "example: pixelcanvas fx grain --amount 0.4" in out and len(out.splitlines()) <= 25
+    assert "glow grain blur" in out and "EXAMPLE: pixelcanvas fx grain --amount 0.4" in out and len(out.splitlines()) <= 25

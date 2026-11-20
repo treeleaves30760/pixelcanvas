@@ -586,6 +586,7 @@ HELP_NOTES = {
     "draw": ["draw all | <who> [--part hair|face|head|torso|arm-r|arm-l|leg-r|leg-l|hand-r|hand-l] | scene"],
     "do": ["pixelcanvas do \"a; b; c\" runs commands as one batch; pixelcanvas do @steps.txt runs a file, one "
            "command per line (# starts a comment)"],
+    "fx": ["names: glow grain blur vignette paper sharpen levels; fx <name> [region] --amount 0..1"],
     "line": ['line "x,y x,y ..." [--weight 1.2] [--color c] draws one stroke; line redo <id> "x,y ..."; '
              'line weight <id> <w>; line delete <id>[,<id>...]; line list [--all]'],
     "band": ["band <name> \"x,y x,y ...\" --color <c> [--above | --below | --closed] [--behind <regions>] "
