@@ -21,11 +21,14 @@ POSE_OPTS = {"preset": "value", "pose": "value", "at": "value", "height": "value
              "hand-shape-l": "value"}
 DRESS_VALUES = {"length": ("short", "knee", "long"), "fit": ("tight", "loose"), "sleeve": ("none", "short", "long"),
                 "style": ("pleated", "flared", "pencil", "open", "closed")}
-HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "bun")
+HAIR_STYLES = ("long", "medium", "bob", "short", "spiky", "ponytail", "twintails", "braid", "bun", "buns")
+ACCESSORIES = ("hairband", "hairpin", "bow", "ribbon")
+GAZES = ("center", "centre", "viewer", "front", "left", "right", "up", "down", "up-left", "up-right", "down-left",
+         "down-right")
 BANGS = {"blunt": "blunt", "side": "side", "parted": "parted", "none": "none", "swept": "side",
          "side-swept": "side", "straight": "blunt", "hime": "blunt", "center": "parted", "middle": "parted"}
-EXPRESSIONS = ("neutral", "calm", "smile", "open", "grin", "angry", "sad", "crying", "surprised", "panicked",
-               "sleepy")
+EXPRESSIONS = ("neutral", "calm", "smile", "open", "grin", "laugh", "shout", "angry", "sad", "crying", "teary",
+               "surprised", "panicked", "smug", "embarrassed", "sleepy", "closed", "shut", "wink", "happy", "shy")
 
 
 def _q(v: str) -> str:
@@ -71,6 +74,8 @@ def hair_cmd(who: str, spec: str) -> str:
             opts["bangs"] = BANGS[xl]
         elif xl == "ahoge":
             opts["ahoge"] = "yes"
+        elif xl in ACCESSORIES:
+            opts["accessory"] = (opts["accessory"] + "," + xl) if opts.get("accessory") else xl
         else:
             opts["color"] = x
     return f"hair3d {who}" + "".join(f" --{k} {_q(v)}" for k, v in opts.items())
@@ -83,7 +88,9 @@ def face_cmd(who: str, spec: str) -> str:
         xl = x.lower()
         if xl in EXPRESSIONS and "expression" not in opts:
             opts["expression"] = xl
-        elif ":" in x:
+        elif xl in GAZES or xl.startswith("gaze:"):
+            opts["gaze"] = xl.split(":", 1)[-1]
+        elif ":" in x and not x.startswith("#"):
             k, v = x.split(":", 1)
             opts[{"eye": "eyes"}.get(k.lower(), k.lower())] = v.strip()
         else:
@@ -91,33 +98,49 @@ def face_cmd(who: str, spec: str) -> str:
     return f"face {who}" + "".join(f" --{k} {_q(v)}" for k, v in opts.items())
 
 
+FIGURE_OPTS = ("wear", "dress", "clothes", "outfit", "color", "colour", "hair", "hair3d", "face", "expression",
+               "eyes", "gaze")
+
+
 def figure_cmds(args: List[str]) -> List[str]:
-    from .cli import Spec, parse
-    opts = dict(POSE_OPTS)
-    opts.update({"wear": "value", "dress": "value", "color": "value", "hair": "value", "face": "value",
-                 "expression": "value", "eyes": "value"})
-    a = parse(args, Spec(EXAMPLE, ["who"], opts, alias={"clothes": "wear", "outfit": "wear", "hair3d": "hair",
-                                                         "facing": "yaw", "edit": "set", "edits": "set"},
-                         min_pos=1))
-    who = str(a["who"])
-    if a.get("pose") and not a.get("preset"):
-        a["preset"] = a["pose"]
-    pose = f"pose {who}"
-    for k in POSE_OPTS:
-        if k == "pose" or a.get(k) is None:
-            continue
-        pose += f" --{k}" if POSE_OPTS[k] == "flag" else f" --{k} {_q(a[k])}"
-    cmds = [pose]
-    wear = a.get("wear") or a.get("dress")
-    if wear:
-        cmds += wear_cmds(who, str(wear), str(a.get("color") or ""))
-    if a.get("hair"):
-        cmds.append(hair_cmd(who, str(a["hair"])))
-    face = str(a.get("face") or "")
-    if a.get("expression"):
-        face += "," + str(a["expression"])
-    if a.get("eyes"):
-        face += ",eyes:" + str(a["eyes"])
+    """Split the figure's own options (--wear --color --hair --face --expression --eyes --gaze) from the rest; every
+    other option goes to ``pose`` as given (--pose is --preset), so new pose options work without a change here."""
+    args = list(args)
+    if not args or args[0].startswith("-"):
+        raise UsageError("figure needs a name first: figure <who> --pose <preset> --at x,y ...", EXAMPLE)
+    who, rest = args[0], args[1:]
+    own: Dict[str, str] = {}
+    pose: List[str] = []
+    i = 0
+    while i < len(rest):
+        t = rest[i]
+        key, val = (t.lstrip("-").split("=", 1) + [None])[:2] if t.startswith("--") else (None, None)
+        key = key.lower() if key else key
+        if key in FIGURE_OPTS:
+            if val is None:
+                if i + 1 >= len(rest):
+                    raise UsageError(f"--{key} needs a value", EXAMPLE)
+                i += 1
+                val = rest[i]
+            own[{"dress": "wear", "clothes": "wear", "outfit": "wear", "colour": "color",
+                 "hair3d": "hair"}.get(key, key)] = val
+        elif key == "pose":
+            pose.append("--preset" + ("=" + val if val is not None else ""))
+        else:
+            pose.append(t)
+        i += 1
+    cmds = [" ".join(["pose", _q(who)] + [_q(x) if not x.startswith("--") else x for x in pose])]
+    if own.get("wear"):
+        cmds += wear_cmds(who, own["wear"], own.get("color", ""))
+    if own.get("hair"):
+        cmds.append(hair_cmd(who, own["hair"]))
+    face = own.get("face", "")
+    if own.get("expression"):
+        face += "," + own["expression"]
+    if own.get("eyes"):
+        face += ",eyes:" + own["eyes"]
+    if own.get("gaze"):
+        face += ",gaze:" + own["gaze"]
     if face.strip(","):
         cmds.append(face_cmd(who, face))
     return cmds

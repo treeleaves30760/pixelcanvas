@@ -2291,6 +2291,13 @@ def cmd_band(ctx: Ctx, args: List[str]) -> Report:
     band_clip = None
     depth_note = ""
     if not a.get("behind") and not a.get("front"):
+        # posed 3D figures are in front of every band: their drawn parts keep their paint and regions
+        from .workflow_draw import rigged_subjects
+        figs = rigged_subjects(p.state)
+        fig_regs = [n for n in p.state.get("regions", {}) if any(n == f or n.startswith(f + "-") for f in figs)]
+        if fig_regs:
+            a["behind"] = ",".join(dict.fromkeys(fig_regs))
+    if not a.get("behind") and not a.get("front"):
         # depth order: a farther subject drawn now goes behind the nearer ones already painted (a sun drawn after
         # the mountains sets behind them)
         subj = draw_checks.subject_of(p, name)
@@ -2389,6 +2396,9 @@ def cmd_band(ctx: Ctx, args: List[str]) -> Report:
         depth = _num(a, "depth", None, 1, 20, ctx) if a.get("depth") else (max(prev_depths) - 1 if prev_depths
                                                                             and side == "below" else 5)
         rm = m if m_region is None else m_region
+        if not rm.any():   # the shapes it stays behind cover all of it
+            raise UsageError(f"band {name}: nothing of it shows, the regions it stays behind cover all of it; draw it "
+                             "where it shows, or with fewer names after --behind", USAGE["band"])
         bb_ = coords.mask_bbox_px(rm)
         fill_ = float(rm.sum()) / max(1, (bb_[2] - bb_[0]) * (bb_[3] - bb_[1])) if bb_ else 0.0
         d["bands"][name] = {"color": str(a["color"]), "color2": a.get("color2"), "depth": depth, "how": how,

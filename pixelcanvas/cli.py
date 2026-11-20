@@ -568,21 +568,30 @@ HELP_NOTES = {
                "sleeve]]; --color is the default colour)",
                "--hair \"twintails,blunt,#f09ac0,bows:black\" (style, bangs, colour; wind:dx/dy)   "
                "--face \"smile,#3a78c8\" (expression, eye colour)"],
-    "pose": ["presets: pixelcanvas pose list; --set \"<joint>: <motion> <deg>; ...\" joints: body pelvis spine chest "
-             "neck head arm-r/-l elbow-r/-l hand-r/-l leg-r/-l knee-r/-l foot-r/-l",
-             "motions: arm raise|forward|twist, elbow bend, leg forward|raise|twist, knee bend, spine/chest bend|side|"
-             "twist, head turn|tilt|nod, body lean; --hand-shape-r/-l relaxed|fist|open|point|grip|peace|cup",
-             "--at x,y ground point; --heads 6.5 | --height 1.6 (m); --yaw deg; --on <block>; --hand-r/--foot-l "
-             "<block|x,y> contact"],
+    "pose": ["presets: pixelcanvas pose list; modifiers --lean --twist --bend <deg>, --look camera|left|right|up|down|"
+             "back|at:x,y, --energy 0..1, --arm-r/-l raised|forward|back|down|bent|out|hip|behind|crossed|face|chin|"
+             "hair, --leg-r/-l forward|back|bent|raised|kick|out|tucked|relaxed, --check (a report of the pose)",
+             "hands: --hand-shape-r/-l relaxed|fist|open|point|grip|peace|cup|spread|flat|reach, --hand-r-to "
+             "hip|chest|x,y|<block>, --foot-r-to x,y; --set \"<joint>: <motion> <deg>; ...\" for any joint",
+             "--at x,y ground point; --heads 6.5 | --height 1.6 (m); --yaw deg; --on <block>"],
     "block": ["kinds: box stairs cylinder plane railing; --size w,d,h (m); --at x,y ground point; --lift m (height "
               "above the ground); --offset dx,dz (m); --rot deg; --steps n"],
     "camera": ["--horizon 0-1000 (y of the eye line), --eye-height m, --fov deg (35 wide, 50 normal, 85 long), "
                "--tilt deg"],
     "dress": ["pieces: pixelcanvas dress list; --length short|knee|long --sleeve none|short|long --fit tight|loose "
               "--style pleated|flared|pencil|open|closed --trim <colour>"],
-    "hair3d": ["--style long|medium|bob|short|spiky|ponytail|twintails|braid|bun  --bangs blunt|side|parted|none  "
-               "--wind dx,dy | left | right | back | auto  --bows <colour>"],
-    "face": ["--expression neutral|smile|open|grin|angry|sad|crying|surprised|panicked|sleepy  --eyes <colour>"],
+    "hair3d": ["--style long|medium|bob|short|spiky|ponytail|twintails|braid|bun|buns  --bangs blunt|side|parted|none  "
+               "--wind dx,dy | left | right | back | auto  --accessory hairband,hairpin,bow,ribbon  --bows <colour> "
+               "(the accessories' colour)  --ahoge yes"],
+    "face": ["--expression neutral|smile|open|grin|laugh|shout|angry|sad|crying|teary|surprised|panicked|smug|"
+             "embarrassed|sleepy|closed|shut|wink  --eyes <colour>  --gaze center|left|right|up|down|up-left|up-right|"
+             "down-left|down-right"],
+    "scene": ["kits: corridor room classroom street platform outdoor field beach rooftop stairs; --time day|sunset|night;"
+              " colours --wall --trim --floor --ceiling --sky --ground ...; --doors/--windows left|right|both|none, "
+              "--lamps n; drawn on the paper layer under the figures, from the camera"],
+    "polish": ["one finishing pass: strays, clean, coloured lines, depth, grade, soften, rim, dof, motion, glow, "
+               "vignette, grain; --focus <figure> (stays sharp), --motion <figure>[:left|right|<deg>], "
+               "--<part> 0-1 sets a part's amount, --no-<part> leaves it out"],
     "draw": ["draw all | <who> [--part hair|face|head|torso|arm-r|arm-l|leg-r|leg-l|hand-r|hand-l] | scene"],
     "do": ["pixelcanvas do \"a; b; c\" runs commands as one batch; pixelcanvas do @steps.txt runs a file, one "
            "command per line (# starts a comment)"],
@@ -594,7 +603,7 @@ HELP_NOTES = {
 }
 
 
-HELP_SYNTAX = {"face": "face <who>   options: --expression --eyes --weight --keep-eyes   (a 3D figure's face)"}
+HELP_SYNTAX = {"face": "face <who>   options: --expression --eyes --gaze --weight --keep-eyes   (a 3D figure's face)"}
 HELP_SUBWORDS = {"line": ("redo", "weight", "delete", "list", "close", "move"), "pose": ("list",),
                  "dress": ("list",), "block": ("list",), "stage": ("done",), "region": ("add", "list", "rest"),
                  "change": ("add", "list", "drop", "none"), "palette": ("make", "pick", "set", "map")}
