@@ -578,7 +578,7 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     from .anime2d import is_male
     shape = str(fc.get("eye-shape") or ("narrow" if is_male(el["subject"], el) else "round"))
     specs = FC.project(rig, cam, FC.features(fc.get("expression", "neutral"), iris, lash, gz or (0.0, 0.0),
-                                             brow_rgb=brow, shape=shape))
+                                             brow_rgb=brow, shape=shape, marks=fc.get("marks") or ()))
     # the face's line weights follow the head's size on the canvas: a small face keeps thin, readable lines
     from .draw_line import base_width
     hc = rig.J["head"]
@@ -599,7 +599,7 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     for sp in specs:
         P = sp["px"]
         # brows show through the bangs (as anime draws them); everything else only where the face shows
-        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")) | (sp["kind"] == "brow"))
+        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")) | (sp["kind"] in ("brow", "mark")))
         sp["vis2"] = vis
         if sp.get("fill") is None and sp["kind"] != "skin":
             continue

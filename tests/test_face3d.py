@@ -58,3 +58,11 @@ def test_eye_shapes_change_the_eye():
     assert np.ptp(n[:, 1]) < np.ptp(r[:, 1])            # a narrower eye opening
     assert any(s["name"] == "lashfill-r" for s in FC.features("neutral"))
     assert set(FC.EYE_SHAPES) == {"round", "narrow", "droopy", "sharp"}
+
+
+def test_marks_add_their_shapes():
+    names = {s["name"] for s in FC.features("angry", marks=FC.MARKS)}
+    assert "sweat" in names and "vein0" in names and "shock0" in names
+    assert "tear-r" in names and "hatch-r0" in names
+    assert not any(n.startswith("vein") for n in {s["name"] for s in FC.features("angry")})
+    assert any(n.startswith("flick-r") for n in {s["name"] for s in FC.features("laugh")})
