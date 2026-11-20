@@ -406,8 +406,10 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
                 w = W_HAIR
             else:
                 w = W_IN
-            out.append({"pts": st["pts"], "closed": st["closed"], "w": w, "part": pt, "k": k,
-                        "rgb": _inner_rgb(p, pt, rgb_cache) if c == 2 and not block else None})
+            rgb = _inner_rgb(p, pt, rgb_cache) if c == 2 and not block else None
+            if rgb is not None:
+                w = max(w, 1.0)                 # a near dark limb over a far one: a clear separation line
+            out.append({"pts": st["pts"], "closed": st["closed"], "w": w, "part": pt, "k": k, "rgb": rgb})
         cam = sc["cam"]
         for q in o.get("details_px", []):
             dense = S2.resample(q, step)

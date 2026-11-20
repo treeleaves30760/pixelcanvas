@@ -650,27 +650,35 @@ def _shell_parts(prims: List[dict], mat: str, subj: str, tor: Torso, h: float, b
         Az = A[:, 2] * f
         Ay = A[:, 1]
         tilt = np.asarray(pr.get("hem_tilt", [0.0, 0.0]), float)
-        n = 24
+        pleated = bool(int(pr.get("pleats", 0)) or mat == "skirt")
+        m_ = max(8, int(pr.get("pleats", 0)) or 12)
+        n = 8 * m_ if pleated else 24
         th = np.linspace(0, 2 * math.pi, n, endpoint=False)
         cs, sn = np.cos(th), np.sin(th)
         y_hem = -1.0 + np.maximum(0.0, tilt[0] * cs + tilt[1] * sn)
+        # pleats: each fold edge (where a pleat line runs) stands out a little and hangs a little lower, so the hem
+        # reads as a row of pleats instead of one smooth curve
+        tri = np.zeros(n)
+        if pleated:
+            u = th * m_ / (2 * math.pi) - 0.5
+            tri = 1.0 - 2.0 * np.abs(u - np.round(u))
+            y_hem = y_hem - 0.07 * tri
         rings = []
         for kk in range(10):
             fy = kk / 9.0
             y = y_hem * fy
-            rr = 1 + flare * np.abs(y)
+            rr = (1 + flare * np.abs(y)) * (1 + 0.1 * fy * fy * tri)
             P = c[None] + np.outer(rr * cs, Ax) + np.outer(y, Ay) + np.outer(rr * sn, Az)
             rings.append((P.mean(0), P))
         part = _part(pr["piece"], "tube", mat, subj, "clothes", {"waist": None, "hip-r": None, "hip-l": None},
                      rad=hem_r, rings=rings, open_end=True, bias=bias)
         # pleats: lines from below the waist band to the hem
-        if int(pr.get("pleats", 0)) or mat == "skirt":
-            m_ = max(8, int(pr.get("pleats", 0)) or 12)
+        if pleated:
             for j in range(m_):
                 a_ = 2 * math.pi * (j + 0.5) / m_
-                yh = -1.0 + max(0.0, tilt[0] * math.cos(a_) + tilt[1] * math.sin(a_))
-                ys = np.linspace(-0.3, yh, 6)
-                rr = 1 + flare * np.abs(ys)
+                yh = -1.0 + max(0.0, tilt[0] * math.cos(a_) + tilt[1] * math.sin(a_)) - 0.07
+                ys = np.linspace(-0.3, yh * 0.985, 6)
+                rr = (1 + flare * np.abs(ys)) * (1 + 0.1 * (ys / yh) ** 2)
                 pts = c[None] + np.outer(rr * math.cos(a_), Ax) + np.outer(ys, Ay) + np.outer(rr * math.sin(a_), Az)
                 part["details"].append({"pts": pts, "w": 0.42, "nrm": unit(np.outer(math.cos(a_), Ax) + np.outer(math.sin(a_), Az)).repeat(len(pts), 0)})
         out.append(part)
