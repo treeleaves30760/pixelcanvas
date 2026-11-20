@@ -711,7 +711,7 @@ PRESETS.update({
         "body": {"lean": 8}, "chest": {"twist": 16}, "head": {"tilt": 10, "nod": -4},
         "arm-r": {"forward": 75, "raise": 14}, "elbow-r": {"bend": 18}, "hand-r": {"bend": -40, "twist": 60},
         "leg-r": {"forward": 16}, "knee-r": {"bend": 18}, "leg-l": {"forward": -14}, "knee-l": {"bend": 12},
-        "foot-l": {"point": 22}}, reach={"l": "chest"}, hands={"r": "open"}, dynamic=True),
+        "foot-l": {"point": 22}}, reach={"l": "chest"}, hands={"r": "open"}, dynamic=True, yaw=20),
     "stance-wide": _X("a wide confident stance, a long weapon across the shoulders, wrists hooked over it", {
         "body": {"lean": 6}, "pelvis": {"side": -4}, "spine": {"side": 4}, "head": {"tilt": 8, "nod": -10},
         "leg-r": {"raise": 18, "forward": 6}, "knee-r": {"bend": 12}, "leg-l": {"raise": 16, "forward": -4},
@@ -858,6 +858,29 @@ ARM_ANCHOR_WORDS = {"hip": "hip", "hips": "hip", "behind": "behind", "crossed": 
                     "chest": "chest", "overhead": "overhead", "waist": "waist", "thigh": "thigh", "knee": "knee",
                     "floor": "floor", "lap": "thigh", "mouth": "mouth"}
 LOOK_WORDS = ("left", "right", "up", "down", "camera", "viewer", "ahead", "back")
+
+
+def preset_groups() -> List[Tuple[str, List[str]]]:
+    """Preset names in groups for a short listing."""
+    def grp(k, v):
+        if v["rest"] in ("seat", "floor") or k.startswith(("sit", "hug", "seiza")):
+            return "sit"
+        if k.startswith(("kneel", "crouch", "squat", "lie", "swim")):
+            return "low / lying"
+        if v["rest"] == "air":
+            return "air"
+        if k.startswith(("run", "sprint", "walk", "land", "look-back", "dance")):
+            return "move"
+        if k in ("kick", "punch", "swing", "fight-stance", "sword-high", "sword-ready", "aim", "stance-wide"):
+            return "fight"
+        if k.startswith("lean"):
+            return "lean"
+        return "stand / arms"
+    order = ["stand / arms", "move", "air", "sit", "low / lying", "lean", "fight"]
+    out: Dict[str, List[str]] = {g: [] for g in order}
+    for k, v in PRESETS.items():
+        out[grp(k, v)].append(k)
+    return [(g, out[g]) for g in order if out[g]]
 
 
 def anchor_key(word: str) -> Optional[str]:
@@ -1697,8 +1720,27 @@ def solve_figure(spec: dict, cam: Camera, blocks: Dict[str, Block], others: Dict
         E1, clamps = clamp_edits(_look_edits(E, look, res["J"], res["F"], cam))
         res = _place(spec, pk, pre, E1, reach, cam, blocks, others)
     res["clamps"] = clamps
-    res["check"] = check_pose(res, blocks)
+    res["check"] = check_pose(res, blocks) + view_check(res, cam)
     return res
+
+
+def view_check(res: dict, cam: Camera) -> List[str]:
+    """Limbs pointing at the camera lose their shape: one line per limb shortened under a third."""
+    out = []
+    J = res["J"]
+    for limb, (a, b) in (("arm", ("shoulder", "wrist")), ("leg", ("hip", "ankle"))):
+        for s in "rl":
+            A, B = J[f"{a}-{s}"], J[f"{b}-{s}"]
+            L = float(np.linalg.norm(B - A))
+            if L < 0.15:
+                continue                     # folded tight: no long shape to lose
+            P, z = cam.project(np.array([A, B]))
+            full = cam.f * L / max(float(z.mean()), 0.1)
+            r = float(np.linalg.norm(P[1] - P[0])) / max(full, 1e-6)
+            if r < 0.33:
+                out.append(f"{limb}-{s} points at the camera (seen at {r:.0%} of its length): turn --yaw 20 or "
+                           f"swing it aside for a readable shape")
+    return out
 
 
 def _place(spec, pk, pre, E, reach, cam, blocks, others) -> dict:

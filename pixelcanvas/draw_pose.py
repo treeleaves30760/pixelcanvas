@@ -611,9 +611,21 @@ def cmd_pose(ctx, args):
     d = dc.dstate(p)
     if args and args[0].lower() in ("list", "presets", "help"):
         rep = Report()
-        rep.add(f"{len(P3.PRESETS)} presets (pixelcanvas pose <subject> --preset <name>; then --set to change joints):")
-        for k, v in P3.PRESETS.items():
-            rep.add(f"  {k}: {v['desc']}")
+        word = " ".join(args[1:]).strip().lower()
+        if word:
+            hits = [(k, v) for k, v in P3.PRESETS.items() if word in k or word in v["desc"].lower()]
+            rep.add(f"{len(hits)} presets with {word!r}:" if hits else f"no preset mentions {word!r}")
+            for k, v in hits:
+                rep.add(f"  {k}: {v['desc']}")
+        else:
+            rep.add(f"{len(P3.PRESETS)} presets (pixelcanvas pose <subject> --preset <name>; pose list <word> "
+                    f"describes them):")
+            for group, names in P3.preset_groups():
+                rep.add(f"  {group}: {', '.join(names)}")
+            rep.add("  modifiers: --lean --twist --bend <deg>, --look camera|left|right|up|down|back|at:x,y, "
+                    "--energy 0..1, --mirror, --arm-r/-l raised|forward|back|down|bent|out|hip|behind|crossed|face|"
+                    "chin|hair, --leg-r/-l forward|back|bent|raised|kick|out|tucked|relaxed, --hand-r <shape>, "
+                    "--hand-r-to <anchor|x,y|block>, --on <block>, --check")
         rep.next = cli._finish_next(ctx)
         return rep
     a = parse(args, Spec(USAGE["pose"], ["subject"],
