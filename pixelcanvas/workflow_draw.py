@@ -790,6 +790,8 @@ def next_action(p, comparison=None) -> Tuple[str, str]:
                 "pixelcanvas look")
     stage = st["stage"]
     d = st.get("draw", {})
+    if rigged_subjects(st) and not d.get("render") and stage in ("plan", "sketch"):
+        return ("every figure set? then the guide the picture is drawn over", "pixelcanvas render")
     if st.get("mode") == "hand" and stage in ("flat", "shade", "detail"):
         from .draw_ref import split_fix
         try:

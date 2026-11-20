@@ -1191,8 +1191,8 @@ def question(p, stage: str, subject: Optional[str] = None) -> str:
     the rest is measured and gated. Empty when there is nothing to ask."""
     d = dstate(p)
     parts = d["parts"]
-    if stage == "plan" and d.get("render") is not None or (stage == "plan" and any(
-            el.get("rig") for el in d.get("sketch", []))):
+    if stage == "plan" and (d.get("render") is not None or any(
+            el.get("rig") or el.get("kind") in ("horizon", "block") for el in d.get("sketch", []))):
         return ""                       # posed 3D figures: no plan boxes to check
     if stage == "plan":
         if not parts:

@@ -130,4 +130,10 @@ def cmd_figure(ctx, args: List[str]):
     cmds = figure_cmds(args)
     rep = cli.COMMANDS["do"](ctx, ["; ".join(cmds)])
     rep.lines.insert(0, f"figure {cmds[0].split()[1]}: {len(cmds)} commands ({', '.join(c.split()[0] for c in cmds)})")
+    if not getattr(ctx, "exit_code", 0):
+        try:
+            if not ctx.project.state.get("draw", {}).get("render"):
+                rep.next = "pixelcanvas render   (the guide, once every figure is set)"
+        except Exception:  # noqa: BLE001
+            pass
     return rep

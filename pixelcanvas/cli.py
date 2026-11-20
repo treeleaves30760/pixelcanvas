@@ -3077,6 +3077,7 @@ def cmd_do(ctx: Ctx, args: List[str]) -> Report:
     last_next = ""
     worse: List[Tuple[int, str, str]] = []
     painted: List[Tuple[int, str]] = []
+    seen_keep: set = set()
     for i, c in enumerate(cmds, 1):
         try:
             toks = shlex.split(c, posix=True)
@@ -3120,6 +3121,8 @@ def cmd_do(ctx: Ctx, args: List[str]) -> Report:
         head = body[0].split("  (layer")[0] if body else c
         rep.add(f"[{i}] {head}" + (f":  {r.summary}" if r.summary else "") + ("   WORSE" if r.worse else ""))
         keep = [ln for ln in r.lines[1:] if ln.startswith(("FIX", "CHECK", "WARNING"))]
+        keep = [ln for ln in keep if ln not in seen_keep]          # one CHECK question per batch, not per line
+        seen_keep.update(keep)
         if i == len(cmds):          # the last command's own report in full: its numbers are what comes next
             keep = [ln for ln in r.lines[1:] if not ln.startswith("worst spots") and
                     not re.match(r"\s+\d\) \d", ln)]
