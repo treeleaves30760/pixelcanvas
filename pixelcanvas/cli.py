@@ -3371,7 +3371,7 @@ def run(argv: List[str]) -> Tuple[int, str]:
         argv = ["next"] if _has_project(proj) else ["help"]
     if len(argv) > 1 and any(t in ("--help", "-h", "-?", "help") for t in argv[1:]) and argv[0] != "text":
         argv = ["help", argv[0]]
-    if argv[0].lower() in ("pose", "block", "dress", "prop", "hair3d") and argv[1:2] == ["list"]             and not _has_project(proj):
+    if argv[0].lower() in ("pose", "block", "dress", "prop", "hair3d", "scene") and argv[1:2] == ["list"]             and not _has_project(proj):
         sp = _scratch_project()          # the lists need no project of yours
         if sp is not None:
             ctx.project_arg = str(sp.root)
