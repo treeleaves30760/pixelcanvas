@@ -648,7 +648,7 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
             by_region.setdefault(t["region"], []).append(k)
     for rn, ks in by_region.items():
         regions[rn] = np.isin(lab_up, ks)
-    files = dc.owned_files("line") + ["layers/paint.png", "draw/r3d/paint2d.npz", NPZ]
+    files = dc.owned_files("line") + ["layers/paint.png", "draw/r3d/paint2d.npz", NPZ, "layers/light.png"]
     files += [f"regions/{n}.png" for n in set(regions) | set(p.state.get("regions", {}))]
     step = p.begin_step(list(dict.fromkeys(files)))
     ids: Dict[str, List[str]] = {}
@@ -725,6 +725,8 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
                          "area": round(float(m.mean()), 4), "how": "2D over the 3D guide"})
         _register(p, table, regions)
         save_maps(p, sc, table)
+        from .scene3d import relight
+        relight(p)                              # a scene's night / sunset light follows the figures
         dd = d.setdefault("drawn2d", {})
         for s_ in list(subjects) + (["@scene"] if with_blocks else []):
             ent = dd.setdefault(s_, {})

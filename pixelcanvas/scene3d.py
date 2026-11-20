@@ -906,6 +906,20 @@ def paint(p, rec: dict) -> Dict[str, np.ndarray]:
     if len(res) == 3:
         la[..., :3] = res[2]
         la[..., 3] = 1.0
+    if len(res) == 3:
+        (p.root / "draw").mkdir(exist_ok=True)
+        lamps2d = []
+        for Lp, _ in kit.lamps:
+            q, z = cam.project(np.asarray(Lp, float)[None])
+            if z[0] > 0.3:
+                lamps2d.append([float(q[0, 0]), float(q[0, 1])])
+        np.savez_compressed(p.root / LIGHT_NPZ, light=(res[2] * 255).astype(np.uint8),
+                            tint=np.asarray(_opts_time(rec["opts"])[2], np.float32),
+                            lamps=np.asarray(lamps2d, np.float32).reshape(-1, 2),
+                            lamp=np.asarray(_rgb(rec["opts"].get("lamp") or DEFAULTS["lamp"]), np.float32))
+        la = _figure_light(p, la)
+    elif (p.root / LIGHT_NPZ).exists():
+        (p.root / LIGHT_NPZ).unlink()
     p._write_layer_file("light", la if len(res) == 3 else None)
     d = dc.dstate(p)
     from .regions import clean_name
@@ -919,6 +933,95 @@ def paint(p, rec: dict) -> Dict[str, np.ndarray]:
         ys, xs = np.nonzero(m)
         d["palette"]["swatches"].setdefault(rn, dc.to_hex(tuple(int(v) for v in np.median(rgb[ys, xs], 0))))
     return masks
+
+
+LIGHT_NPZ = "draw/scene_light.npz"
+
+
+def _figure_light(p, la: np.ndarray) -> np.ndarray:
+    """The scene's light on the drawn figures: half the time's tint (faces stay readable, skin keeps its warmth)
+    and, toward each lamp in the picture, one clean warm lit side (a cel shape from the figure's normals)."""
+    f = p.root / LIGHT_NPZ
+    if not f.exists():
+        return la
+    from .draw_figure2d import load_maps
+    mp = load_maps(p)
+    if mp is None:
+        return la
+    z = np.load(f, allow_pickle=False)
+    tint = np.asarray(z["tint"], np.float32)
+    lamps = np.asarray(z["lamps"], np.float32).reshape(-1, 2)
+    lamp = np.asarray(z["lamp"], np.float32) / 255.0
+    lab, tb, nrm = mp["lab"], mp["table"], mp["nrm"]
+    fig_ids = [k for k, t in enumerate(tb) if not str(t["subj"]).startswith("@")]
+    if not fig_ids:
+        return la
+    Hl, Wl = lab.shape
+    figl = np.isin(lab, fig_ids)
+    if not figl.any():
+        return la
+    soft = 1.0 - (1.0 - tint) * 0.5
+    soft = soft * np.array([1.0, 0.97, 0.94], np.float32) + np.array([0.0, 0.0, 0.0], np.float32)
+    soft = np.clip(soft / max(float(soft.max()), 1e-3) * min(1.0, float(soft.max()) + 0.05), 0, 1)
+    out = np.broadcast_to(soft, (Hl, Wl, 3)).copy()
+    warm = np.clip(_mix(lamp, (1.0, 0.78, 0.5), 0.4), 0, 1).astype(np.float32)
+    s = mp["s"]
+    lit = np.zeros((Hl, Wl), bool)
+    ys, xs = np.nonzero(figl)
+    S = float(max(Hl, Wl))
+    # the figure's normals smoothed over the whole figure: one broad lit side, not a patch per lock or fold
+    sig = 0.02 * S
+    w = cv2.GaussianBlur(figl.astype(np.float32), (0, 0), sig)
+    nrm = np.stack([cv2.GaussianBlur((nrm[..., c] * figl).astype(np.float32), (0, 0), sig) for c in range(3)], -1)
+    nrm = nrm / np.maximum(w[..., None], 1e-4)
+    nrm /= np.maximum(np.linalg.norm(nrm, axis=-1, keepdims=True), 1e-4)
+    warm = np.clip(_mix(soft, warm, 0.5), 0, 1).astype(np.float32)
+    subjects = sorted({t["subj"] for t in tb if not str(t["subj"]).startswith("@")})
+    for subj in subjects:
+        fm = np.isin(lab, [k for k, t in enumerate(tb) if t["subj"] == subj])
+        if not fm.any():
+            continue
+        ys, xs = np.nonzero(fm)
+        cx, cy = float(xs.mean()), float(ys.mean())
+        ext = float(max(np.ptp(xs), np.ptp(ys), 1))
+        for lx, ly in lamps:
+            lx, ly = lx * s, ly * s
+            v = np.array([lx - cx, ly - cy])
+            dist = float(np.linalg.norm(v))
+            if dist > 1.2 * S or dist < 1:
+                continue
+            u = v / dist
+            # the lit side: the part of the figure toward the lamp, bent a little by the figure's own normals
+            proj = ((xs - cx) * u[0] + (ys - cy) * u[1]) / ext
+            lam = nrm[ys, xs, 0] * u[0] + nrm[ys, xs, 1] * u[1]
+            on = proj + 0.25 * lam > 0.12
+            lit[ys[on], xs[on]] = True
+    if lit.any():
+        k = max(1, int(0.008 * S))
+        lit = cv2.morphologyEx(lit.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2 * k + 1, 2 * k + 1), np.uint8)) > 0
+        lit = cv2.morphologyEx(lit.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((2 * k + 1, 2 * k + 1), np.uint8)) > 0
+        lit &= figl
+        out[lit] = warm
+    big = cv2.resize(out, (p.W, p.H), interpolation=cv2.INTER_LINEAR)
+    mask = cv2.resize(figl.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
+    la = la.copy()
+    la[mask, :3] = big[mask]
+    return la
+
+
+def relight(p) -> None:
+    """After ``draw``: the light layer again from the kept scene light, with the figures where they are now."""
+    f = p.root / LIGHT_NPZ
+    if scene_rec(p) is None or not f.exists():
+        return
+    z = np.load(f, allow_pickle=False)
+    L = z["light"].astype(np.float32) / 255.0
+    if L.shape[:2] != (p.H, p.W):
+        return
+    la = np.ones((p.H, p.W, 4), np.float32)
+    la[..., :3] = L
+    _light_layer(p)
+    p._write_layer_file("light", _figure_light(p, la))
 
 
 def _light_layer(p) -> None:
