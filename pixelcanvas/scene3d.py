@@ -583,7 +583,7 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         g = below & (t < 1e4)
         sea = None
         if any(f["kind"] == "sea" for f in kit.far):
-            shore = 28.0
+            shore = float(kit.o.get("shore") or 14.0)
             sea = g & (t > shore)
             g2 = g & ~sea
         else:
@@ -594,6 +594,14 @@ def render(kit: Kit, cam, W: int, H: int, light_left: bool = True, split: bool =
         if sea is not None and sea.any():
             img[sea] = kit.col("sea") * mult
             rid[sea] = reg("sea")
+            # the wet sand and a line of foam where the sea meets the beach, a lighter band further out
+            wet = g & (t > shore * 0.9) & (t <= shore)
+            img[wet] = _mix(kit.col("sand"), kit.col("sea"), 0.25) * mult
+            foam = g & (t > shore * 0.97) & (t <= shore * 1.02)
+            img[foam] = _mix((255, 255, 255), kit.col("sea"), 0.1) * mult
+            band = g & (t > shore * 1.6) & (t <= shore * 1.75)
+            img[band] = _mix(kit.col("sea"), (255, 255, 255), 0.25) * mult
+            rid[wet] = reg("sand")
     # faces, painter's order: by order, then far to near
     items = []
     for f in kit.faces:
