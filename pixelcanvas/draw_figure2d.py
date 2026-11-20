@@ -150,6 +150,8 @@ def block_parts(p, cam) -> List[dict]:
             if "piece" not in pt:
                 k_ = int(pt["name"][len(el["name"]) + 1:].split("-")[0])
                 pt["piece"] = prs[k_].get("part", "")
+            if el.get("front"):
+                pt["bias"] = -100.0             # block --front: drawn over the figures (a foreground occluder)
             tone = _block_tone(el, el["type"], str(pt["piece"]))
             if tone is not None:
                 pt["tone"] = tuple(int(v) for v in tone)

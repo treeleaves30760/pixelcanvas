@@ -85,3 +85,12 @@ def test_weather_and_scene_list(draw):
     out = ok(draw("scene", "list"))
     for k in S3.KITS:
         assert f"  {k}:" in out
+
+
+def test_block_front_draws_over_the_figure(draw):
+    _scene(draw)
+    ok(draw("camera", "--horizon", "440", "--eye-height", "1.3"))
+    ok(draw("pose", "girl", "--preset", "stand", "--at", "500,900"))
+    ok(draw("block", "rail", "fence", "--at", "500,960", "--size", "3,0.06,1.0", "--front"))
+    assert [b for b in state()["draw"]["sketch"] if b.get("name") == "rail"][0]["front"] is True
+    ok(draw("draw", "all"))

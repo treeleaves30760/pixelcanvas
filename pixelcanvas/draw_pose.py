@@ -821,7 +821,7 @@ def cmd_block(ctx, args):
         return _step(ctx, f"block delete {name}", mutate_del, lines)
     a = parse(args, Spec(USAGE["block"], ["name", "kind"],
                          {"at": "value", "size": "value", "rot": "value", "steps": "value", "lift": "value",
-                          "offset": "value", "color": "value"},
+                          "offset": "value", "color": "value", "front": "flag", "back": "flag"},
                          alias={"rotate": "rot", "turn": "rot", "angle": "rot", "yaw": "rot", "n": "steps", "colour": "color",
                                 "height": "lift", "pos": "at", "move": "offset"}, min_pos=1))
     name = str(a["name"]).lower()
@@ -858,7 +858,8 @@ def cmd_block(ctx, args):
            else (old.get("lift", 0.0) if old else 0.0),
            "offset": [v for v, _, _ in coords._numbers(a["offset"])][:2] if a.get("offset")
            else (old.get("offset") if old else None),
-           "color": str(a["color"]) if a.get("color") else (old.get("color") if old else None)}
+           "color": str(a["color"]) if a.get("color") else (old.get("color") if old else None),
+           "front": True if a.get("front") else (False if a.get("back") else bool(old.get("front")) if old else False)}
     if a.get("color"):
         from .draw_plan import swatch
         swatch(p, a["color"], USAGE["block"])

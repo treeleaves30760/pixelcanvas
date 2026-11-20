@@ -457,6 +457,16 @@ def kit_street(k: Kit) -> None:
             x_back = x_front + side * 6
             col = _mix(bld, rng.choice([(255, 255, 255), (150, 120, 100), (120, 130, 150)]), 0.18)
             k.box(min(x_front, x_back), 0, z, max(x_front, x_back), h, z + w - 0.2, col, "building", 2, 0.9)
+            if rng.random() < 0.6:
+                # a shop front: a dark glass window and a striped awning sloping out over the pavement
+                e = -side * 0.02
+                k.face([[x_front + e, 0.3, z + 0.8], [x_front + e, 2.4, z + 0.8], [x_front + e, 2.4, z + w - 1.2],
+                        [x_front + e, 0.3, z + w - 1.2]], _mix(k.col("window"), (40, 50, 70), 0.45), "shop", 3,
+                       lw=0.7)["normal"] = np.array([-side, 0, 0.0])
+                aw = _rgb(["#c8463c", "#3c7ab8", "#3c9a64", "#d89a30"][int(rng.integers(0, 4))])
+                xo = x_front - side * 1.1
+                k.face([[x_front + e, 3.0, z + 0.5], [xo, 2.5, z + 0.5], [xo, 2.5, z + w - 0.9],
+                        [x_front + e, 3.0, z + w - 0.9]], aw, "awning", 4, lw=0.8)
             for fy in np.arange(3.0, h - 1.0, 3.0):
                 for fz in np.arange(z + 1.2, z + w - 1.6, 2.2):
                     e = -side * 0.02
