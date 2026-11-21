@@ -718,7 +718,7 @@ def wrap_face(orig):
         a = parse(rest, Spec("pixelcanvas face girl --expression smile", [], {"expression": "value", "eyes": "value",
                                                                              "kind": "value", "weight": "value",
                                                                              "keep-eyes": "flag", "gaze": "value",
-                                                                             "eyes-shape": "value"},
+                                                                             "eyes-shape": "value", "mark": "value"},
                              alias={"expr": "expression", "mood": "expression", "iris": "eyes", "eye": "eyes"}))
         e = FC.expression_key(a.get("expression") or (look_of(target).get("face") or {}).get("expression") or
                               "neutral")
@@ -741,6 +741,14 @@ def wrap_face(orig):
                 raise UsageError(f"unknown eye shape {a['eyes-shape']!r}: {', '.join(FC.EYE_SHAPES)}",
                                  "pixelcanvas face girl --eyes-shape sharp")
             fc["eye-shape"] = str(a["eyes-shape"]).lower()
+        if a.get("mark") is not None:
+            mk = [m.strip() for m in str(a["mark"]).lower().replace("+", ",").split(",") if m.strip()]
+            mk = [m for m in mk if m != "none"]
+            bad = [m for m in mk if m not in FC.MARKS]
+            if bad:
+                raise UsageError(f"unknown mark {bad[0]!r}: {', '.join(FC.MARKS)} (or none)",
+                                 "pixelcanvas face boy --mark sweat,vein")
+            fc["marks"] = mk
 
         def mutate():
             look_of(target)["face"] = fc

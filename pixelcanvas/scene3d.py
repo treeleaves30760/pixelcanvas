@@ -1381,6 +1381,13 @@ def _figure_light(p, la: np.ndarray) -> np.ndarray:
     mask = cv2.resize(figl.astype(np.uint8), (p.W, p.H), interpolation=cv2.INTER_NEAREST) > 0
     la = la.copy()
     la[mask, :3] = big[mask]
+    ef = p.root / "draw" / "r3d" / "eyes.npz"
+    if ef.exists():
+        # eye whites and catch-lights stay readable at night (the face agent's eye mask)
+        ez = np.load(ef)
+        em = np.unpackbits(ez["m"])[:int(np.prod(ez["shape"]))].reshape(tuple(ez["shape"])).astype(bool)
+        if em.shape == mask.shape:
+            la[em, :3] = np.maximum(la[em, :3], 0.94)
     return la
 
 

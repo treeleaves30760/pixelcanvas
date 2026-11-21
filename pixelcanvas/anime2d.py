@@ -266,6 +266,12 @@ def _face_profile(rig, h: float) -> List[dict]:
     for a_, b_, ra, rb in ((nose_root - Hd[:, 2] * 0.02 * h, tip, 0.012 * h, 0.012 * h),
                            (nose_tip - Hd[:, 2] * 0.03 * h - Hd[:, 1] * 0.015 * h, tip, 0.016 * h, 0.011 * h)):
         out.append(rcone(a_, b_, ra, rb))
+    # lips and a soft chin for the side view
+    from .render3d import ell_prim
+    lip, chin = F3.face_surface(rig, np.array([[0.0, -0.3], [0.0, -0.42]]))
+    # (the jaw cone recedes under the nose: the lips and chin sit forward of it, under the nose tip)
+    out.append(ell_prim(lip + Hd[:, 2] * 0.002 * h, Hd, (0.04 * h, 0.026 * h, 0.03 * h)))
+    out.append(ell_prim(chin + Hd[:, 2] * 0.005 * h + Hd[:, 1] * 0.01 * h, Hd, (0.06 * h, 0.05 * h, 0.045 * h)))
     for pr in out:
         pr.update({"owner": "x", "piece": "head", "part": "head", "mat": "skin", "seam": "mat", "group": "head"})
     return out
@@ -321,7 +327,9 @@ def figure_parts(el: dict, body, J, F, look: dict, subj: str, held: Optional[Lis
             parts.append(_solid(pr["piece"], "skin", subj, "head", [pr], {"ear": None}, rad=0.08 * h, bias=0.09 * h))
     parts.append(_tube("neck", "skin", subj, "head", [J["neck"] - F["neck"][:, 1] * 0.02 * h,
                                                       J["neck-top"] + F["neck"][:, 1] * 0.1 * h],
-                       [NECK * h * k, NECK * h * k * 0.95], {"neck": J["neck"], "neck-top": J["neck-top"]},
+                       # an anime neck: about 0.35-0.4 of the head's width, a little slimmer for a girl
+                       [tpl["neck"] * 1.4 * h * k, tpl["neck"] * 1.3 * h * k],
+                       {"neck": J["neck"], "neck-top": J["neck-top"]},
                        round_start=False, round_end=False, n_rings=6, bias=0.1 * h))
 
     # ---- trunk

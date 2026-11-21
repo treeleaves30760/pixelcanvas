@@ -436,7 +436,8 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
             continue
         block = pt["kind"] == "plane" or pt.get("block")
         for st in S2.outline_strokes(o["poly"], k, R, _keep_fn(sc, k, R), step, min_len * 1.5,
-                                     sigma=0.6 if block else 2.5, bridge=int(round(0.006 * S / step))):
+                                     sigma=0.6 if block else (3.0 if pt["name"] == "head" else 2.5),
+                                     bridge=int(round(0.006 * S / step))):
             c = st["cls"]
             if block:
                 w = W_BLOCK
@@ -446,6 +447,8 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
                 w = W_HAIR
             else:
                 w = W_IN
+            if pt["name"] == "head" and pt["mat"] == "skin":
+                w = max(w, 0.9 * W_SIL)         # the jaw and cheek at the body's contour weight
             rgb = _inner_rgb(p, pt, rgb_cache) if c == 2 and not block else None
             if rgb is not None:
                 w = max(w, 1.0)                 # a near dark limb over a far one: a clear separation line
@@ -575,7 +578,7 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     from .anime2d import is_male
     shape = str(fc.get("eye-shape") or ("narrow" if is_male(el["subject"], el) else "round"))
     specs = FC.project(rig, cam, FC.features(fc.get("expression", "neutral"), iris, lash, gz or (0.0, 0.0),
-                                             brow_rgb=brow, shape=shape))
+                                             brow_rgb=brow, shape=shape, marks=fc.get("marks") or ()))
     # the face's line weights follow the head's size on the canvas: a small face keeps thin, readable lines
     from .draw_line import base_width
     hc = rig.J["head"]
@@ -584,6 +587,19 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     side = float(rig.Hd[:, 0] @ ((cam.C - hc) / max(1e-9, float(np.linalg.norm(cam.C - hc)))))
     if abs(side) > 0.85 and float(rig.Hd[:, 2] @ (cam.C - hc)) > -0.2 * float(np.linalg.norm(cam.C - hc)):
         specs = _profile_face(rig, cam, specs, fc.get("expression", "neutral"), side, hp, iris, lash, shape)
+    cut = None
+    if 0.35 < abs(side) <= 0.85:
+        # three-quarter view: the nose bridge hides the inner corner of the far eye
+        fs = -1.0 if side > 0 else 1.0
+        bq, _ = cam.project(F3.face_surface(rig, np.array([[fs * 0.035, 0.02], [fs * 0.035, -0.2],
+                                                              [-fs * 0.12, -0.1]])))
+        dvec = bq[1] - bq[0]
+        nrm2 = np.array([-dvec[1], dvec[0]])
+        ref = float((bq[2] - bq[0]) @ nrm2)
+        far_s = "l" if fs < 0 else "r"
+
+        def cut(P, far_s=far_s, b0=bq[0], nrm2=nrm2, ref=ref):
+            return ((np.asarray(P, float) - b0) @ nrm2) * ref > 0      # True: on the nose's near side (hidden)
     unit = max(0.55, hp / 110.0)                          # px per weight unit; a 220 px head: 2 px
     wk = unit / base_width(p)
     from .draw_render import material_colours
@@ -596,7 +612,10 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
     for sp in specs:
         P = sp["px"]
         # brows show through the bangs (as anime draws them); everything else only where the face shows
-        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")) | (sp["kind"] == "brow"))
+        vis = sp["vis"] & ((R.at(P) == hk) | bool(sp.get("float")) | (sp["kind"] in ("brow", "mark")))
+        far_eye = cut is not None and sp["name"].split("-")[0] in _EYE_PARTS and             sp["name"].partition("-")[2][:1] == cut.__defaults__[0]
+        if far_eye:
+            vis = vis & ~cut(P)
         sp["vis2"] = vis
         if sp.get("fill") is None and sp["kind"] != "skin":
             continue
@@ -605,6 +624,9 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         m = dc.poly_mask(p.H, p.W, P)
         if not sp.get("float"):
             m &= head_m
+        if far_eye:
+            yy, xx = np.mgrid[0:p.H, 0:p.W]
+            m &= ~cut(np.stack([xx.ravel(), yy.ravel()], 1)).reshape(p.H, p.W)
         if sp.get("clip"):
             cm = clips.get(sp["clip"])
             if cm is None:
@@ -614,6 +636,9 @@ def face_specs(p, sc: dict, el: dict) -> Tuple[list, List[dict]]:
         if m.sum() < 3:
             continue
         col = tuple(int(c) for c in (sp["fill"] if sp.get("fill") is not None else skin))
+        if sp["kind"] in ("white", "shine") and sp["name"].split("-")[0] in ("white", "shine"):
+            # the eye whites and catch-lights stay bright under a scene's night / sunset light
+            sc["eye_glow"] = m if sc.get("eye_glow") is None else (sc["eye_glow"] | m)
         if sp["kind"] in ("iris", "pupil", "shine", "white", "skin", "teeth", "tongue", "lashfill"):
             fills.append(Fill(mask_rle=mask_to_rle(m), color=col, feather=0.5))
         elif sp["kind"] == "blush":
@@ -855,6 +880,10 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
         a0 = arr.copy()
         if face_fills:
             brush.apply_ops(arr, face_fills)
+        if sc.get("eye_glow") is not None:
+            (p.root / "draw" / "r3d").mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(p.root / "draw" / "r3d" / "eyes.npz", m=np.packbits(sc["eye_glow"]),
+                                shape=np.array(sc["eye_glow"].shape))
         _snapshot(p, "paint2d", a0, arr)
         p._write_layer_file("paint", arr)
         # areas: one region per material of each figure, one per block
@@ -1141,7 +1170,7 @@ def do_cel_shade(ctx, who: str = "all"):
                 hm_ = np.isin(lab, hk_)
                 if hm_.any():
                     ys_ = np.nonzero(hm_)[0]
-                    dpx = max(1, int(0.13 * (ys_.max() - ys_.min())))
+                    dpx = max(1, int(0.07 * (ys_.max() - ys_.min())))
                     under = np.zeros_like(hm_)
                     for k_ in range(1, dpx + 1):
                         under[k_:] |= hm_[:-k_]

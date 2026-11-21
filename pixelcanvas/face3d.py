@@ -180,7 +180,7 @@ EYE_SHAPES = ("round", "narrow", "droopy", "sharp")
 
 
 def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34), gaze=(0.0, 0.0),
-             brow_rgb=None, shape: str = "round") -> List[dict]:
+             brow_rgb=None, shape: str = "round", marks=()) -> List[dict]:
     """Head-frame specs of the face. Each open eye: lid crease, white with the lash's shadow, iris (a darker upper
     band under the lid, a lighter lower crescent), pupil, two catch-lights, the upper lash line (heavy, tapered, a
     flick at the outer corner) and a lower lash hint. ``gaze`` moves the irises (head units, x toward the picture's
@@ -211,6 +211,10 @@ def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34), ga
             arc = _curve([P(-0.5, -0.12), P(-0.05, 0.36), P(0.5, -0.06)])
             out.append({"name": f"eye-{s}", "pts": arc, "closed": False, "weight": 2.1, "taper": "both",
                         "kind": "lash", "rgb": lash_rgb, "wprof": [[0, 0.5], [0.5, 1.1], [1, 0.8]]})
+            # two small lash flicks at the outer end
+            for k_, (a_, b_) in enumerate(((0.44, 0.0), (0.36, 0.1))):
+                out.append({"name": f"flick-{s}{k_}", "pts": _curve([P(a_, b_), P(a_ + 0.16, b_ + 0.08)], 4),
+                            "closed": False, "weight": 0.9, "taper": "end", "kind": "lash", "rgb": lash_rgb})
             continue
         if st == "closed":
             # a closed calm eye: the lash curve bowed down, with a short flick
@@ -257,11 +261,51 @@ def features(expression: str, iris_rgb=(70, 110, 190), lash_rgb=(40, 28, 34), ga
                                                                           [x0 - 0.012, -0.234]]),
                                 "closed": False, "weight": 0.7, "taper": "both", "kind": "hatch",
                                 "rgb": (206, 92, 108)})
-    if e == "panicked":
+    _marks(out, e, set(marks or ()))
+    if e == "panicked" and "sweat" not in set(marks or ()):
         out.append({"name": "sweat", "pts": _curve([[0.5, 0.3], [0.47, 0.15], [0.5, 0.1], [0.53, 0.15], [0.5, 0.3]]),
                     "closed": True, "weight": 0.7, "taper": "none", "kind": "tear", "fill": (190, 228, 255),
                     "float": True})
     return out
+
+
+MARKS = ("sweat", "tears", "vein", "shock", "blush-lines")
+
+
+def _marks(out: List[dict], e: str, marks: set) -> None:
+    """Optional manga marks: a sweat drop beside the head, tear streaks down the cheeks, an anger vein, shock
+    lines on the forehead, blush hatching."""
+    if "sweat" in marks:
+        out.append({"name": "sweat", "pts": _curve([[0.5, 0.32], [0.46, 0.14], [0.5, 0.08], [0.54, 0.14],
+                                                    [0.5, 0.32]]),
+                    "closed": True, "weight": 0.7, "taper": "none", "kind": "tear", "fill": (200, 232, 255),
+                    "float": True, "rgb": (84, 140, 196)})
+    if "tears" in marks and not any(sp["name"].startswith("tear-") for sp in out):
+        for s, sg in (("r", 1.0), ("l", -1.0)):
+            x0, y0 = sg * 0.16, EYE_C[1] - 0.08
+            a = _curve([[x0, y0], [x0 + sg * 0.025, y0 - 0.1], [x0 + sg * 0.035, y0 - 0.2]], 12)
+            b = _curve([[x0 + sg * 0.065, y0 - 0.2], [x0 + sg * 0.05, y0 - 0.1], [x0 + sg * 0.04, y0]], 12)
+            out.append({"name": f"tear-{s}", "pts": np.vstack([a, b]), "closed": True, "weight": 0.6,
+                        "taper": "none", "kind": "tear", "fill": (196, 230, 255), "rgb": (84, 140, 196)})
+    if "vein" in marks:
+        cx, cy, r = 0.3, 0.36, 0.075
+        for k, ang in enumerate((45, 135, 225, 315)):
+            t = math.radians(ang)
+            c = np.array([cx + 0.6 * r * math.cos(t), cy + 0.6 * r * math.sin(t)])
+            d = np.array([-math.sin(t), math.cos(t)]) * r * 0.5
+            arc = _curve([c - d, c + 0.35 * r * np.array([math.cos(t), math.sin(t)]), c + d], 8)
+            out.append({"name": f"vein{k}", "pts": arc, "closed": False, "weight": 1.7, "taper": "both",
+                        "kind": "mark", "rgb": (214, 48, 60), "float": True})
+    if "shock" in marks:
+        for k, x in enumerate(np.linspace(-0.16, 0.16, 6)):
+            out.append({"name": f"shock{k}", "pts": np.array([[x, 0.28 - 0.03 * (k % 2)], [x, 0.08]]),
+                        "closed": False, "weight": 0.7, "taper": "end", "kind": "mark", "rgb": (70, 80, 130)})
+    if "blush-lines" in marks and not any(sp["name"].startswith("hatch-") for sp in out):
+        for s, sg in (("r", 1.0), ("l", -1.0)):
+            for k in range(3):
+                x0 = sg * (0.15 + 0.04 * k)
+                out.append({"name": f"hatch-{s}{k}", "pts": np.array([[x0 + 0.012, -0.196], [x0 - 0.012, -0.234]]),
+                            "closed": False, "weight": 0.7, "taper": "both", "kind": "hatch", "rgb": (206, 92, 108)})
 
 
 def _mouth(out: List[dict], e: str) -> None:
