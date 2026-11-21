@@ -514,3 +514,14 @@ def test_hair3d_accessory_option(draw):
     assert "hairband and bow" in out
     code, out = draw("hair3d", "girl", "--accessory", "crown")
     assert code != 0 and "--accessory" in out
+
+
+def test_hair_follows_the_new_motion_presets_and_wind_composes():
+    _, rs, ps = _fig(look={"hair": {"style": "long"}})
+    _, rf, pf = _fig("fall", look={"hair": {"style": "long"}})
+    # falling: the locks lift above where they hang when standing
+    assert np.median(_tips(pf)[:, 1] - rf["J"]["head"][1]) > np.median(_tips(ps)[:, 1] - rs["J"]["head"][1]) + 0.2
+    _, rr, pr_ = _fig("run-toward", look={"hair": {"style": "long"}})
+    _, rw, pw = _fig("run-toward", look={"hair": {"style": "long", "wind": [1.0, 0.0]}})
+    # --wind adds to the trail of the motion instead of replacing it
+    assert np.median(_tips(pw)[:, 0] - rw["J"]["head"][0]) > np.median(_tips(pr_)[:, 0] - rr["J"]["head"][0]) + 0.05

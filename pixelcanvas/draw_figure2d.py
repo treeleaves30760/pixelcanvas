@@ -508,7 +508,7 @@ def strokes(p, sc: dict, subj_keep, groups: Optional[set]) -> List[dict]:
                 w = W_IN
             if pt["name"] == "head" and pt["mat"] == "skin":
                 w = max(w, 0.9 * W_SIL)         # the jaw and cheek at the body's contour weight
-            rgb = _inner_rgb(p, pt, rgb_cache) if c == 2 and not block else None
+            rgb = _inner_rgb(p, pt, rgb_cache) if c in (2, 3) and not block else None
             if rgb is not None:
                 w = max(w, 1.0)                 # a near dark limb over a far one: a clear separation line
             out.append({"pts": st["pts"], "closed": st["closed"], "w": w, "part": pt, "k": k, "rgb": rgb})
@@ -1384,7 +1384,9 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         if vis.mean() < 0.3:
             continue
         q, zz = cam.project(P3)
-        hc, _ = cam.project(c[None])
+        hc, zh = cam.project(c[None])
+        if 2.4 * R0 * cam.f / max(float(zh[0]), 1e-3) < 70:
+            continue                    # a small head on the canvas: no ring (it would read as crumbs)
         if float(np.median(q[:, 1])) > float(hc[0, 1]):
             continue                    # seen from below, the crown is out of sight: no band on the forehead
         band = dc.poly_mask(p.H, p.W, q)
@@ -1404,9 +1406,37 @@ def _hair_bands(p, mp: dict, subjects: List[str], lv) -> list:
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
         ring = dc.light_of(hairc, 0.8)
         if dc.lum(hairc) < 30:          # dark hair: a cool tinted shine, not grey
-            ring = tuple(int(min(255, c * 0.6 + t_ * 0.4)) for c, t_ in zip(dc.light_of(hairc, 2.2), (70, 90, 140)))
+            ring = tuple(int(c + (t_ - c) * 0.55) for c, t_ in zip(hairc, (80, 90, 125)))
         out.append(Fill(mask_rle=mask_to_rle(band), color=ring, feather=0.6))
     return out
+
+
+def _hair_pockets(arr: np.ndarray, up: np.ndarray, tb: List[dict]) -> None:
+    """Gaps the line art closes between hair and the body (a twintail beside the back) are background, not an
+    area of their own: ``flat auto`` gives such a pocket a colour of its guess (skin); give it the colour of the
+    background round it."""
+    H, W = up.shape
+    hair_ids = [k for k, t in enumerate(tb) if t["mat"] == "hair"]
+    if not hair_ids:
+        return
+    empty = (up < 0).astype(np.uint8)
+    n, cl, st, _ = cv2.connectedComponentsWithStats(empty, 4)
+    border = set(np.unique(np.concatenate([cl[0], cl[-1], cl[:, 0], cl[:, -1]])).tolist())
+    outside = np.isin(cl, [i for i in border if i > 0])
+    near_hair = cv2.dilate(np.isin(up, hair_ids).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    for i in range(1, n):
+        if i in border or st[i, cv2.CC_STAT_AREA] > 0.03 * H * W:
+            continue
+        pk = cl == i
+        if not (pk & near_hair).any():
+            continue
+        x, y, w, h = st[i, :4]
+        g = int(0.15 * max(w, h)) + 4
+        win = (slice(max(0, y - g), min(H, y + h + g)), slice(max(0, x - g), min(W, x + w + g)))
+        ref = outside[win] & (arr[win][..., 3] > 0.5)
+        if ref.sum() < 10:
+            continue
+        arr[pk, :3] = np.median(arr[win][ref][:, :3], 0)
 
 
 def _smooth_up(m_low: np.ndarray, p) -> np.ndarray:
@@ -1444,7 +1474,10 @@ def _hair_underlayer(p, mp: dict, subjects: List[str]) -> list:
         if m.sum() < 10:
             continue
         hairc = tuple(next(t["rgb"] for t in tb if t["subj"] == el["subject"] and t["mat"] == "hair"))
-        out.append(Fill(mask_rle=mask_to_rle(m), color=tuple(int(c) for c in dc.shadow_of(hairc, 1.0)), feather=0.6))
+        col = dc.shadow_of(hairc, 1.0)
+        if dc.lum(hairc) < 30:      # dark hair: the under-layer clearly deeper than the base, a little cool
+            col = (hairc[0] * 0.35, hairc[1] * 0.35, hairc[2] * 0.35 + 6)
+        out.append(Fill(mask_rle=mask_to_rle(m), color=tuple(int(c) for c in col), feather=0.6))
     return out
 
 
@@ -1593,6 +1626,7 @@ def flat_drawn(ctx, rep) -> None:
         brush.apply_ops(arr, ops)
         for fm in far_limb_masks(mp, keep, p.W, p.H):      # the far limb of a same-colour pair: one step darker
             arr[fm, :3] *= 0.84
+        _hair_pockets(arr, up, tb)
         _snapshot(p, "flat2d", a0, arr)
         p._write_layer_file("flat", arr)
         allm = np.zeros((p.H, p.W), bool)

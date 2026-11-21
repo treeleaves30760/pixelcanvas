@@ -75,7 +75,10 @@ PRESET_HANDS = {"run": ("fist", "fist"), "sprint": ("fist", "fist"), "walk": ("r
 # how a preset moves (figure frame: x her right, y up, z forward; metres per second-ish)
 MOTION = {"run": (0, 0.1, 1.0), "sprint": (0, 0.1, 1.3), "walk": (0, 0, 0.35), "walk-together": (0, 0, 0.35),
           "jump": (0, 0.8, 0.1), "leap": (0, 0.3, 0.9), "land": (0, -0.6, 0.2), "dance-twirl": (0.7, 0.1, 0),
-          "kick": (0, 0, 0.3), "punch": (0, 0, 0.4), "swing": (0.3, 0, 0.4)}
+          "kick": (0, 0, 0.3), "punch": (0, 0, 0.4), "swing": (0.3, 0, 0.4),
+          "run-toward": (0, 0.1, 1.0), "sprint-side": (0, 0.1, 1.3), "jump-toward": (0, 0.6, 0.6),
+          "jump-strike": (0, 0.7, 0.3), "jump-tuck": (0, 0.9, 0.1), "fall": (0, -1.4, 0.0), "dance-step": (0.4, 0.1, 0.2),
+          "cheer": (0, 0.5, 0)}
 
 
 def garment_key(word: str) -> Optional[str]:
@@ -95,7 +98,7 @@ def motion_of(rig: dict, F: Dict[str, np.ndarray]) -> Tuple[np.ndarray, bool]:
     right = unit(np.cross([0, 1.0, 0], fwd))
     w = v[0] * right + v[1] * np.array([0, 1.0, 0]) + v[2] * fwd
     lift = float(rig.get("lift") or 0.0)
-    floating = lift > 0.15 and PRESETS.get(pk, {}).get("rest") != "air"
+    floating = (lift > 0.15 and PRESETS.get(pk, {}).get("rest") != "air") or pk == "float"
     return w, floating
 
 
@@ -755,8 +758,9 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     cap["A"] = rig.cr_A * np.array([1.1, 1.08, 1.1])[None, :]
     out.append(cap)
     wind = hair.get("wind")
-    w = np.array([wind[0], -wind[1], 0.0]) if wind is not None else -motion * 1.5
-    gscale = 0.6 if floating else 1.0
+    # the air of the motion, plus any --wind on top of it
+    w = -motion * 1.5 + (np.array([wind[0], -wind[1], 0.0]) if wind is not None else 0.0)
+    gscale = 0.25 if floating else 1.0
     gvec = np.array([0, -1.0, 0]) * gscale + w * 0.8
     if floating:
         gvec = gvec + np.array([0, 0.12, 0]) + Hd[:, 2] * -0.15
@@ -809,7 +813,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
     # the back and the crown
     if style in ("long", "medium", "bob", "short", "spiky"):
         rows = [(0.6, 11, 0.82), (0.1, 13, 1.0), (-0.35, 9, 0.97)] if style in ("long", "medium", "bob") else \
-            [(0.8, 7, 1.0), (0.45, 9, 0.85), (0.05, 7, 0.6)] if style == "spiky" else \
+            [(0.8, 7, 1.0), (0.5, 9, 0.8), (0.25, 7, 0.4)] if style == "spiky" else \
             [(0.75, 9, 0.9), (0.3, 11, 0.8), (-0.15, 9, 0.7)]
         for y, n, lf in rows:
             for i in range(n):
@@ -892,7 +896,7 @@ def hair_prims(rig: Rig, owner: str, hair: dict, motion: np.ndarray, floating: b
                 a = 2 * math.pi * j / 7
                 off = (math.cos(a) * Hd[:, 0] + math.sin(a) * Hd[:, 2]) * 0.06 * h
                 fan = (math.cos(a) * Hd[:, 2] + math.sin(a) * Hd[:, 1]) * 0.18
-                d0 = unit(nrm * (0.75 if style == "twintails" else 0.5) + side * 0.2 - Hd[:, 1] * 0.55 + fan)
+                d0 = unit(nrm * (1.1 if style == "twintails" else 0.5) + side * 0.2 - Hd[:, 1] * 0.55 + fan)
 
                 def wave(i_, ph=a, sd=side):
                     return sd * 0.12 * math.sin(0.9 * i_ + ph) if floating else 0
