@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from scipy import ndimage as ndi
 
 from . import anime2d as A2
 from . import coords
@@ -205,6 +206,7 @@ def build(p) -> dict:
         pt = parts[k]
         over = [j for j, q in enumerate(parts) if q["subj"] == pt["subj"] and q["name"] in pt["decal"]]
         R.add_decal(k, outs[k]["poly"], over)
+    _clean_hands(parts, outs, R)
     # joints on the canvas, the radius of each part in px
     for pt, o in zip(parts, outs):
         if o is None:
@@ -220,6 +222,63 @@ def build(p) -> dict:
         o["rpx"] = float(pt["rad"]) * cam.f / max(float(z[0]), 0.05)
         o["zc"] = float(z[0])
     return {"parts": parts, "outs": outs, "R": R, "cam": cam, "s": s}
+
+
+def _clean_hands(parts: list, outs: list, R) -> None:
+    """A hand partly covered by a garment or the body: its visible area smoothed (no stair steps where its flat
+    sheet meets a curved surface, no skin specks), the cut edge drawn as one clean line; a hand that shows less
+    than a third of itself is dropped (its pixels go to whatever covers it)."""
+    for k, (pt, o) in enumerate(zip(parts, outs)):
+        if o is None or pt.get("flat3") is None or not str(pt["name"]).startswith(("hand-", "fingers-")):
+            continue
+        mm = R.mask(o["poly"])
+        if mm is None:
+            continue
+        (x0, y0, x1, y1), full = mm
+        lab = R.lab[y0:y1, x0:x1]
+        vis = lab == k
+        # what covers the hand: its own fingers or the prop it holds count as the hand showing
+        own = np.isin(lab, [j for j, q in enumerate(parts) if q.get("subj") == pt.get("subj") and
+                            (q.get("group") == pt.get("group") or q.get("group") == "props")])
+        nfull = int(full.sum())
+        if nfull == 0:
+            continue
+        others = (lab >= 0) & ~vis
+        if others.any():
+            _, (iy, ix) = ndi.distance_transform_edt(~others, return_indices=True)
+            nearest = lab[iy, ix]
+        else:
+            nearest = np.full(lab.shape, -1, np.int32)
+        if float((full & own).sum()) < nfull / 3.0:
+            lab[vis] = nearest[vis]
+            outs[k] = None
+            continue
+        if (full & ~own & ~vis).sum() < 0.02 * nfull:
+            continue                                            # not covered: nothing to clean
+        r = max(2, int(round(0.06 * math.sqrt(nfull))))
+        ker = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+        sm = cv2.morphologyEx(vis.astype(np.uint8), cv2.MORPH_OPEN, ker)
+        sm = cv2.morphologyEx(sm, cv2.MORPH_CLOSE, ker)
+        sm = (cv2.GaussianBlur(sm.astype(np.float32), (2 * r + 1, 2 * r + 1), r / 2.0) > 0.5) & full
+        n, cc = cv2.connectedComponents(sm.astype(np.uint8))
+        if n > 2:                                               # keep the largest piece: no specks
+            sizes = np.bincount(cc.ravel())[1:]
+            sm = cc == (1 + int(np.argmax(sizes)))
+        lost = vis & ~sm
+        lab[lost] = nearest[lost]
+        gain = sm & ~vis & (lab >= 0)
+        lab[gain] = k
+        # the cut edge: the boundary of the visible part inside the hand's outline
+        cs, _ = cv2.findContours(sm.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        if not cs:
+            continue
+        c = max(cs, key=cv2.contourArea).reshape(-1, 2).astype(float)
+        inner = cv2.erode(full.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+        on = inner[c[:, 1].astype(int), c[:, 0].astype(int)]
+        c = np.stack([ndi.gaussian_filter1d(c[:, j], 2.0, mode="wrap") for j in range(2)], 1)
+        for run in S2.runs(on, True):
+            if len(run) > 6:
+                o.setdefault("details_px", []).append((c[run] + [x0, y0]) / R.s)
 
 
 def _centre3(pt: dict) -> np.ndarray:

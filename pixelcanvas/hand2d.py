@@ -31,7 +31,7 @@ from .shape2d import unit
 _FIST_THUMB = ((0.55, 0.2, 0.8), (0.25, -0.8, 0.55))
 SHAPES: Dict[str, dict] = {
     "relaxed": {"curl": [(14, 22, 12), (22, 28, 14), (28, 32, 16), (34, 36, 18)], "spread": (8, 0, -3, -7),
-                "thumb": ((0.7, 0.62, 0.3), (0.85, 0.2, 0.35))},
+                "thumb": ((0.8, 0.48, 0.35), (0.92, 0.08, 0.38))},       # along the index, a little forward
     "open": {"curl": [(4, 6, 4), (3, 5, 3), (4, 6, 4), (6, 8, 5)], "spread": (10, 2, -5, -12), "thumb": ((0.5, 0.85, 0.08), (0.7, 0.7, 0.0))},
     "spread": {"curl": [(2, 3, 2)] * 4, "spread": (18, 4, -9, -24), "thumb": ((0.3, 0.95, 0.0), (0.5, 0.86, 0.0))},
     "flat": {"curl": [(0, 2, 1)] * 4, "spread": (3, 0, -1, -3), "thumb": ((0.72, 0.62, 0.0), (0.92, 0.38, 0.0))},
@@ -113,8 +113,9 @@ def hand_pieces(W, u, t, n, L: float, shape: str, grip_r: Optional[float] = None
             b = math.radians(bend)
             d, nn = unit(math.cos(b) * d + math.sin(b) * nn), unit(-math.sin(b) * d + math.cos(b) * nn)
             q = p + d * (FINGER_LEN[i] * frac * L + (0.04 * L if j == 0 else 0.0))
-            out.append({"kind": "cap", "label": 20 + 4 * i + j, "a": p, "b": q, "ra": r * (1 - 0.07 * j),
-                        "rb": r * (0.93 - 0.1 * j) if j < 2 else r * 0.86})
+            kb = 1.15 if (j == 0 and curls[i][0] > 60) else 1.0       # a curled finger's knuckle: a bump
+            out.append({"kind": "cap", "label": 20 + 4 * i + j, "a": p, "b": q, "ra": r * (1 - 0.07 * j) * kb,
+                        "rb": (r * (0.93 - 0.1 * j) if j < 2 else r * 0.86) * kb})
             p = q
     return out
 
@@ -312,7 +313,7 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
     edges = _edges(zb, lb, covm > 0, thr, max_sep=True, margin=mg)
     edges |= gap & (cv2.erode(covm, np.ones((2 * mg + 1, 2 * mg + 1), np.uint8)) > 0)
     lines = _trace(edges, 0.16 * GRID / (ext / L))
-    if name in ("fist", "point", "peace", "grip") and len(lines) < 2:
+    if name in ("fist", "point", "peace", "grip"):
         # the curled fingers' fold: a curve through the middle knuckles (the line every drawn fist has)
         curled = [i for i in range(4) if SHAPES[name]["curl"][i][0] > 45 or name == "grip"]
         pk = [pc["b"] for pc in pieces if pc["kind"] == "cap" and pc["label"] >= 20 and (pc["label"] - 20) % 4 == 0
@@ -329,7 +330,10 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
                 ctl = 2 * cm - 0.5 * (a0 + a1)
                 tt = np.linspace(0, 1, 9)[:, None]
                 arc = (1 - tt) ** 2 * a0 + 2 * (1 - tt) * tt * ctl + tt ** 2 * a1
-                lines = [arc] + lines[:1]
+                # with at most one other line, never a loop (a loop round the curled fingers reads as a box)
+                rest = [ln for ln in lines if np.linalg.norm(ln[-1] - ln[0]) >
+                        0.45 * float(np.sum(np.linalg.norm(np.diff(ln, axis=0), axis=1)))]
+                lines = [arc] + rest[:1]
     if not lines and name not in ("fist", "point", "grip"):
         # no edge to read (a hand seen from its side): the separation between the index and the middle finger
         def chain(i):
@@ -344,7 +348,8 @@ def hand_parts(rig, s: str, shape: str, mat: str, subj: str, eye, h: float, k: f
               and inner[int(q[1]), int(q[0])]]
         if len(ok) >= 2 and np.linalg.norm(ok[-1] - ok[0]) > 0.12 * gL:
             lines.append(np.array(ok))
-    lines = lines[:1] if small else lines[:4]
+    curled_shape = name in ("fist", "point", "peace", "grip")
+    lines = lines[:(2 if curled_shape else 1)] if small else lines[:4]
 
     def outline(m):
         cs, _ = cv2.findContours(m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
