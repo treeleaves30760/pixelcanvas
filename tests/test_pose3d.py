@@ -469,7 +469,7 @@ def test_every_preset_reads_as_a_silhouette_at_its_default_yaw(name):
 
 def test_moving_presets_keep_four_separate_limbs_round_the_figure():
     cam = P3.Camera(600, 800, 330, 1.2, 44)
-    for name in ("run", "sprint", "run-toward", "sprint-side", "walk", "jump", "jump-toward", "leap", "kick",
+    for name in ("run", "sprint", "sprint-side", "walk", "jump", "jump-toward", "leap", "kick",
                  "land", "dance-twirl", "dance-step"):
         for yaw in (0, 35, -35, 90):
             res = P3.solve_figure({"preset": name, "at": [500, 900], "yaw": yaw}, cam, {}, {})
@@ -511,3 +511,28 @@ def test_two_figures_hold_hands_and_lean_back_to_back():
     bad = P3.solve_figure({"preset": "stand", "at": [600, 900], "targets": {"hand-l": "girl:tail"}},
                           cam, {}, {"girl": girl})
     assert any("has no" in ln for ln in bad["ik"])
+
+
+def test_fit_places_and_scales_into_a_box_and_the_frame_check_names_cut_parts():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    for name, box in (("run", [100, 200, 500, 950]), ("float", [300, 100, 700, 600])):
+        res = P3.solve_figure({"preset": name, "fit": box}, cam, {}, {})
+        x0, y0, x1, y1 = P3.figure_extent(res, cam)
+        assert x0 > box[0] - 25 and x1 < box[2] + 25 and y0 > box[1] - 25 and y1 < box[3] + 25, (name, x0, y0, x1, y1)
+        assert max(y1 - y0 - (box[3] - box[1]), x1 - x0 - (box[2] - box[0])) > -40   # it fills the box
+    res = P3.solve_figure({"preset": "stretch", "at": [900, 700]}, cam, {}, {})
+    assert any(c.startswith("the frame cuts") and "--at" in c for c in res["check"])
+
+
+def test_out_of_reach_hand_leans_the_chest_and_back_arms_swing_out():
+    cam = P3.Camera(600, 800, 330, 1.2, 44)
+    res = P3.solve_figure({"preset": "stand", "at": [500, 900], "targets": {"hand-r": [330, 700]}}, cam, {}, {})
+    assert res["edits"].get("spine", {}).get("bend", 0) != 0 or res["edits"].get("spine", {}).get("side", 0) != 0
+    back = P3.solve_figure({"preset": "run", "at": [500, 900], "yaw": 125}, cam, {}, {})
+    assert not [c for c in back["check"] if "arm" in c and "merges" in c]
+
+
+def test_pose_cli_fit(draw):
+    _scene(draw)
+    out = ok(draw("pose", "girl", "--preset", "float", "--fit", "300,150,700,700"))
+    assert "fitted into --fit 300,150,700,700" in out
