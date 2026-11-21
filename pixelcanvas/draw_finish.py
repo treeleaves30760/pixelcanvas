@@ -451,9 +451,43 @@ def depth_of_field(p, img: np.ndarray, fm: dict, focus: str, amount: float) -> T
             continue
         c, a = _pm_blur(img, m, sk)
         base = base * (1 - a[..., None]) + c * a[..., None]
-    fd = figs_d[focus]
-    base = np.where(fd[..., None], img, base)
+    base = paste_figure(base, img, fmask, fm.get("line_a"), S)
     return base, float((sb > 0.5).mean())
+
+
+def paste_figure(out: np.ndarray, img: np.ndarray, fmask: np.ndarray, line_a: Optional[np.ndarray], S: float):
+    """The crisp figure back over a blurred picture: its shape plus its own outline (the line art touching it),
+    the paste mask eroded a pixel and feathered inward, so no light or dark fringe is left round it."""
+    P = fmask.copy()
+    if line_a is not None:
+        near = cv2.dilate(fmask.astype(np.uint8), dc.disk(max(2.0, 0.008 * S))) > 0
+        P |= (line_a > 0.3) & near
+    k3 = np.ones((3, 3), np.uint8)
+    inner = cv2.erode(P.astype(np.uint8), k3) > 0
+    a = cv2.GaussianBlur(inner.astype(np.float32), (0, 0), 0.8)
+    a = np.maximum(a * P, cv2.erode(inner.astype(np.uint8), k3).astype(np.float32))
+    return out * (1 - a[..., None]) + img * a[..., None]
+
+
+def figure_fringe(p, fm: dict, line_a: Optional[np.ndarray]) -> np.ndarray:
+    """Colour of a figure that spills outside its own outline (a fill a few pixels wider than the line art): the
+    pixels of the figure's shape beyond the closed outline, next to the background."""
+    out = np.zeros((p.H, p.W), bool)
+    if line_a is None:
+        return out
+    from scipy import ndimage as ndi
+    S = float(max(p.W, p.H))
+    L = line_a > 0.4
+    for subj, F in fm["figs"].items():
+        if not F.any():
+            continue
+        near = cv2.dilate(F.astype(np.uint8), dc.disk(0.01 * S)) > 0
+        Lf = cv2.morphologyEx((L & near).astype(np.uint8), cv2.MORPH_CLOSE, dc.disk(0.004 * S)) > 0
+        core = cv2.erode(F.astype(np.uint8), dc.disk(0.006 * S)) > 0
+        closed = ndi.binary_fill_holes(Lf | core)
+        bgd = cv2.distanceTransform(F.astype(np.uint8), cv2.DIST_L2, 3)
+        out |= F & ~closed & ~L & (bgd <= max(2.0, 0.003 * S))
+    return out
 
 
 def _dir_vec(spec: str, fallback: np.ndarray) -> np.ndarray:
@@ -497,7 +531,8 @@ def _wedge(canvas: np.ndarray, a, b, w: float) -> None:
     if n < 2:
         return
     nn = np.array([-d[1], d[0]]) / n * (w / 2.0)
-    poly = np.array([a + nn, a - nn, b], np.float32)
+    mid = a + d * 0.35
+    poly = np.array([a, mid + nn, b, mid - nn], np.float32)        # tapered at both ends
     cv2.fillPoly(canvas, [np.round(poly * 4).astype(np.int32)], 1.0, lineType=cv2.LINE_AA, shift=2)
 
 
@@ -546,14 +581,15 @@ def motion_blur(p, img: np.ndarray, fm: dict, subj: str, d, amount: float) -> Tu
         out = img * (1 - w[..., None]) + zoom * w[..., None]
         # radial speed lines in the frame's outer band, pointing at the figure
         R = float(np.hypot(W, H)) / 2.0
-        for ang in np.sort(rng.uniform(0, 2 * np.pi, 22)):
+        for ang in np.sort(rng.uniform(0, 2 * np.pi, 12)):
             u = np.array([np.cos(ang), np.sin(ang)])
             # from the frame edge inward
             t_edge = min([t for t in ((W - c[0]) / u[0] if u[0] > 1e-6 else 1e9, -c[0] / u[0] if u[0] < -1e-6 else 1e9,
                                       (H - c[1]) / u[1] if u[1] > 1e-6 else 1e9, -c[1] / u[1] if u[1] < -1e-6 else 1e9)])
             a_ = c + u * t_edge
-            b_ = c + u * t_edge * rng.uniform(0.62, 0.8)
-            _wedge(lines, a_, b_, max(1.5, rng.uniform(0.003, 0.006) * S))
+            a_ = c + u * t_edge * 1.02
+            b_ = c + u * t_edge * rng.uniform(0.5, 0.66)
+            _wedge(lines, a_, b_, max(2.0, rng.uniform(0.004, 0.007) * S))
         mode = "toward the viewer: radial zoom blur of the background, radial speed lines at the edges"
     else:
         d = np.asarray(d, float)
@@ -572,19 +608,19 @@ def motion_blur(p, img: np.ndarray, fm: dict, subj: str, d, amount: float) -> Tu
         back = -d
         y0, y1 = ys.min(), ys.max()
         gap = 0.02 * S
-        for yy in np.linspace(y0 + 0.15 * (y1 - y0), y1 - 0.1 * (y1 - y0), 6) + rng.uniform(-0.03, 0.03, 6) * S:
+        for yy in np.linspace(y0 + 0.2 * (y1 - y0), y1 - 0.15 * (y1 - y0), 4) + rng.uniform(-0.03, 0.03, 4) * S:
             yy = int(np.clip(yy, 0, H - 1))
             row = np.nonzero(fmask[yy])[0]
             if len(row) == 0:
                 continue
             x_edge = row.min() if back[0] < 0 else row.max()
             st = np.array([x_edge, yy], float) + back * gap
-            ln = rng.uniform(0.12, 0.25) * S * (0.5 + amount)
+            ln = rng.uniform(0.2, 0.32) * S * (0.5 + amount)
             _wedge(lines, st + back * ln, st, max(1.2, rng.uniform(0.0025, 0.004) * S))
         mode = "sideways: background blurred along the motion, speed lines trailing behind"
     lines *= ~(cv2.dilate(F.astype(np.uint8), dc.disk(0.01 * S)) > 0)
     out = _line_ink(out, lines, 0.55 + 0.3 * amount)
-    out[F] = img[F]
+    out = paste_figure(out, img, fmask, fm.get("line_a"), S)
     return out, float((np.abs(out - img).sum(-1) > 0.03).mean()), mode
 
 
@@ -684,6 +720,9 @@ def cmd_polish(ctx, args: List[str]):
     soft_default = 0.6 if soft_style(p) else 0.0
     amt_soft = cli._num(a, "soften", soft_default, 0.0, 1.0, ctx.notes, u)
     fm = figure_maps(p)
+    if fm is not None:
+        la_ = p.layer("line", create=False)
+        fm["line_a"] = la_[..., 3] if la_ is not None else None
     fig_default = 1.0 if fm is not None else 0.0
     amt_rim = cli._num(a, "rim", 0.35 * fig_default, 0.0, 1.0, ctx.notes, u)
     # shallow focus when asked for (--focus <figure> or --dof): a picture is sharp throughout by default
@@ -724,6 +763,16 @@ def cmd_polish(ctx, args: List[str]):
             line_a = np.where(sm, 0.0, line_a).astype(np.float32)
             protect &= ~sm
         lines_out.append(f"strays: {n} specks and {n2} line ends past a crossing painted out")
+        if fm is not None:
+            fr = figure_fringe(p, fm, line_a)
+            if fr.any():
+                pap = p.layer("paper", create=False)
+                if pap is not None:
+                    img[fr] = pap[..., :3][fr]
+                    for k_ in fm["figs"]:
+                        fm["figs"][k_] = fm["figs"][k_] & ~fr
+                    lines_out.append(f"fringe: {int(fr.sum())} px of colour outside the figures' outlines painted "
+                                     "back to the background")
     elif on["strays"]:
         lines_out.append("strays: no line art, nothing to clean")
     if on["clean"] and amt_clean > 0:

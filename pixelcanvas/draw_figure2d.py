@@ -845,7 +845,9 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
             path, _ = draw_line.fit(p, ctrl_u, closed=st["closed"], snap=False, join=False, bow=0.0)
             if len(path) < 2 or dc.path_length(path) < 3:
                 continue
-            rec = draw_line.make_record(p, path, ctrl_u, weight=st["w"] * wscale.get(pt["subj"], 1.0),
+            # inner contours at about 58% of the silhouette weight (the table's ratio is a little lower)
+            w_in = st["w"] * (0.58 * W_SIL / W_IN if st["w"] == W_IN else 1.0)
+            rec = draw_line.make_record(p, path, ctrl_u, weight=w_in * wscale.get(pt["subj"], 1.0),
                                         taper="none" if st["closed"] else "both",
                                         color="line", closed=st["closed"], src=f"draw {pt['subj']} {pt['name']}")
             rec["d2d"] = pt["subj"]
@@ -934,17 +936,21 @@ def do_draw(ctx, who: str = "all", groups: Optional[set] = None, label: Optional
 
 
 def _line_scales(p) -> Dict[str, float]:
-    """subject -> line weight factor from the figure's size on the canvas: a figure whose head is a tenth of the
-    canvas draws at 1; a far, small figure draws thinner lines, a close-up a little heavier."""
+    """subject -> line weight factor that gives each figure one consistent silhouette weight: about 0.4% of the
+    figure's height (head length x heads), never under 2 delivered pixels; inner lines follow at their ratio."""
+    from .draw_line import base_width
     out: Dict[str, float] = {}
-    S = float(max(p.W, p.H))
+    bw = base_width(p)
+    min_px = 2.0 * dc.work_scale(p)
     for el in DP.figures(p):
         try:
             hj = dc.u2px(p, [el["j2d"]["head-top"], el["j2d"]["chin"]])
-            r = float(np.linalg.norm(hj[0] - hj[1])) / S
+            head = float(np.linalg.norm(hj[0] - hj[1]))
         except Exception:  # noqa: BLE001
             continue
-        out[el["subject"]] = float(np.clip(math.sqrt(max(r, 1e-4) / 0.10), 0.55, 1.2))
+        heads = float(el.get("heads") or (el.get("body") or {}).get("heads") or 6.0)
+        target = max(0.004 * head * heads, min_px)
+        out[el["subject"]] = float(np.clip(target / (W_SIL * bw), 0.35, 2.5))
     return out
 
 
@@ -1384,10 +1390,12 @@ def _hair_underlayer(p, mp: dict, subjects: List[str]) -> list:
 
 
 def _ground_shadow_colour(rgb) -> Tuple[int, int, int]:
-    """A contact shadow on the ground: the ground's own hue, clearly darker and a little cooler (never grey)."""
+    """A contact shadow on the ground: the ground's own colour darkened and a little desaturated, leaning toward the
+    cool ambient tone (never a warmer, redder blob)."""
     L, C, h = dc.rgb_to_lch(tuple(int(v) for v in rgb))
-    from .draw_scene import _toward
-    return dc.lch_to_rgb(max(6.0, L - 16.0 - 0.08 * L), C * 1.1 + 4.0, _toward(h, 285.0, 0.25) if C > 4 else 285.0)
+    base = np.asarray(dc.lch_to_rgb(max(6.0, L * 0.7), C * 0.6, h), float)
+    cool = np.array([72.0, 82.0, 108.0])
+    return tuple(int(round(v)) for v in base * 0.8 + cool * 0.2)
 
 
 def _figure_shadows(p, mp: dict, subjects: List[str]) -> list:
