@@ -32,13 +32,25 @@ pixelcanvas/
   draw_*.py                    drawing without a reference (plan, sketch, line, flat, shade, face, hair, wear,
                                scene, surface, detail, text, checks, canvas, finish) and hand mode (draw_ref.py);
                                draw_finish.py is `pixelcanvas polish`, the finishing pass of a drawn picture
+  cli_figure.py                `pixelcanvas figure`: one line that expands into pose, dress, hair3d and face
+  pose3d.py                    camera, ground plane, anime-proportioned figures, 73 pose presets, modifiers, balance,
+                               --check
+  figure3d.py, render3d.py     the dressed 3D figure (body, clothes, hair, hands); ray-cast z-buffer rendering
+  face3d.py, toon3d.py         anime faces on a 3D head (expressions, gaze); toon line art and cel shading of 3D parts
+  scene3d.py                   `pixelcanvas scene <kit>`: a finished 2D background in the camera's perspective
+  draw_pose.py, draw_render.py `camera`, `pose`, `block`, `prop`, `form`; `dress`, `hair3d`, `render` (the guide)
+  draw_figure2d.py, anime2d.py, shape2d.py, hand2d.py   `pixelcanvas draw`: 2D anime line art over the guide (body
+                               template, clothes, hair locks, hands)
   detail_measure.py, detail_profiles.json   measures by scale and kind against professional pictures
   export.py                    PNG, layered PSD / ORA, time-lapse GIF / MP4, stage pictures
   fx.py, text.py, fonts.py     finishing effects; lettering; font lookup with CJK fallback
-skills/pixelcanvas/SKILL.md    the skill agents read (shipped in the wheel as pixelcanvas/skill/)
+skills/pixelcanvas/SKILL.md    the skill agents read (shipped in the wheel as pixelcanvas/skill/); new-picture.md: the
+                               plugin's coarse-to-fine run
+agents/, commands/             the plugin's subagents (director, blocker, painter, critic) and /pixelcanvas:draw
 tests/                         pytest
 .claude-plugin/                plugin.json, marketplace.json and icon.png
 docs/INSTALL.md, docs/PYPI.md  install guide; the PyPI page
+docs/images/                   README pictures, drawn by pixelcanvas (their steps are in the README)
 README.md, README-zh.md, AGENTS.md, CHANGELOG.md
 ```
 

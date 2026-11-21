@@ -586,7 +586,7 @@ HELP_NOTES = {
     "face": ["--expression neutral|smile|open|grin|laugh|shout|angry|sad|crying|teary|surprised|panicked|smug|"
              "embarrassed|sleepy|closed|shut|wink  --eyes <colour>  --gaze center|left|right|up|down|up-left|up-right|"
              "down-left|down-right"],
-    "scene": ["kits: corridor room classroom street platform outdoor field beach rooftop stairs; --time day|sunset|night;"
+    "scene": ["kits: corridor room classroom bedroom street platform outdoor field beach rooftop stairs park track studio sky; --time day|sunset|night;"
               " colours --wall --trim --floor --ceiling --sky --ground ...; --doors/--windows left|right|both|none, "
               "--lamps n; drawn on the paper layer under the figures, from the camera"],
     "polish": ["one finishing pass: strays, clean, coloured lines, depth, grade, soften, rim, dof, motion, glow, "
@@ -603,7 +603,9 @@ HELP_NOTES = {
 }
 
 
-HELP_SYNTAX = {"face": "face <who>   options: --expression --eyes --gaze --weight --keep-eyes   (a 3D figure's face)"}
+HELP_SYNTAX = {"figure": "figure <who>   options: --wear --color --hair --face --expression --eyes --gaze, and every pose "
+                         "option (--pose <preset> --at --heads --yaw --lean --twist --look --arm-r --hand-shape-r ...)",
+               "face": "face <who>   options: --expression --eyes --gaze --weight --keep-eyes   (a 3D figure's face)"}
 HELP_SUBWORDS = {"line": ("redo", "weight", "delete", "list", "close", "move"), "pose": ("list",),
                  "dress": ("list",), "block": ("list",), "stage": ("done",), "region": ("add", "list", "rest"),
                  "change": ("add", "list", "drop", "none"), "palette": ("make", "pick", "set", "map")}
@@ -722,6 +724,9 @@ def cmd_help(ctx: Ctx, args: List[str]) -> Report:
             "face  eye  hair  locks  blush  hand  wear  fold  crease  tufts  mark  pattern  scatter  surface  "
             "highlight  rim  shadow --from <part> --onto <part>  reflect  wet  haze  atmosphere  glow  cloud  "
             "ground  foliage  window  linestyle")
+    rep.add("scene:   camera --horizon <y> --eye-height <m>   scene corridor|room|classroom|street|platform|outdoor|"
+            "field|beach|rooftop|stairs|... [--time day|sunset|night]   figure <who> --pose <preset> --at x,y "
+            "--wear \"blouse,skirt:navy\" --hair \"twintails,pink\" --face \"smile,blue\"   (scene list, pose list)")
     rep.add("3D:      camera --horizon <y> --eye-height <m>   pose <subject> --preset run --at x,y --yaw <deg> "
             "--set \"arm-r: raise 90; knee-l: 60\" [--on <block>] [--hand-r <block|x,y>]   pose list   "
             "block <name> box|stairs|cylinder|plane|railing --at x,y --size w,d,h   prop <name> --kind sword --hand r   "
@@ -734,7 +739,7 @@ def cmd_help(ctx: Ctx, args: List[str]) -> Report:
             "fx <glow|grain|blur|vignette|paper|sharpen|levels> [region] [--amount 0..1]   "
             "text \"<string>\" --box x0,y0,x1,y1 [--font --color --align --outline px,#hex --vertical --fit]   fonts")
     rep.add("other:   layer  export <file.png> [--psd] [--ora] [--timelapse film.gif|film.mp4] [--stages dir]   "
-            "do \"<cmd>; <cmd>\"   help [command]   install-skill [--opencode | --to DIR] [--force]")
+            "do \"<cmd>; <cmd>\" | do @steps.txt   help [command,command]   install-skill [--opencode | --to DIR] [--force]")
     if args:
         c = args[0].lower()
         if c in USAGE:
@@ -836,6 +841,12 @@ def cmd_new(ctx: Ctx, args: List[str]) -> Report:
                "0-1000)" if p.state.get("work_scale", 1) > 1 else ""))
     if local_line:
         rep.add(local_line)
+    if mode == "free":
+        rep.add("free mode: camera, scene <kit> and figure <who> lines (one batch: pixelcanvas do @steps.txt), then "
+                "render, draw all, flat auto, shade all, polish, export")
+        rep.next = ("pixelcanvas do @steps.txt   (camera --horizon 430 --eye-height 1.1; scene corridor; "
+                    "figure girl --pose run --at 400,850 --wear ... --hair ... --face ...)")
+        return rep
     rep.add(f"style guess: {style} ({workflow.STYLE_WORDS[style]})")
     rep.add(f"  because: {why}")
     rep.add(f"  other styles: {', '.join(s for s in workflow.STYLES if s != style)}  (change with  pixelcanvas style <name>)")

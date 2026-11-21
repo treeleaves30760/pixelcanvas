@@ -43,8 +43,8 @@ figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --twist 15 --look camer
 figure boy --pose walk --at 680,790 --heads 6.5 --yaw -20 --look left --wear "shirt:white,shorts:#1f2a4a,socks:#1f2a4a,shoes:brown" --hair "short,side,#1a1820" --face "grin,brown,left"
 ```
 
-The place is one `scene <kit>` line: kits corridor room classroom street platform outdoor field beach rooftop
-stairs; `--time day|sunset|night`; colours `--wall --trim --floor --ceiling --sky --ground --road --building --sea
+The place is one `scene <kit>` line: kits corridor room classroom bedroom street platform outdoor field beach
+rooftop stairs park track studio sky; `--time day|sunset|night`; colours `--wall --trim --floor --ceiling --sky --ground --road --building --sea
 --sand ...`; `--doors` / `--windows left|right|both|none`, `--lamps <n>`. It is drawn from the camera under the
 figures. Add a `block` only for what a figure touches or stands behind (a bench, a ledge, stairs, a railing):
 `block bench box --size 1.8,0.45,0.45 --at 520,860`. With horizon 430 and eye height 1.1 m a figure standing at

@@ -33,7 +33,7 @@ Coordinates are 0-1000 on each axis, read off the rulers of the views. Quote col
 
 ```bash
 pixelcanvas new pic --ref reference.jpg --mode trace                       # redraw a picture
-pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff"   # no reference
+pixelcanvas new pic --mode free --size 1000x1400 --request "..."         # no reference: then do @steps.txt
 pixelcanvas help                                                           # every command
 pixelcanvas next                                                           # the next command, always
 ```
@@ -47,6 +47,11 @@ pixelcanvas change add recolor hair --to "#8fdcb4"       # or: change add canvas
 pixelcanvas stage done
 pixelcanvas recolor hair --to "#8fdcb4"                  # `pixelcanvas next` names each command
 ```
+
+A new picture of people in a place: `steps.txt` holds `camera`, `scene <kit>` and one `figure <who> --pose ... --wear
+... --hair ... --face ...` line per figure; then `pixelcanvas do @steps.txt`, `render`,
+`do "draw all; flat auto; shade all"`, `polish`, `export final.png`, `stage done`. SKILL.md and
+`skills/pixelcanvas/new-picture.md` have the syntax; `pixelcanvas help pose,figure,scene` prints it.
 
 Finish = `pixelcanvas export final.png` and `pixelcanvas stage done` in the finish stage, with every todo line completed.
 

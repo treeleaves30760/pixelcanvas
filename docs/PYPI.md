@@ -73,8 +73,22 @@ A poster takes `change add canvas`, `palette map`, `graphic` and `text`; a new s
 
 ## Without a reference
 
-`pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff"`: the agent plans the subjects of the
-request and their parts with boxes, then paints them through the same stages with construction tools; follow
-`NEXT:`.
+People in a place: a `scene` kit draws the place from the camera, one `figure` line poses, dresses and gives hair and
+a face to each figure on a 3D skeleton, and the picture is drawn in 2D over the faded guide.
+
+```bash
+pixelcanvas new pic --mode free --size 1000x834 --request "two children in a school corridor"
+pixelcanvas do @steps.txt                          # camera, scene corridor ..., figure boy ..., figure girl ...
+pixelcanvas render
+pixelcanvas do "draw all; flat auto; shade all"
+pixelcanvas polish --focus boy --motion boy:toward
+pixelcanvas export final.png --stages stages
+pixelcanvas stage done
+```
+
+![corridor](https://raw.githubusercontent.com/treeleaves30760/pixelcanvas/main/docs/images/corridor.png)
+
+Kits: corridor, room, classroom, bedroom, street, platform, outdoor, field, beach, rooftop, stairs, park, track, studio, sky. 73 pose presets with
+modifiers, 18 expressions, hair styles with accessories; `pixelcanvas help pose,figure,scene` lists the options.
 
 Documentation, the skill and the source: <https://github.com/treeleaves30760/pixelcanvas>. MIT licence.

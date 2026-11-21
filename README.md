@@ -153,54 +153,79 @@ pixelcanvas shadow figure                               # a contact shadow when 
 
 ## Drawing from a text request
 
-With no reference, pixelcanvas works the same way: the agent plans the subjects of the request and their parts with
-boxes, then paints them through the stages with construction tools (`sketch figure`, `sketch head`, `face`, `line`,
-`flat auto`, `shade`, `eye`, `hair --flow`, `fold`, `text`), and `pixelcanvas polish` gives the finish one light and a last
-clean-up:
+With no reference, a picture of people in a place is built coarse to fine. A `scene` kit draws the place from the
+camera; each figure is posed, dressed and given hair and a face on a 3D skeleton in one `figure` line; `render`
+turns the figures into a faded guide that is never exported; the picture is drawn in 2D over it: anime line art,
+flat colour, cel shadows, faces, then `polish` for the finish.
 
 ```bash
-pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff"
-pixelcanvas plan subject fox --box 170,60,760,960
-pixelcanvas plan part head --of fox --box 200,90,720,500 --focus 3
-pixelcanvas sketch figure fox --pose hold --heads 2.5
+pixelcanvas new pic --mode free --size 1000x834 --request "two children in a school corridor"
+pixelcanvas do @steps.txt                          # camera, scene, figures (below)
+pixelcanvas render                                 # the 3D guide
+pixelcanvas do "draw all; flat auto; shade all"    # 2D line art, flat colour, cel shadows over the guide
+pixelcanvas polish --focus boy --motion boy:toward     # rim light, depth of field, motion trail, glow, vignette
+pixelcanvas export final.png --stages stages
+pixelcanvas stage done                             # status FINISHED
 ```
 
-People in a scene are posed on a 3D skeleton first, then drawn in 2D over it. The camera, the blocks a figure
-touches, the pose, the clothes and the hair live in 3D; `render` turns them into a faded guide that is never
-exported, and `draw` lays anime line art over it, part by part, with an id on every stroke:
+Every picture below was drawn by pixelcanvas with that sequence; only `steps.txt` and the `polish` options differ.
 
-```bash
-pixelcanvas camera --horizon 620 --eye-height 1.2
-pixelcanvas block bench box --size 1.8,0.45,0.45 --at 520,860
-pixelcanvas pose girl --preset sit-ledge --on bench --yaw -20 --set "head: turn 30" --hand-shape-r relaxed
-pixelcanvas dress girl blouse,skirt,thigh-highs,shoes --color navy
-pixelcanvas hair3d girl --style twintails --bangs blunt --color pink
-pixelcanvas render                     # the 3D guide
-pixelcanvas draw all                   # 2D line art over the guide
-pixelcanvas flat auto
-pixelcanvas shade all                  # hard-edged cel shadows
-pixelcanvas face girl --expression smile --eyes blue
+| | |
+|---|---|
+| ![corridor](docs/images/corridor.png) | ![platform](docs/images/platform.png) |
+| ![field](docs/images/field.png) | ![classroom](docs/images/classroom.png) |
+
+`steps.txt` of the corridor (`polish --focus boy --motion boy:toward`):
+```text
+camera --horizon 400 --eye-height 1.1
+scene corridor --time day --wall "#e6dcc4" --trim "#8a5a3a" --floor "#b07a4a" --lamps 4 --arch
+figure boy --pose run-toward --at 600,960 --heads 5.5 --yaw 10 --wear "jacket:#232c58,shorts:#232c58,socks:#1c2340,shoes:#4a2c20" --hair "short,side,#1c1c24" --face "crying,#3a3a3a"
+figure girl --pose float --at 300,600 --heads 5.5 --yaw 0 --wear "jacket:#232c58,skirt:#232c58:pleated,socks:white,shoes:#4a2c20" --hair "twintails,blunt,#f09ac0,bows:black" --face "smug,#b04080"
 ```
 
-A re-pose updates the guide by itself; `pixelcanvas draw girl --part arm-r` redraws one part.
-
-One line sets up a whole figure, and a file of commands runs as one batch:
-
-```bash
-pixelcanvas figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --hand-shape-r fist   --wear "blouse:white,skirt:navy:pleated,thigh-highs:black,shoes:brown"   --hair "twintails,blunt,pink,bows:black" --face "smile,blue"
-pixelcanvas do @steps.txt                        # camera, blocks, figures: one command per line
-pixelcanvas do "draw all; flat auto; shade all"
-pixelcanvas help pose,figure,block               # options and values of several commands at once
+The night platform (`polish --focus girl`):
+```text
+camera --horizon 420 --eye-height 1.4 --fov 50
+scene platform --time night --lamps 4
+figure girl --pose umbrella --at 380,900 --heads 6.5 --yaw 25 --look camera --wear "coat:#3a4a6a:knee,thigh-highs:black,boots:#2a2020" --hair "long,blunt,#2a2a3a,hairband,bows:#c04060" --face "smile,#6a8ad0"
+figure boy --pose hands-behind --at 700,860 --heads 6.5 --yaw -30 --look left --wear "hoodie:#c08040,pants:#2a3040,shoes:white" --hair "spiky,side,#d0a050" --face "embarrassed,#4a7a4a"
 ```
+
+The field at sunset (`polish --focus girl --motion girl:up`):
+```text
+camera --horizon 600 --eye-height 0.8 --fov 50 --tilt 8
+scene field --time sunset
+figure girl --pose jump --at 500,900 --heads 6 --yaw 15 --look up --energy 1 --wear "dress:#f0f0f8,shoes:#a04040" --hair "ponytail,side,#e8a040,ribbon,bows:#d04050,wind:left" --face "laugh,#3a8a5a"
+```
+
+The classroom (`polish --focus girl`):
+```text
+camera --horizon 430 --eye-height 1.3 --fov 50
+scene classroom --time day
+figure girl --pose wave --at 330,880 --heads 6.5 --yaw 20 --look camera --wear "blouse:white,ribbon:#c03040,skirt:#2c3460:pleated,socks:white,shoes:#4a2c20" --hair "bob,blunt,#3a2a2a,hairpin,bows:#e0c040" --face "grin,#8a5030"
+figure boy --pose arms-crossed --at 680,860 --heads 6.5 --yaw -25 --look left --wear "blazer:#2c3460,shirt:white,pants:#2c3460,shoes:#2a2020" --hair "medium,parted,#4a3020" --face "smug,#305080"
+```
+
+- `scene list`: corridor, room, classroom, bedroom, street, platform, outdoor, field, beach, rooftop, stairs, park, track, studio, sky, with
+  `--time day|sunset|night` and a colour per surface.
+- `figure <who>`: `--wear` pieces `piece[:colour][:style]`, `--hair` style, bangs, colour and accessories,
+  `--face` expression (18), eye colour and gaze; every other option is a `pose` option: 73 presets
+  (`pixelcanvas pose list`), `--lean --twist --bend`, `--look`, `--arm-r`, `--leg-l`, `--hand-shape-r`,
+  `--hand-r-to`, `--check`.
+- A re-pose updates the guide by itself; `pixelcanvas draw girl --part arm-r` redraws one part;
+  `pixelcanvas help pose,figure,scene` prints the options and values of several commands at once.
+
+Without people, a picture is planned with boxes and painted through the stages with construction tools
+(`plan subject`, `sketch`, `line`, `flat auto`, `shade`, `band`, `eye`, `hair --flow`, `fold`, `text`, `polish`).
 
 ### Claude Code plugin
 
 The plugin adds `/pixelcanvas:draw <request>` and four subagents that build a new picture from the coarsest
-decision down: `pixelcanvas-director` writes the brief (shot, camera, each figure's action and pose, clothes,
-light, palette), `pixelcanvas-blocker` poses the figures and renders the guide, `pixelcanvas-painter` draws and
-finishes, and `pixelcanvas-critic` checks the finished picture and names the command for each fix. The
-director writes the setup as `steps.txt`; the blocker runs it in one `do @steps.txt`, so a two-figure picture
-takes about ten pixelcanvas commands.
+decision down: `pixelcanvas-director` writes the brief and `steps.txt` (camera, scene, figures),
+`pixelcanvas-blocker` runs it in one `do @steps.txt` and renders the guide, `pixelcanvas-painter` draws and
+finishes, and `pixelcanvas-critic` checks the guide and the final picture against the brief with a judge's
+criteria and names the owner and the command for each fix. A two-figure picture takes about ten pixelcanvas
+commands.
 
 ## Commands
 

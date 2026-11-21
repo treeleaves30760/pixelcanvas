@@ -142,48 +142,75 @@ pixelcanvas shadow figure                               # 人物站在畫面內�
 
 ## 依文字需求作畫
 
-沒有參考圖時，pixelcanvas 的做法相同：agent 用方框規劃需求中的主體與部件，再用構圖工具（`sketch figure`、`sketch head`、`face`、
-`line`、`flat auto`、`shade`、`eye`、`hair --flow`、`fold`、`text`）依階段畫出來，最後 `pixelcanvas polish` 為完稿統一光線並做最後的整理：
+沒有參考圖時，人物與場景的圖由粗到細建立。`scene` 套件從鏡頭畫出場景；每個人物用一行 `figure` 在 3D 骨架上擺姿勢、穿衣、
+做髮型與表情；`render` 把人物變成淡淡的參考層（永遠不會匯出）；圖本身在參考層上以 2D 畫出：動畫線稿、平塗、賽璐珞陰影、
+臉，最後用 `polish` 完稿。
 
 ```bash
-pixelcanvas new pic --size 1000x1200 --request "a chibi fox mage holding a staff"
-pixelcanvas plan subject fox --box 170,60,760,960
-pixelcanvas plan part head --of fox --box 200,90,720,500 --focus 3
-pixelcanvas sketch figure fox --pose hold --heads 2.5
+pixelcanvas new pic --mode free --size 1000x834 --request "two children in a school corridor"
+pixelcanvas do @steps.txt                          # camera, scene, figures (below)
+pixelcanvas render                                 # the 3D guide
+pixelcanvas do "draw all; flat auto; shade all"    # 2D line art, flat colour, cel shadows over the guide
+pixelcanvas polish --focus boy --motion boy:toward     # rim light, depth of field, motion trail, glow, vignette
+pixelcanvas export final.png --stages stages
+pixelcanvas stage done                             # status FINISHED
 ```
 
-場景中的人物先在 3D 骨架上擺姿勢，再以 2D 畫在上面。鏡頭、人物接觸的方塊、姿勢、衣服和頭髮都在 3D 中；`render` 把它們轉成淡色的
-參考層（不會匯出），`draw` 在上面逐部件畫出動畫風格的線稿，每一筆都有編號：
+下面每張圖都由 pixelcanvas 以這組指令畫成，只有 `steps.txt` 與 `polish` 的選項不同。
 
-```bash
-pixelcanvas camera --horizon 620 --eye-height 1.2
-pixelcanvas block bench box --size 1.8,0.45,0.45 --at 520,860
-pixelcanvas pose girl --preset sit-ledge --on bench --yaw -20 --set "head: turn 30" --hand-shape-r relaxed
-pixelcanvas dress girl blouse,skirt,thigh-highs,shoes --color navy
-pixelcanvas hair3d girl --style twintails --bangs blunt --color pink
-pixelcanvas render                     # 3D 參考層
-pixelcanvas draw all                   # 在參考層上畫 2D 線稿
-pixelcanvas flat auto
-pixelcanvas shade all                  # 硬邊的賽璐璐陰影
-pixelcanvas face girl --expression smile --eyes blue
+| | |
+|---|---|
+| ![corridor](docs/images/corridor.png) | ![platform](docs/images/platform.png) |
+| ![field](docs/images/field.png) | ![classroom](docs/images/classroom.png) |
+
+走廊的 `steps.txt`（`polish --focus boy --motion boy:toward`）：
+```text
+camera --horizon 400 --eye-height 1.1
+scene corridor --time day --wall "#e6dcc4" --trim "#8a5a3a" --floor "#b07a4a" --lamps 4 --arch
+figure boy --pose run-toward --at 600,960 --heads 5.5 --yaw 10 --wear "jacket:#232c58,shorts:#232c58,socks:#1c2340,shoes:#4a2c20" --hair "short,side,#1c1c24" --face "crying,#3a3a3a"
+figure girl --pose float --at 300,600 --heads 5.5 --yaw 0 --wear "jacket:#232c58,skirt:#232c58:pleated,socks:white,shoes:#4a2c20" --hair "twintails,blunt,#f09ac0,bows:black" --face "smug,#b04080"
 ```
 
-重新擺姿勢時參考層會自動更新；`pixelcanvas draw girl --part arm-r` 只重畫一個部件。
-
-一行設定整個人物，一個指令檔整批執行：
-
-```bash
-pixelcanvas figure girl --pose run --at 360,820 --heads 6.5 --yaw 20 --hand-shape-r fist   --wear "blouse:white,skirt:navy:pleated,thigh-highs:black,shoes:brown"   --hair "twintails,blunt,pink,bows:black" --face "smile,blue"
-pixelcanvas do @steps.txt                        # 鏡頭、方塊、人物：每行一個指令
-pixelcanvas do "draw all; flat auto; shade all"
-pixelcanvas help pose,figure,block               # 一次列出多個指令的選項與值
+夜晚的月台（`polish --focus girl`）：
+```text
+camera --horizon 420 --eye-height 1.4 --fov 50
+scene platform --time night --lamps 4
+figure girl --pose umbrella --at 380,900 --heads 6.5 --yaw 25 --look camera --wear "coat:#3a4a6a:knee,thigh-highs:black,boots:#2a2020" --hair "long,blunt,#2a2a3a,hairband,bows:#c04060" --face "smile,#6a8ad0"
+figure boy --pose hands-behind --at 700,860 --heads 6.5 --yaw -30 --look left --wear "hoodie:#c08040,pants:#2a3040,shoes:white" --hair "spiky,side,#d0a050" --face "embarrassed,#4a7a4a"
 ```
+
+夕陽下的原野（`polish --focus girl --motion girl:up`）：
+```text
+camera --horizon 600 --eye-height 0.8 --fov 50 --tilt 8
+scene field --time sunset
+figure girl --pose jump --at 500,900 --heads 6 --yaw 15 --look up --energy 1 --wear "dress:#f0f0f8,shoes:#a04040" --hair "ponytail,side,#e8a040,ribbon,bows:#d04050,wind:left" --face "laugh,#3a8a5a"
+```
+
+教室（`polish --focus girl`）：
+```text
+camera --horizon 430 --eye-height 1.3 --fov 50
+scene classroom --time day
+figure girl --pose wave --at 330,880 --heads 6.5 --yaw 20 --look camera --wear "blouse:white,ribbon:#c03040,skirt:#2c3460:pleated,socks:white,shoes:#4a2c20" --hair "bob,blunt,#3a2a2a,hairpin,bows:#e0c040" --face "grin,#8a5030"
+figure boy --pose arms-crossed --at 680,860 --heads 6.5 --yaw -25 --look left --wear "blazer:#2c3460,shirt:white,pants:#2c3460,shoes:#2a2020" --hair "medium,parted,#4a3020" --face "smug,#305080"
+```
+
+- `scene list`：corridor、room、classroom、bedroom、street、platform、outdoor、field、beach、rooftop、stairs、park、track、studio、sky，可加
+  `--time day|sunset|night` 與各個表面的顏色。
+- `figure <who>`：`--wear` 衣物 `piece[:顏色][:款式]`，`--hair` 髮型、瀏海、顏色與飾品，`--face` 表情（18 種）、眼睛顏色與視線；
+  其餘選項都是 `pose` 的選項：73 個預設姿勢（`pixelcanvas pose list`）、`--lean --twist --bend`、`--look`、`--arm-r`、
+  `--leg-l`、`--hand-shape-r`、`--hand-r-to`、`--check`。
+- 重新擺姿勢時參考層會自動更新；`pixelcanvas draw girl --part arm-r` 只重畫一個部件；
+  `pixelcanvas help pose,figure,scene` 一次列出多個指令的選項與值。
+
+沒有人物的圖，用方框規劃，再用構圖工具逐階段畫（`plan subject`、`sketch`、`line`、`flat auto`、`shade`、`band`、`eye`、
+`hair --flow`、`fold`、`text`、`polish`）。
 
 ### Claude Code 外掛
 
-外掛提供 `/pixelcanvas:draw <需求>` 與四個子代理，從最粗的決定往細處畫一張新圖：`pixelcanvas-director` 寫出企劃（鏡頭、
-每個人物的動作與姿勢、衣服、光線、配色），`pixelcanvas-blocker` 擺好人物並產生參考層，`pixelcanvas-painter` 作畫並完稿，
-`pixelcanvas-critic` 檢查參考層與完稿，並為每個問題指出要執行的指令。
+外掛提供 `/pixelcanvas:draw <需求>` 與四個子代理，從最粗的決定往細處畫一張新圖：`pixelcanvas-director` 寫出企劃與
+`steps.txt`（鏡頭、場景、人物），`pixelcanvas-blocker` 用一次 `do @steps.txt` 執行並產生參考層，`pixelcanvas-painter`
+作畫並完稿，`pixelcanvas-critic` 依評審的標準檢查參考層與完稿，並為每個問題指出負責者與指令。兩個人物的圖約需十個
+pixelcanvas 指令。
 
 ## 指令
 

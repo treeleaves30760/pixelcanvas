@@ -827,8 +827,11 @@ def next_action(p, comparison=None) -> Tuple[str, str]:
             undrawn = []
         if undrawn:
             return "draw the figures and the blocks in 2D over the guide", "pixelcanvas do \"draw all; flat auto; shade all\""
+        if not d.get("polished"):
+            return ("the finish in one pass: rim light, depth of field, glow, vignette (--focus <figure>, --motion "
+                    "<figure> for a runner)", "pixelcanvas polish --focus <figure>")
         if not st.get("exported") or _export_stale(p):
-            return ("finish (background bands, polish), then export", "pixelcanvas export final.png")
+            return ("export the picture, then close the stages", "pixelcanvas export final.png --stages stages")
         return "final.png is exported: close every stage at once", "pixelcanvas stage done"
     for t in st.get("todo", []):
         if t["stage"] == stage and t["kind"] in ("task", "user") and t["status"] == "open":
